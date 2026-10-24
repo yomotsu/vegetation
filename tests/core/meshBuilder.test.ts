@@ -42,7 +42,7 @@ describe( 'MeshBuilder', () => {
 		expect( mesh.colors ).toEqual( new Float32Array( [ 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1, 1 ] ) );
 		expect( mesh.groups ).toEqual( [
 			{ start: 0, count: 6, partIndex: 0 },
-			{ start: 6, count: 3, partIndex: 1 },
+			{ start: 6, count: 3, partIndex: 1 }
 		] );
 		validateMeshData( mesh );
 

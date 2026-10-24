@@ -24,7 +24,7 @@ function cross( a: Vec3, b: Vec3 ): Vec3 {
 	return [
 		a[ 1 ] * b[ 2 ] - a[ 2 ] * b[ 1 ],
 		a[ 2 ] * b[ 0 ] - a[ 0 ] * b[ 2 ],
-		a[ 0 ] * b[ 1 ] - a[ 1 ] * b[ 0 ],
+		a[ 0 ] * b[ 1 ] - a[ 1 ] * b[ 0 ]
 	];
 
 }
@@ -35,11 +35,33 @@ function dot( a: Vec3, b: Vec3 ): number {
 
 }
 
+function getReferenceAxis( tangent: Vec3 ): Vec3 {
+
+	const absolute = [ Math.abs( tangent[ 0 ] ), Math.abs( tangent[ 1 ] ), Math.abs( tangent[ 2 ] ) ];
+
+	if ( absolute[ 0 ]! <= absolute[ 1 ]! && absolute[ 0 ]! <= absolute[ 2 ]! ) {
+
+		return [ 1, 0, 0 ];
+
+	} else if ( absolute[ 1 ]! <= absolute[ 2 ]! ) {
+
+		return [ 0, 1, 0 ];
+
+	}
+
+	return [ 0, 0, 1 ];
+
+}
+
 function normalize( vector: Vec3 ): Vec3 {
 
 	const length = Math.hypot( vector[ 0 ], vector[ 1 ], vector[ 2 ] );
 
-	if ( length === 0 || ! Number.isFinite( length ) ) throw new RangeError( 'Expected a finite, non-zero vector' );
+	if ( length === 0 || ! Number.isFinite( length ) ) {
+
+		throw new RangeError( 'Expected a finite, non-zero vector' );
+
+	}
 
 	return [ vector[ 0 ] / length, vector[ 1 ] / length, vector[ 2 ] / length ];
 
@@ -75,24 +97,30 @@ function getTubeFrames( spine: Vec3[] ): { tangent: Vec3; u: Vec3; v: Vec3 }[] {
 
 		tangent = normalize( tangent );
 
-		const absolute = [ Math.abs( tangent[ 0 ] ), Math.abs( tangent[ 1 ] ), Math.abs( tangent[ 2 ] ) ];
-		let reference: Vec3;
+		let u: Vec3;
 
-		if ( absolute[ 0 ]! <= absolute[ 1 ]! && absolute[ 0 ]! <= absolute[ 2 ]! ) {
+		if ( i === 0 ) {
 
-			reference = [ 1, 0, 0 ];
-
-		} else if ( absolute[ 1 ]! <= absolute[ 2 ]! ) {
-
-			reference = [ 0, 1, 0 ];
+			u = normalize( cross( tangent, getReferenceAxis( tangent ) ) );
 
 		} else {
 
-			reference = [ 0, 0, 1 ];
+			// 前フレームの法線を接線面へ射影し、リング間の捩れを抑える。
+			const previousU = frames[ i - 1 ]!.u;
+			const projected = subtract( previousU, multiply( tangent, dot( previousU, tangent ) ) );
+
+			if ( Math.hypot( projected[ 0 ], projected[ 1 ], projected[ 2 ] ) <= 1e-8 ) {
+
+				u = normalize( cross( tangent, getReferenceAxis( tangent ) ) );
+
+			} else {
+
+				u = normalize( projected );
+
+			}
 
 		}
 
-		const u = normalize( cross( tangent, reference ) );
 		const v = normalize( cross( tangent, u ) );
 
 		frames.push( { tangent, u, v } );
@@ -111,13 +139,31 @@ export function addTube(
 	opts: { color: Color3; wind: ( t: number ) => number; capEnd: boolean },
 ): void {
 
-	if ( spine.length < 2 ) throw new RangeError( 'A tube needs at least two spine points' );
-	if ( radii.length !== spine.length ) throw new RangeError( 'A tube needs one radius per spine point' );
-	if ( ! Number.isInteger( sides ) || sides < 3 ) throw new RangeError( 'A tube needs at least three sides' );
+	if ( spine.length < 2 ) {
+
+		throw new RangeError( 'A tube needs at least two spine points' );
+
+	}
+
+	if ( radii.length !== spine.length ) {
+
+		throw new RangeError( 'A tube needs one radius per spine point' );
+
+	}
+
+	if ( ! Number.isInteger( sides ) || sides < 3 ) {
+
+		throw new RangeError( 'A tube needs at least three sides' );
+
+	}
 
 	for ( const radius of radii ) {
 
-		if ( ! Number.isFinite( radius ) || radius < 0 ) throw new RangeError( 'Tube radii must be finite and non-negative' );
+		if ( ! Number.isFinite( radius ) || radius < 0 ) {
+
+			throw new RangeError( 'Tube radii must be finite and non-negative' );
+
+		}
 
 	}
 
@@ -125,6 +171,23 @@ export function addTube(
 	const rings: Vec3[][] = [];
 	const ringIndices: number[][] = [];
 	const winds: number[] = [];
+	const distances: number[] = [ 0 ];
+
+	for ( let i = 1; i < spine.length; i ++ ) {
+
+		const segment = subtract( spine[ i ]!, spine[ i - 1 ]! );
+		distances.push( distances[ i - 1 ]! + Math.hypot( segment[ 0 ], segment[ 1 ], segment[ 2 ] ) );
+
+	}
+
+	const radiusSlopes = radii.map( ( radius, i ) => {
+
+		const first = i === 0 ? 0 : i - 1;
+		const last = i === radii.length - 1 ? i : i + 1;
+
+		return ( radii[ last ]! - radii[ first ]! ) / ( distances[ last ]! - distances[ first ]! );
+
+	} );
 
 	for ( let i = 0; i < spine.length; i ++ ) {
 
@@ -140,10 +203,11 @@ export function addTube(
 
 			const angle = side / sides * Math.PI * 2;
 			const radial = add( multiply( frame.u, Math.cos( angle ) ), multiply( frame.v, Math.sin( angle ) ) );
+			const normal = normalize( subtract( radial, multiply( frame.tangent, radiusSlopes[ i ]! ) ) );
 			const position = add( spine[ i ]!, multiply( radial, radius ) );
 
 			ring.push( position );
-			indices.push( b.addVertex( position, radial, [ side / sides, t ], opts.color, winds[ i ]! ) );
+			indices.push( b.addVertex( position, normal, [ side / sides, t ], opts.color, winds[ i ]! ) );
 
 		}
 
@@ -213,7 +277,7 @@ export function addCard(
 		add( add( center, negativeRight ), negativeUp ),
 		add( add( center, right ), negativeUp ),
 		add( add( center, right ), up ),
-		add( add( center, negativeRight ), up ),
+		add( add( center, negativeRight ), up )
 	];
 	const u0 = uvRect[ 0 ];
 	const v0 = uvRect[ 1 ];
@@ -231,14 +295,14 @@ const goldenRatio = ( 1 + Math.sqrt( 5 ) ) / 2;
 const icosahedronVertices = ( [
 	[ -1, goldenRatio, 0 ], [ 1, goldenRatio, 0 ], [ -1, -goldenRatio, 0 ], [ 1, -goldenRatio, 0 ],
 	[ 0, -1, goldenRatio ], [ 0, 1, goldenRatio ], [ 0, -1, -goldenRatio ], [ 0, 1, -goldenRatio ],
-	[ goldenRatio, 0, -1 ], [ goldenRatio, 0, 1 ], [ -goldenRatio, 0, -1 ], [ -goldenRatio, 0, 1 ],
+	[ goldenRatio, 0, -1 ], [ goldenRatio, 0, 1 ], [ -goldenRatio, 0, -1 ], [ -goldenRatio, 0, 1 ]
 ] as Vec3[] ).map( ( vertex ) => normalize( vertex ) );
 
 const icosahedronFaces: [ number, number, number ][] = [
 	[ 0, 11, 5 ], [ 0, 5, 1 ], [ 0, 1, 7 ], [ 0, 7, 10 ], [ 0, 10, 11 ],
 	[ 1, 5, 9 ], [ 5, 11, 4 ], [ 11, 10, 2 ], [ 10, 7, 6 ], [ 7, 1, 8 ],
 	[ 3, 9, 4 ], [ 3, 4, 2 ], [ 3, 2, 6 ], [ 3, 6, 8 ], [ 3, 8, 9 ],
-	[ 4, 9, 5 ], [ 2, 4, 11 ], [ 6, 2, 10 ], [ 8, 6, 7 ], [ 9, 8, 1 ],
+	[ 4, 9, 5 ], [ 2, 4, 11 ], [ 6, 2, 10 ], [ 8, 6, 7 ], [ 9, 8, 1 ]
 ];
 
 interface RockPoint {
@@ -246,6 +310,7 @@ interface RockPoint {
 	position: Vec3;
 	color: Color3;
 	uv: [ number, number ];
+	geometryKey: string;
 	index?: number;
 }
 
@@ -253,7 +318,7 @@ function getRockUv( direction: Vec3 ): [ number, number ] {
 
 	return [
 		Math.atan2( direction[ 2 ], direction[ 0 ] ) / ( Math.PI * 2 ) + 0.5,
-		Math.asin( Math.max( -1, Math.min( 1, direction[ 1 ] ) ) ) / Math.PI + 0.5,
+		Math.asin( Math.max( -1, Math.min( 1, direction[ 1 ] ) ) ) / Math.PI + 0.5
 	];
 
 }
@@ -265,8 +330,23 @@ export function addRockShell(
 	opts: { color: ( dir: Vec3 ) => Color3; center: Vec3; scale: Vec3; flat: boolean },
 ): void {
 
-	if ( ! Number.isInteger( frequency ) || frequency < 1 ) throw new RangeError( 'Rock frequency must be a positive integer' );
-	if ( opts.scale.some( ( component ) => ! Number.isFinite( component ) || component === 0 ) ) throw new RangeError( 'Rock scale components must be finite and non-zero' );
+	if ( ! Number.isInteger( frequency ) || frequency < 1 ) {
+
+		throw new RangeError( 'Rock frequency must be a positive integer' );
+
+	}
+
+	if ( opts.scale.some( ( component ) => ! Number.isFinite( component ) || component === 0 ) ) {
+
+		throw new RangeError( 'Rock scale components must be finite and non-zero' );
+
+	}
+
+	const smoothPoints = new Map<string, RockPoint>();
+	const smoothNormals = new Map<string, Vec3>();
+	const smoothTriangles: [ RockPoint, RockPoint, RockPoint ][] = [];
+
+	// 各面を重心座標で分割し、変位後の面積法線を共有点へ加算する。
 
 	for ( const [ firstIndex, secondIndex, thirdIndex ] of icosahedronFaces ) {
 
@@ -291,30 +371,40 @@ export function addRockShell(
 				const direction = normalize( [
 					a[ 0 ] * ( frequency - i - j ) + c[ 0 ] * i + d[ 0 ] * j,
 					a[ 1 ] * ( frequency - i - j ) + c[ 1 ] * i + d[ 1 ] * j,
-					a[ 2 ] * ( frequency - i - j ) + c[ 2 ] * i + d[ 2 ] * j,
+					a[ 2 ] * ( frequency - i - j ) + c[ 2 ] * i + d[ 2 ] * j
 				] );
-				const radius = radiusAt( direction );
-				const position: Vec3 = [
-					opts.center[ 0 ] + direction[ 0 ] * radius * opts.scale[ 0 ],
-					opts.center[ 1 ] + direction[ 1 ] * radius * opts.scale[ 1 ],
-					opts.center[ 2 ] + direction[ 2 ] * radius * opts.scale[ 2 ],
-				];
-				const point: RockPoint = {
-					direction,
-					position,
-					color: opts.color( direction ),
-					uv: getRockUv( direction ),
-				};
+				const geometryKey = direction.map( ( component ) => component.toFixed( 10 ) ).join( ',' );
+				const uv = getRockUv( direction );
+				const pointKey = `${ geometryKey }:${ uv[ 0 ].toFixed( 10 ) }:${ uv[ 1 ].toFixed( 10 ) }`;
+				let point = opts.flat ? undefined : smoothPoints.get( pointKey );
 
-				if ( ! opts.flat ) {
+				if ( point === undefined ) {
 
-					const smoothNormal = normalize( [
-						direction[ 0 ] / opts.scale[ 0 ],
-						direction[ 1 ] / opts.scale[ 1 ],
-						direction[ 2 ] / opts.scale[ 2 ],
-					] );
+					const radius = radiusAt( direction );
+					const position: Vec3 = [
+						opts.center[ 0 ] + direction[ 0 ] * radius * opts.scale[ 0 ],
+						opts.center[ 1 ] + direction[ 1 ] * radius * opts.scale[ 1 ],
+						opts.center[ 2 ] + direction[ 2 ] * radius * opts.scale[ 2 ]
+					];
+					point = {
+						direction,
+						position,
+						color: opts.color( direction ),
+						uv,
+						geometryKey,
+					};
 
-					point.index = b.addVertex( position, smoothNormal, point.uv, point.color, 0 );
+					if ( ! opts.flat ) {
+
+						smoothPoints.set( pointKey, point );
+
+						if ( ! smoothNormals.has( geometryKey ) ) {
+
+							smoothNormals.set( geometryKey, [ 0, 0, 0 ] );
+
+						}
+
+					}
 
 				}
 
@@ -339,7 +429,19 @@ export function addRockShell(
 
 			} else {
 
-				b.addTriangle( first.index!, second.index!, third.index! );
+				const areaNormal = cross( subtract( second.position, first.position ), subtract( third.position, first.position ) );
+
+				for ( const point of [ first, second, third ] ) {
+
+					const sum = smoothNormals.get( point.geometryKey )!;
+
+					sum[ 0 ] += areaNormal[ 0 ];
+					sum[ 1 ] += areaNormal[ 1 ];
+					sum[ 2 ] += areaNormal[ 2 ];
+
+				}
+
+				smoothTriangles.push( [ first, second, third ] );
 
 			}
 
@@ -358,6 +460,22 @@ export function addRockShell(
 				}
 
 			}
+
+		}
+
+	}
+
+	if ( ! opts.flat ) {
+
+		for ( const point of smoothPoints.values() ) {
+
+			point.index = b.addVertex( point.position, normalize( smoothNormals.get( point.geometryKey )! ), point.uv, point.color, 0 );
+
+		}
+
+		for ( const [ first, second, third ] of smoothTriangles ) {
+
+			b.addTriangle( first.index!, second.index!, third.index! );
 
 		}
 

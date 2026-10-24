@@ -2,24 +2,24 @@ import type { Color3, MeshData, MeshGroup, Vec3 } from './types';
 
 export class MeshBuilder {
 
-	private positions: number[] = [];
-	private normals: number[] = [];
-	private uvs: number[] = [];
-	private colors: number[] = [];
-	private windWeights: number[] = [];
-	private indices: number[] = [];
-	private groups: MeshGroup[] = [];
-	private currentPartIndex = 0;
+	private _positions: number[] = [];
+	private _normals: number[] = [];
+	private _uvs: number[] = [];
+	private _colors: number[] = [];
+	private _windWeights: number[] = [];
+	private _indices: number[] = [];
+	private _groups: MeshGroup[] = [];
+	private _currentPartIndex = 0;
 
 	addVertex( p: Vec3, n: Vec3, uv: [ number, number ], color: Color3, wind: number ): number {
 
-		const index = this.positions.length / 3;
+		const index = this._positions.length / 3;
 
-		this.positions.push( p[ 0 ], p[ 1 ], p[ 2 ] );
-		this.normals.push( n[ 0 ], n[ 1 ], n[ 2 ] );
-		this.uvs.push( uv[ 0 ], uv[ 1 ] );
-		this.colors.push( color[ 0 ], color[ 1 ], color[ 2 ] );
-		this.windWeights.push( wind );
+		this._positions.push( p[ 0 ], p[ 1 ], p[ 2 ] );
+		this._normals.push( n[ 0 ], n[ 1 ], n[ 2 ] );
+		this._uvs.push( uv[ 0 ], uv[ 1 ] );
+		this._colors.push( color[ 0 ], color[ 1 ], color[ 2 ] );
+		this._windWeights.push( wind );
 
 		return index;
 
@@ -27,19 +27,19 @@ export class MeshBuilder {
 
 	addTriangle( a: number, b: number, c: number ): void {
 
-		const start = this.indices.length;
+		const start = this._indices.length;
 
-		this.indices.push( a, b, c );
+		this._indices.push( a, b, c );
 
-		const lastGroup = this.groups[ this.groups.length - 1 ];
+		const lastGroup = this._groups[ this._groups.length - 1 ];
 
-		if ( lastGroup !== undefined && lastGroup.partIndex === this.currentPartIndex && lastGroup.start + lastGroup.count === start ) {
+		if ( lastGroup !== undefined && lastGroup.partIndex === this._currentPartIndex && lastGroup.start + lastGroup.count === start ) {
 
 			lastGroup.count += 3;
 
 		} else {
 
-			this.groups.push( { start, count: 3, partIndex: this.currentPartIndex } );
+			this._groups.push( { start, count: 3, partIndex: this._currentPartIndex } );
 
 		}
 
@@ -47,26 +47,26 @@ export class MeshBuilder {
 
 	beginGroup( partIndex: number ): void {
 
-		this.currentPartIndex = partIndex;
+		this._currentPartIndex = partIndex;
 
 	}
 
 	get triangleCount(): number {
 
-		return this.indices.length / 3;
+		return this._indices.length / 3;
 
 	}
 
 	build(): MeshData {
 
 		return {
-			positions: new Float32Array( this.positions ),
-			normals: new Float32Array( this.normals ),
-			uvs: new Float32Array( this.uvs ),
-			colors: new Float32Array( this.colors ),
-			windWeight: new Float32Array( this.windWeights ),
-			indices: new Uint32Array( this.indices ),
-			groups: this.groups.map( ( group ) => ( { ...group } ) ),
+			positions: new Float32Array( this._positions ),
+			normals: new Float32Array( this._normals ),
+			uvs: new Float32Array( this._uvs ),
+			colors: new Float32Array( this._colors ),
+			windWeight: new Float32Array( this._windWeights ),
+			indices: new Uint32Array( this._indices ),
+			groups: this._groups.map( ( group ) => ( { ...group } ) ),
 		};
 
 	}
