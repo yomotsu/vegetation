@@ -72,6 +72,19 @@ function frondCount( mesh: MeshData, trianglesPerFrond: number ): number {
 
 }
 
+function frondPitches( mesh: MeshData, frondIndex: number ): [ number, number ] {
+
+	const leaves = leafGroup( mesh );
+	const base = frondPoint( mesh, leaves, frondIndex, 0, 1 );
+	const mid = frondPoint( mesh, leaves, frondIndex, 1, 1 );
+	const tip = frondPoint( mesh, leaves, frondIndex, 2, 1 );
+	const firstPitch = Math.atan2( mid[ 1 ] - base[ 1 ], Math.hypot( mid[ 0 ] - base[ 0 ], mid[ 2 ] - base[ 2 ] ) ) * 180 / Math.PI;
+	const secondPitch = Math.atan2( tip[ 1 ] - mid[ 1 ], Math.hypot( tip[ 0 ] - mid[ 0 ], tip[ 2 ] - mid[ 2 ] ) ) * 180 / Math.PI;
+
+	return [ firstPitch, secondPitch ];
+
+}
+
 describe( 'conifer tree data', () => {
 
 	it( 'builds five valid, strictly decreasing LOD meshes and reference-matched parts', () => {
@@ -362,6 +375,41 @@ describe( 'conifer tree data', () => {
 
 		expect( steepestPitch ).toBeGreaterThan( 75 );
 		expect( frondPoint( mesh, leaves, frondCount( mesh, 8 ) - 1, 0, 1 )[ 1 ] ).toBeCloseTo( 7.1, 1 );
+
+	} );
+
+	it( 'follows Tree01 frond pitch as the attachment height rises', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const referenceBands = [
+			{ tier: 0, baseMid: - 17, midTip: 9 },
+			{ tier: 3, baseMid: - 13, midTip: 13 },
+			{ tier: 6, baseMid: - 6, midTip: 20 },
+			{ tier: 9, baseMid: 10, midTip: 36 },
+			{ tier: 12, baseMid: 22, midTip: 48 },
+			{ tier: 14, baseMid: 31, midTip: 56 },
+		];
+		const measured: [ number, number ][] = [];
+
+		for ( const band of referenceBands ) {
+
+			const pitches = Array.from( { length: 5 }, ( _, index ) => frondPitches( mesh, band.tier * 5 + index ) );
+			const mean = ( segment: 0 | 1 ): number => pitches.reduce( ( total, pitch ) => total + pitch[ segment ], 0 ) / pitches.length;
+			const baseMid = mean( 0 );
+			const midTip = mean( 1 );
+
+			expect( Math.abs( baseMid - band.baseMid ) ).toBeLessThanOrEqual( 4 );
+			expect( Math.abs( midTip - band.midTip ) ).toBeLessThanOrEqual( 4 );
+			measured.push( [ baseMid, midTip ] );
+
+		}
+
+		for ( let index = 1; index < measured.length; index ++ ) {
+
+			expect( measured[ index ]![ 0 ] ).toBeGreaterThan( measured[ index - 1 ]![ 0 ] );
+			expect( measured[ index ]![ 1 ] ).toBeGreaterThan( measured[ index - 1 ]![ 1 ] );
+
+		}
 
 	} );
 

@@ -40,6 +40,18 @@ const leafColor: Color3 = [ 1, 1, 1 ];
 const trunkTopFraction = 0.98;
 const frondsPerTier = 5;
 const trunkProfile = [ 0.35, 0.3, 0.255, 0.22, 0.19, 0.16, 0.135, 0.112, 0.094, 0.078, 0.064, 0.05, 0.035 ];
+const frondPitchProfile = [
+	[ 1.8 / 7.55, - 17, 9 ],
+	[ 2.5 / 7.55, - 13, 13 ],
+	[ 3.0 / 7.55, - 11, 15 ],
+	[ 3.5 / 7.55, - 9, 17 ],
+	[ 4.0 / 7.55, - 2, 24 ],
+	[ 4.5 / 7.55, 10, 36 ],
+	[ 5.0 / 7.55, 15, 41 ],
+	[ 5.5 / 7.55, 23, 49 ],
+	[ 6.0 / 7.55, 31, 56 ],
+	[ 6.5 / 7.55, 51, 76 ],
+] as const;
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -92,6 +104,32 @@ function getTrunkRadius( fraction: number, height: number ): number {
 	const scale = height / 7.5;
 
 	return ( trunkProfile[ lowerIndex ]! + ( trunkProfile[ upperIndex ]! - trunkProfile[ lowerIndex ]! ) * amount ) * scale;
+
+}
+
+function getFrondPitch( height: number, y: number ): [ number, number ] {
+
+	const fraction = y / height;
+
+	for ( let index = 1; index < frondPitchProfile.length; index ++ ) {
+
+		const lower = frondPitchProfile[ index - 1 ]!;
+		const upper = frondPitchProfile[ index ]!;
+
+		if ( fraction <= upper[ 0 ] || index === frondPitchProfile.length - 1 ) {
+
+			const amount = clamp( ( fraction - lower[ 0 ] ) / ( upper[ 0 ] - lower[ 0 ] ), 0, 1 );
+
+			return [
+				lower[ 1 ] + ( upper[ 1 ] - lower[ 1 ] ) * amount,
+				lower[ 2 ] + ( upper[ 2 ] - lower[ 2 ] ) * amount,
+			];
+
+		}
+
+	}
+
+	return [ 0, 0 ];
 
 }
 
@@ -185,8 +223,6 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 		const trunkPoint = getTrunkPoint( trunk.spine, height, tierY / height );
 		const fronds: Frond[] = [];
 		const angleOffset = tierRotation + tierIndex * 0.61803398875 + tierRandom.range( - 0.18, 0.18 );
-		const startPitch = t <= 0.5 ? - 6 + t * 22 : 5 + ( t - 0.5 ) * 50;
-
 		for ( let frondIndex = 0; frondIndex < frondsPerTier; frondIndex ++ ) {
 
 			const branchRandom = tierRandom.fork( frondIndex + 101 );
@@ -195,10 +231,11 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 			const length = ( 2.2 - t * 0.9 ) * heightScale * branchRandom.range( 0.8, 1.2 );
 			const width = length * 0.85 * branchRandom.range( 0.8, 1.2 ) * crownSize;
 			const base = [ trunkPoint[ 0 ] + Math.cos( angle ) * startDistance, tierY, trunkPoint[ 2 ] + Math.sin( angle ) * startDistance ] as Vec3;
-			const pitchJitter = branchRandom.range( - 4, 4 );
-			const pitchDelta = 25 * branchRandom.range( 0.8, 1.2 );
+			const [ basePitch, tipPitch ] = getFrondPitch( height, tierY );
+			const basePitchJitter = branchRandom.range( - 2, 2 );
+			const tipPitchJitter = branchRandom.range( - 3, 3 );
 
-			fronds.push( makeFrond( base, angle, length, width, 0.12 * branchRandom.range( 0.8, 1.2 ), startPitch + pitchJitter, startPitch + pitchJitter + pitchDelta, tierRadius, false, crownSize ) );
+			fronds.push( makeFrond( base, angle, length, width, 0.12 * branchRandom.range( 0.8, 1.2 ), basePitch + basePitchJitter, tipPitch + tipPitchJitter, tierRadius, false, crownSize ) );
 
 		}
 
