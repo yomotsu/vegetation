@@ -31,17 +31,27 @@ describe( 'VegetationAsset', () => {
 
 	} );
 
-	it( 'creates a single-part geometry for every LOD group', () => {
+	it( 'creates single-part geometries for every LOD and preserves total triangle counts', () => {
 
 		const asset = generateTree( { seed: 1 } );
-		const parts = asset.getParts( 0 );
-		const sourceTriangleCount = asset.geometries[ 0 ]!.getIndex()!.count / 3;
+		const partsByLod = asset.geometries.map( ( _, lod ) => asset.getParts( lod ) );
 
-		expect( parts.map( ( part ) => part.part ) ).toEqual( [ 'bark', 'leaf' ] );
-		expect( parts.every( ( part ) => part.geometry.groups.length === 1 ) ).toBe( true );
-		expect( parts.every( ( part ) => part.geometry.groups[ 0 ]!.materialIndex === asset.data.parts.findIndex( ( definition ) => definition.name === part.part ) ) ).toBe( true );
-		expect( parts.reduce( ( total, part ) => total + part.geometry.getIndex()!.count / 3, 0 ) ).toBe( sourceTriangleCount );
-		expect( asset.getParts( 0 ) ).toBe( parts );
+		expect( partsByLod.map( ( parts ) => parts.length ) ).toEqual( [ 2, 2, 2, 2, 1 ] );
+		expect( partsByLod[ 0 ]!.map( ( part ) => part.part ) ).toEqual( [ 'bark', 'leaf' ] );
+		expect( partsByLod[ 4 ]!.map( ( part ) => part.part ) ).toEqual( [ 'impostor' ] );
+
+		for ( const [ lod, parts ] of partsByLod.entries() ) {
+
+			const source = asset.geometries[ lod ]!;
+			const sourceTriangleCount = source.getIndex()!.count / 3;
+
+			expect( parts.every( ( part ) => part.geometry.groups.length === 1 ) ).toBe( true );
+			expect( parts.every( ( part ) => part.geometry.groups[ 0 ]!.materialIndex === asset.data.parts.findIndex( ( definition ) => definition.name === part.part ) ) ).toBe( true );
+			expect( parts.reduce( ( total, part ) => total + part.geometry.getIndex()!.count / 3, 0 ) ).toBe( sourceTriangleCount );
+			expect( parts.every( ( part ) => part.geometry.getAttribute( 'position' ) === source.getAttribute( 'position' ) ) ).toBe( true );
+			expect( asset.getParts( lod ) ).toBe( parts );
+
+		}
 
 	} );
 

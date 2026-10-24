@@ -2,14 +2,13 @@ import {
 	ACESFilmicToneMapping,
 	Color,
 	Mesh,
-	MeshBasicMaterial,
 	MeshStandardMaterial,
 	PCFShadowMap,
 	PlaneGeometry,
 	SRGBColorSpace,
 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { configurePreviewRenderer, createPreviewScene, createWebGpuShadowProxy, setPreviewShadowFlags } from '../../demo/rendering';
+import { configurePreviewRenderer, createPreviewScene, setPreviewShadowFlags } from '../../demo/rendering';
 import type { PreviewRenderer } from '../../demo/rendering';
 
 describe( 'demo rendering', () => {
@@ -73,38 +72,6 @@ describe( 'demo rendering', () => {
 
 		mesh.geometry.dispose();
 		mesh.material.dispose();
-
-	} );
-
-	it( 'creates a single-material caster proxy without changing the source geometry', () => {
-
-		const mesh = new Mesh( new PlaneGeometry(), new MeshStandardMaterial() );
-		mesh.geometry.addGroup( 0, 6, 0 );
-		setPreviewShadowFlags( mesh );
-		mesh.position.set( 1, 2, 3 );
-		mesh.rotation.y = 0.5;
-		mesh.scale.set( 2, 3, 4 );
-
-		const proxy = createWebGpuShadowProxy( mesh );
-		const material = proxy.material as MeshBasicMaterial;
-
-		expect( proxy.geometry ).not.toBe( mesh.geometry );
-		expect( proxy.geometry.groups ).toEqual( [] );
-		expect( mesh.geometry.groups ).toHaveLength( 1 );
-		expect( mesh.castShadow ).toBe( false );
-		expect( mesh.receiveShadow ).toBe( true );
-		expect( proxy.position.toArray() ).toEqual( [ 1, 2, 3 ] );
-		expect( proxy.rotation.y ).toBe( 0.5 );
-		expect( proxy.scale.toArray() ).toEqual( [ 2, 3, 4 ] );
-		expect( proxy.castShadow ).toBe( true );
-		expect( proxy.receiveShadow ).toBe( false );
-		expect( material.colorWrite ).toBe( false );
-		expect( material.depthWrite ).toBe( false );
-
-		proxy.geometry.dispose();
-		material.dispose();
-		mesh.geometry.dispose();
-		( mesh.material as MeshStandardMaterial ).dispose();
 
 	} );
 

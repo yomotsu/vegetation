@@ -79,7 +79,9 @@ function toLinearColors( colors: Color[] ): [ number, number, number ][] {
 export class VegetationAsset {
 
 	readonly data: VegetationData;
+	/** @remarks WebGPURenderer のシャドウ描画では、マテリアル配列と一緒に使わないでください。代わりに getParts( lod ) を使い、パーツごとに InstancedMesh を作成してください。 */
 	readonly geometries: BufferGeometry[];
+	/** @remarks WebGPURenderer のシャドウ描画では geometries[ lod ] と組み合わせないでください。getParts( lod ) の各パーツに対応するマテリアルを使ってください。 */
 	readonly materials: MeshStandardMaterial[];
 	readonly collider: BufferGeometry | null;
 	private readonly impostorTexture: DataTexture | null;
@@ -120,6 +122,7 @@ export class VegetationAsset {
 
 	}
 
+	/** @remarks 返される geometry は属性バッファを geometries[ lod ] と共有し、VegetationAsset が所有します。個別に dispose せず、パーツごとの Mesh または InstancedMesh に使ってください。 */
 	getParts( lod: number ): { part: string; geometry: BufferGeometry; material: MeshStandardMaterial }[] {
 
 		const level = Math.max( 0, Math.min( 4, Math.floor( Number.isFinite( lod ) ? lod : 0 ) ) ) as LodLevel;

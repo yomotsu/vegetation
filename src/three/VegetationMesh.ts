@@ -3,7 +3,15 @@ import type { BufferGeometry, ColorRepresentation, MeshStandardMaterial } from '
 import type { LodLevel } from '../core/types';
 import { VegetationAsset } from './VegetationAsset';
 
-export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial[]> {
+/** LOD の各パーツを単一マテリアルの Mesh として構成します。 */
+export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
+
+	private partMeshes: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
+	private shadowCast = false;
+	private shadowReceive = false;
+
+	declare castShadow: boolean;
+	declare receiveShadow: boolean;
 
 	readonly asset: VegetationAsset;
 	readonly lod: LodLevel;
@@ -11,9 +19,65 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial[]>
 	constructor( asset: VegetationAsset, lod = 0 ) {
 
 		const level = Math.floor( Math.max( 0, Math.min( 4, Number.isFinite( lod ) ? lod : 0 ) ) ) as LodLevel;
-		super( asset.geometries[ level ]!, asset.materials );
+		const parts = asset.getParts( level );
+		const first = parts[ 0 ];
+
+		if ( first === undefined ) {
+			throw new Error( `Vegetation LOD ${ level } has no parts` );
+		}
+
+		super( first.geometry, first.material );
 		this.asset = asset;
 		this.lod = level;
+		this.name = first.part;
+		const castShadow = this.castShadow;
+		const receiveShadow = this.receiveShadow;
+
+		Object.defineProperties( this, {
+			castShadow: {
+				configurable: true,
+				enumerable: true,
+				get: () => this.shadowCast,
+				set: ( value: boolean ) => {
+					this.shadowCast = value;
+					for ( const mesh of this.partMeshes ) {
+						if ( mesh !== this ) mesh.castShadow = value;
+					}
+				},
+			},
+			receiveShadow: {
+				configurable: true,
+				enumerable: true,
+				get: () => this.shadowReceive,
+				set: ( value: boolean ) => {
+					this.shadowReceive = value;
+					for ( const mesh of this.partMeshes ) {
+						if ( mesh !== this ) mesh.receiveShadow = value;
+					}
+				},
+			},
+		} );
+
+		this.castShadow = castShadow;
+		this.receiveShadow = receiveShadow;
+		this.partMeshes.push( this );
+
+		for ( const part of parts.slice( 1 ) ) {
+
+			const mesh = new Mesh( part.geometry, part.material );
+			mesh.name = part.part;
+			mesh.castShadow = this.shadowCast;
+			mesh.receiveShadow = this.shadowReceive;
+			this.add( mesh );
+			this.partMeshes.push( mesh );
+
+		}
+
+	}
+
+	get parts(): Mesh<BufferGeometry, MeshStandardMaterial>[] {
+
+		return [ ...this.partMeshes ];
 
 	}
 
