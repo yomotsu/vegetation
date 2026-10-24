@@ -5,14 +5,23 @@ export interface Random {
 	fork( salt: number ): Random;
 }
 
-function hashFork( seed: number, salt: number ): number {
+function mix( value: number ): number {
 
-	let hash = ( seed ^ ( Math.floor( Math.abs( salt ) * 1000 ) >>> 0 ) ^ 0x9e3779b9 ) >>> 0;
+	let hash = value >>> 0;
 
 	hash = Math.imul( hash ^ ( hash >>> 16 ), 0x7feb352d );
 	hash = Math.imul( hash ^ ( hash >>> 15 ), 0x846ca68b );
 
 	return ( hash ^ ( hash >>> 16 ) ) >>> 0;
+
+}
+
+function hashFork( seed: number, salt: number ): number {
+
+	const saltTerm = Math.floor( Math.abs( salt ) * 1000 ) >>> 0;
+	const seedHash = mix( seed );
+
+	return mix( seedHash ^ saltTerm );
 
 }
 

@@ -56,6 +56,12 @@ describe( 'createRandom', () => {
 
 	} );
 
+	it( 'does not treat swapped seed and salt as the same fork', () => {
+
+		expect( createRandom( 1 ).fork( 2 ).next() ).not.toBe( createRandom( 2 ).fork( 1 ).next() );
+
+	} );
+
 	it( 'supports ranges and inclusive integers', () => {
 
 		const random = createRandom( 9 );

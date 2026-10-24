@@ -18,7 +18,7 @@ describe( 'core purity', () => {
 
 			const source = sources[ file ];
 
-			expect( source, file ).not.toMatch( /\bfrom\s+['"]three['"]/ );
+			expect( source, file ).not.toMatch( /['"]three(\/[^'"]*)?['"]/ );
 
 		}
 
