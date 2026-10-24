@@ -200,6 +200,8 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 
 ## 制約
 
+- **頂点数（2026-10-25 ユーザー決定）**: tree の各 LOD の頂点数は参考 Tree01 と同じかそれ以下（LOD0 ≤ 795、LOD1 ≤ 513、LOD2 ≤ 331）。少ないほど良いが、見た目は参考を保つこと
+
 - 参考プロジェクトの教訓（terrain-kit `CLAUDE.md`）:
   - WebGPU で `count = 0` の可視 InstancedMesh はクラッシュする（デモで注意）
   - 量子化属性に `applyMatrix4` すると ±1 にクランプされる → 生成ジオメトリは Float32 のままにする
