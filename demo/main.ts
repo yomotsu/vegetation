@@ -53,11 +53,7 @@ scene.background = new Color( '#c8e0e9' );
 scene.fog = new Fog( '#c8e0e9', 90, 190 );
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
-const controls = new OrbitControls( camera, document.body );
-controls.enableDamping = true;
-controls.dampingFactor = 0.06;
-controls.autoRotateSpeed = 0.8;
-controls.target.set( 0, 3, 0 );
+let controls: OrbitControls;
 
 const root = new Group();
 scene.add( root );
@@ -158,6 +154,19 @@ function makeAsset( kind: VegetationKind, options: Record<string, number>, color
 function setPartColor( part: string, color: string ): void {
 
 	for ( const current of [ asset, ...scatterVariants ] ) current.setColor( part, color );
+
+}
+
+function setWireframe( enabled: boolean ): void {
+
+	for ( const current of [ asset, ...scatterVariants ] ) {
+		current.materials.forEach( ( material ) => {
+			if ( material.wireframe === enabled ) return;
+
+			material.wireframe = enabled;
+			material.needsUpdate = true;
+		} );
+	}
 
 }
 
@@ -262,9 +271,7 @@ function rebuildPreview(): void {
 		root.add( scatter.group );
 	}
 
-	for ( const current of [ asset, ...scatterVariants ] ) {
-		current.materials.forEach( ( material ) => material.wireframe = state.wireframe );
-	}
+	setWireframe( state.wireframe );
 	status.hidden = state.mode !== 'scatter';
 	frameView();
 
@@ -330,14 +337,12 @@ function createGui(): void {
 
 	} );
 	gui.add( state, 'turntable' ).name( 'turntable' ).onChange( ( enabled: boolean ) => controls.autoRotate = enabled );
-	gui.add( state, 'wireframe' ).name( 'wireframe' ).onChange( ( enabled: boolean ) => {
+	gui.add( state, 'wireframe' ).name( 'wireframe' ).onChange( setWireframe );
+	gui.add( state, 'collider' ).name( 'collider' ).onChange( ( visible: boolean ) => {
 
-		for ( const current of [ asset, ...scatterVariants ] ) {
-			current.materials.forEach( ( material ) => material.wireframe = enabled );
-		}
+		for ( const lines of colliderLines ) lines.visible = visible;
 
 	} );
-	gui.add( state, 'collider' ).name( 'collider' ).onChange( rebuildPreview );
 	gui.add( state, 'scatterCount', 0, 5000, 100 ).name( 'scatter count' ).onFinishChange( () => {
 
 		if ( state.mode === 'scatter' ) rebuildPreview();
@@ -385,6 +390,11 @@ async function start(): Promise<void> {
 	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
 	renderer.setSize( window.innerWidth, window.innerHeight );
 	canvasContainer.append( renderer.domElement );
+	controls = new OrbitControls( camera, renderer.domElement );
+	controls.enableDamping = true;
+	controls.dampingFactor = 0.06;
+	controls.autoRotateSpeed = 0.8;
+	controls.target.set( 0, 3, 0 );
 	createGui();
 	rebuildPreview();
 

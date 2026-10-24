@@ -1,7 +1,8 @@
-import { PerspectiveCamera, InstancedMesh } from 'three';
+import { BufferGeometry, MeshStandardMaterial, PerspectiveCamera, InstancedMesh } from 'three';
 import { describe, expect, it } from 'vitest';
 import { generateTree } from '../../src/index';
 import { createScatter } from '../../demo/scatter';
+import type { VegetationAsset } from '../../src/index';
 
 describe( 'scatter preview', () => {
 
@@ -53,6 +54,36 @@ describe( 'scatter preview', () => {
 
 		scatter.dispose();
 		asset.dispose();
+
+	} );
+
+	it( 'disposes every instanced mesh before clearing the scatter group', () => {
+
+		const geometry = new BufferGeometry();
+		geometry.setIndex( [ 0, 1, 2 ] );
+		const material = new MeshStandardMaterial();
+		const asset = {
+			data: { parts: [ { name: 'leaf' }, { name: 'bark' } ] },
+			materials: [ material, material ],
+			getParts: () => [
+				{ part: 'leaf', geometry },
+				{ part: 'bark', geometry },
+			],
+		} as unknown as VegetationAsset;
+		const scatter = createScatter( asset, 2, 23 );
+		const meshes = [ ... scatter.group.children ] as InstancedMesh[];
+		const disposedMeshes = new Set<InstancedMesh>();
+
+		for ( const mesh of meshes ) {
+			mesh.addEventListener( 'dispose', () => disposedMeshes.add( mesh ) );
+		}
+
+		scatter.dispose();
+		expect( disposedMeshes.size ).toBe( meshes.length );
+		expect( scatter.group.children ).toHaveLength( 0 );
+
+		geometry.dispose();
+		material.dispose();
 
 	} );
 

@@ -151,6 +151,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 
 	function dispose(): void {
 
+		for ( const batch of batches ) batch.mesh.dispose();
 		group.clear();
 		for ( const geometry of emptyGeometries ) geometry.dispose();
 		batches.length = 0;

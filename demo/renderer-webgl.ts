@@ -1,7 +1,7 @@
 import {
 	ACESFilmicToneMapping,
 	Camera,
-	PCFSoftShadowMap,
+	PCFShadowMap,
 	Scene,
 	SRGBColorSpace,
 	WebGLRenderer,
@@ -25,7 +25,7 @@ export function createRenderer(): PreviewRenderer {
 	renderer.toneMapping = ACESFilmicToneMapping;
 	renderer.toneMappingExposure = 1.05;
 	renderer.shadowMap.enabled = true;
-	renderer.shadowMap.type = PCFSoftShadowMap;
+	renderer.shadowMap.type = PCFShadowMap;
 
 	return renderer;
 

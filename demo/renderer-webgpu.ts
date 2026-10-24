@@ -1,6 +1,6 @@
 import {
 	ACESFilmicToneMapping,
-	PCFSoftShadowMap,
+	PCFShadowMap,
 	SRGBColorSpace,
 	WebGPURenderer,
 } from 'three/webgpu';
@@ -14,7 +14,7 @@ export async function createRenderer(): Promise<PreviewRenderer> {
 	renderer.toneMapping = ACESFilmicToneMapping;
 	renderer.toneMappingExposure = 1.05;
 	renderer.shadowMap.enabled = true;
-	renderer.shadowMap.type = PCFSoftShadowMap;
+	renderer.shadowMap.type = PCFShadowMap;
 
 	return renderer;
 
