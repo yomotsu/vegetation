@@ -103,6 +103,48 @@ function opaqueNeighborGradientValues( texture: { width: number; height: number;
 
 }
 
+function meanOpaqueLuminanceInColumnRange( texture: { width: number; height: number; data: Uint8Array }, startX: number, endX: number ): number {
+
+	const values: number[] = [];
+
+	for ( let y = 20; y < texture.height - 20; y ++ ) {
+
+		for ( let x = startX; x < endX; x ++ ) {
+
+			const offset = ( y * texture.width + x ) * 4;
+
+			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+			values.push( 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]! );
+
+		}
+
+	}
+
+	return values.reduce( ( total, value ) => total + value, 0 ) / values.length;
+
+}
+
+function opaqueRowLuminance( texture: { width: number; data: Uint8Array }, y: number, startX: number, endX: number ): number | null {
+
+	let total = 0;
+	let count = 0;
+
+	for ( let x = startX; x < endX; x ++ ) {
+
+		const offset = ( y * texture.width + x ) * 4;
+
+		if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+		total += 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]!;
+		count ++;
+
+	}
+
+	return count === 0 ? null : total / count;
+
+}
+
 function percentile( values: number[], fraction: number ): number {
 
 	const sorted = [ ...values ].sort( ( a, b ) => a - b );
@@ -222,7 +264,7 @@ describe( 'fir sprig texture', () => {
 		expect( mean( blue ) ).toBeGreaterThanOrEqual( 4 );
 		expect( mean( blue ) ).toBeLessThanOrEqual( 9 );
 		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 41 );
-		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 47 );
+		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 49 );
 		expect( percentile( luminance, 0.5 ) ).toBeGreaterThanOrEqual( 54 );
 		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 60 );
 		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 71 );
@@ -245,6 +287,37 @@ describe( 'fir sprig texture', () => {
 		const luminance = opaqueChannelValues( texture, 3 );
 
 		expect( percentile( luminance, 0.9 ) - percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 27 );
+
+	} );
+
+	it( 'keeps the sprig centerline from forming a dark radial stripe', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const center = meanOpaqueLuminanceInColumnRange( texture, 126, 130 );
+		const sides = ( meanOpaqueLuminanceInColumnRange( texture, 118, 124 ) + meanOpaqueLuminanceInColumnRange( texture, 132, 138 ) ) / 2;
+
+		expect( center ).toBeGreaterThanOrEqual( sides - 2.75 );
+
+	} );
+
+	it( 'keeps the darkest centerline rows close to their side texture', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const contrasts: number[] = [];
+
+		for ( let y = 20; y < texture.height - 20; y ++ ) {
+
+			const center = opaqueRowLuminance( texture, y, 126, 131 );
+			const left = opaqueRowLuminance( texture, y, 118, 124 );
+			const right = opaqueRowLuminance( texture, y, 132, 138 );
+
+			if ( center === null || left === null || right === null ) continue;
+
+			contrasts.push( center - ( left + right ) * 0.5 );
+
+		}
+
+		expect( percentile( contrasts, 0.1 ) ).toBeGreaterThanOrEqual( - 2.5 );
 
 	} );
 

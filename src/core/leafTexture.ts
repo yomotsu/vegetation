@@ -145,6 +145,54 @@ function matchLeafColorDistribution( data: Uint8Array, width: number, size: numb
 
 }
 
+function softenSprigCenterline( data: Uint8Array, width: number, size: number, seed: number ): void {
+
+	const sideOffsets = [ - 10, - 9, - 8, - 7, - 6, - 5, - 4, 4, 5, 6, 7, 8, 9, 10 ];
+
+	for ( let y = 1; y < size - 1; y ++ ) {
+
+		const center = size * 0.5 + Math.sin( y / size * Math.PI * 1.3 + seed * 0.37 ) * size * 0.009;
+		const centerX = Math.round( center );
+		const sideColor = [ 0, 0, 0 ];
+		let sideCount = 0;
+
+		for ( const sideOffset of sideOffsets ) {
+
+			const x = centerX + sideOffset;
+
+			if ( x < 0 || x >= size ) continue;
+
+			const offset = ( y * width + x ) * 4;
+
+			if ( data[ offset + 3 ]! < 128 ) continue;
+
+			for ( let channel = 0; channel < 3; channel ++ ) sideColor[ channel ]! += data[ offset + channel ]!;
+			sideCount ++;
+
+		}
+
+		if ( sideCount === 0 ) continue;
+
+		for ( let x = centerX - 4; x <= centerX + 4; x ++ ) {
+
+			if ( x < 0 || x >= size ) continue;
+
+			const offset = ( y * width + x ) * 4;
+
+			if ( data[ offset + 3 ]! < 128 ) continue;
+
+			for ( let channel = 0; channel < 3; channel ++ ) {
+
+				data[ offset + channel ] = Math.round( lerp( data[ offset + channel ]!, sideColor[ channel ]! / sideCount, 0.95 ) );
+
+			}
+
+		}
+
+	}
+
+}
+
 function drawSprig( data: Uint8Array, width: number, size: number, seed: number ): void {
 
 	const random = createRandom( seed );
@@ -163,15 +211,6 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 
 	}
 
-	for ( let i = 1; i < stemPoints.length; i ++ ) {
-
-		const a = stemPoints[ i - 1 ]!;
-		const b = stemPoints[ i ]!;
-
-		drawStroke( data, width, size, a, b, 1.2 * pixelScale, 0.8 * pixelScale, [ 20, 66, 4 ], [ 26, 75, 5 ] );
-
-	}
-
 	for ( const [ stemX, y ] of stemPoints ) {
 
 		const v = y / size;
@@ -185,7 +224,7 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 			for ( let needle = 0; needle < needleCount; needle ++ ) {
 
 				const baseY = y + random.range( - 1.2, 1.2 ) * pixelScale;
-				const rootX = stemX + random.range( - 1.4, 1.4 ) * pixelScale;
+				const rootX = stemX + random.range( - 0.8, 0.8 ) * pixelScale;
 				const length = envelope * random.range( needle === 0 ? 0.68 : 0.48, needle === 0 ? 1.02 : 0.82 );
 				const rise = length * random.range( 0.24, 0.42 );
 				const curveX = side * length * random.range( 0.42, 0.61 );
@@ -197,7 +236,7 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 				const variation = random.range( 0.82, 1.18 );
 				const dark = getNeedleColor( random, false, variation );
 				const bright = getNeedleColor( random, true, variation );
-				const stemWidth = random.range( 13.5, 16.5 ) * pixelScale;
+				const stemWidth = random.range( 8, 11 ) * pixelScale;
 				const tipWidth = random.range( 2.4, 3.4 ) * pixelScale;
 
 				drawStroke( data, width, size, [ rootX, baseY ], [ midX, midY ], stemWidth, ( stemWidth + tipWidth ) * 0.52, dark, bright );
@@ -297,6 +336,7 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 
 	drawSprig( data, width, size, seed );
 	matchLeafColorDistribution( data, width, size );
+	softenSprigCenterline( data, width, size, seed );
 	if ( padEdges ) {
 
 		padTextureEdges( { width, height: size, data } );

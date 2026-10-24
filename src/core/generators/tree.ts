@@ -198,7 +198,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 			const pitchJitter = branchRandom.range( - 4, 4 );
 			const pitchDelta = 25 * branchRandom.range( 0.8, 1.2 );
 
-			fronds.push( makeFrond( base, angle, length, width, 0.27 * branchRandom.range( 0.8, 1.2 ), startPitch + pitchJitter, startPitch + pitchJitter + pitchDelta, tierRadius, false, crownSize ) );
+			fronds.push( makeFrond( base, angle, length, width, 0.12 * branchRandom.range( 0.8, 1.2 ), startPitch + pitchJitter, startPitch + pitchJitter + pitchDelta, tierRadius, false, crownSize ) );
 
 		}
 
@@ -208,12 +208,11 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 			const angle = angleOffset + Math.PI / 5;
 			const length = 0.27 * heightScale;
 			const width = length * 0.85 * crownSize;
-			const startDistance = branchRandom.range( 0.05, 0.11 ) * heightScale;
 			const leaderY = height * 0.947;
 			const leaderPoint = getTrunkPoint( trunk.spine, height, leaderY / height );
-			const base = [ leaderPoint[ 0 ] + Math.cos( angle ) * startDistance, leaderY, leaderPoint[ 2 ] + Math.sin( angle ) * startDistance ] as Vec3;
+			const base = leaderPoint;
 
-			fronds.push( makeFrond( base, angle, length, width, 0.27 * branchRandom.range( 0.8, 1.2 ), 60 + branchRandom.range( - 4, 4 ), 85 + branchRandom.range( - 2, 2 ), tierRadius, true, crownSize ) );
+			fronds.push( makeFrond( base, angle, length, width, 0.12 * branchRandom.range( 0.8, 1.2 ), 60 + branchRandom.range( - 4, 4 ), 85 + branchRandom.range( - 2, 2 ), tierRadius, true, crownSize ) );
 
 		}
 
@@ -238,11 +237,10 @@ function getFrondWind( point: Vec3, frond: Frond ): number {
 
 }
 
-function getFrondVertexColor( longitudinal: number, lateral: number, radius: number ): Color3 {
+function getFrondVertexColor( longitudinal: number, radius: number ): Color3 {
 
-	const midrib = 1 - Math.abs( lateral * 2 - 1 );
-	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.18;
-	const green = 1.04 + tierLift - longitudinal * 0.08 + midrib * 0.04;
+	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.08;
+	const green = 1.09 + tierLift - longitudinal * 0.04;
 
 	return [ 0.35, green, 0.2 ];
 
@@ -266,9 +264,9 @@ function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: numb
 			const widthOffset = ( u - 0.5 ) * frond.width;
 			const foldOffset = Math.abs( u * 2 - 1 ) * frond.width * frond.fold;
 			const point = add( add( center, multiply( frond.widthDirection, widthOffset ) ), [ 0, foldOffset, 0 ] );
-			const uv: [ number, number ] = [ inset + ( 1 / 3 - inset * 2 ) * u, 1 - t ];
+			const uv: [ number, number ] = [ inset + ( 1 / 3 - inset * 2 ) * u, t ];
 
-			indices.push( builder.addVertex( point, [ 0, 1, 0 ], uv, getFrondVertexColor( t, u, frond.radius ), getFrondWind( point, frond ) ) );
+			indices.push( builder.addVertex( point, [ 0, 1, 0 ], uv, getFrondVertexColor( t, frond.radius ), getFrondWind( point, frond ) ) );
 
 		}
 

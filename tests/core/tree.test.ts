@@ -142,7 +142,7 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps a soft green ramp along fronds and a subtle midrib lift', () => {
+	it( 'keeps a soft green ramp without a fold color stripe', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
@@ -151,15 +151,12 @@ describe( 'conifer tree data', () => {
 		const midribOffset = ( firstVertex + 4 ) * 3;
 
 		expect( mesh.colors[ edgeOffset ] ).toBeCloseTo( 0.35, 5 );
-		expect( mesh.colors[ edgeOffset + 1 ] ).toBeGreaterThan( 1.2 );
-		expect( mesh.colors[ edgeOffset + 1 ] ).toBeLessThan( 1.23 );
+		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 1.17, 2 );
 		expect( mesh.colors[ edgeOffset + 2 ] ).toBeCloseTo( 0.2, 5 );
 		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 0.35, 5 );
-		expect( mesh.colors[ midribOffset + 1 ] ).toBeGreaterThan( 1.2 );
-		expect( mesh.colors[ midribOffset + 1 ] ).toBeLessThan( 1.24 );
+		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1.154, 2 );
 		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 0.2, 5 );
-		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeGreaterThan( 1.12 );
-		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeLessThan( 1.15 );
+		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.13, 2 );
 
 	} );
 
@@ -173,8 +170,26 @@ describe( 'conifer tree data', () => {
 		const lowerGreen = mesh.colors[ lowerVertex * 3 + 1 ]!;
 		const upperGreen = mesh.colors[ upperVertex * 3 + 1 ]!;
 
-		expect( lowerGreen - upperGreen ).toBeGreaterThan( 0.1 );
-		expect( lowerGreen - upperGreen ).toBeLessThan( 0.19 );
+		expect( lowerGreen - upperGreen ).toBeGreaterThan( 0.05 );
+		expect( lowerGreen - upperGreen ).toBeLessThan( 0.09 );
+
+	} );
+
+	it( 'softens color variation across fronds and between tiers', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const firstVertex = mesh.indices[ leaves.start ]!;
+		const edgeGreen = mesh.colors[ firstVertex * 3 + 1 ]!;
+		const centerGreen = mesh.colors[ ( firstVertex + 1 ) * 3 + 1 ]!;
+		const tipGreen = mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ]!;
+		const lastFrondIndex = frondCount( mesh, 8 ) - 1;
+		const upperVertex = mesh.indices[ leaves.start + lastFrondIndex * 24 ]!;
+		const upperGreen = mesh.colors[ upperVertex * 3 + 1 ]!;
+
+		expect( Math.abs( centerGreen - edgeGreen ) ).toBeLessThanOrEqual( 0.01 );
+		expect( edgeGreen - tipGreen ).toBeLessThanOrEqual( 0.05 );
+		expect( edgeGreen - upperGreen ).toBeLessThanOrEqual( 0.1 );
 
 	} );
 
@@ -264,7 +279,7 @@ describe( 'conifer tree data', () => {
 					expect( mesh.normals[ offset + 1 ] ).toBeCloseTo( 1 );
 					expect( mesh.normals[ offset + 2 ] ).toBeCloseTo( 0 );
 					expect( mesh.uvs[ uvOffset ]! * 3 ).toBeCloseTo( column * 0.5, 2 );
-					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( [ 1, 0.6, 0 ][ row ]! );
+					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( [ 0, 0.4, 1 ][ row ]! );
 
 				}
 
@@ -276,10 +291,45 @@ describe( 'conifer tree data', () => {
 			const width = Math.hypot( right[ 0 ] - left[ 0 ], right[ 2 ] - left[ 2 ] );
 			const fold = ( left[ 1 ] + right[ 1 ] ) * 0.5 - midrib[ 1 ];
 
-			expect( fold / width ).toBeGreaterThanOrEqual( 0.2 );
-			expect( fold / width ).toBeLessThanOrEqual( 0.34 );
+			expect( fold / width ).toBeGreaterThanOrEqual( 0.096 );
+			expect( fold / width ).toBeLessThanOrEqual( 0.144 );
 
 		}
+
+	} );
+
+	it( 'roots the leader frond close to the trunk center', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const leaderBase = frondPoint( mesh, leaves, frondCount( mesh, 8 ) - 1, 0, 1 );
+		const sides = 7;
+		const lowerRing = 5;
+		const upperRing = 6;
+		const lowerCenter = [ 0, 0 ];
+		const upperCenter = [ 0, 0 ];
+
+		for ( let side = 0; side < sides; side ++ ) {
+
+			for ( const [ ring, center ] of [ [ lowerRing, lowerCenter ], [ upperRing, upperCenter ] ] as [ number, number[] ][] ) {
+
+				const vertex = ring * sides + side;
+				center[ 0 ]! += mesh.positions[ vertex * 3 ]! / sides;
+				center[ 1 ]! += mesh.positions[ vertex * 3 + 2 ]! / sides;
+
+			}
+
+		}
+
+		const lowerY = mesh.positions[ lowerRing * sides * 3 + 1 ]!;
+		const upperY = mesh.positions[ upperRing * sides * 3 + 1 ]!;
+		const amount = ( leaderBase[ 1 ] - lowerY ) / ( upperY - lowerY );
+		const trunkCenter = [
+			lowerCenter[ 0 ]! + ( upperCenter[ 0 ]! - lowerCenter[ 0 ]! ) * amount,
+			lowerCenter[ 1 ]! + ( upperCenter[ 1 ]! - lowerCenter[ 1 ]! ) * amount,
+		];
+
+		expect( Math.hypot( leaderBase[ 0 ] - trunkCenter[ 0 ]!, leaderBase[ 2 ] - trunkCenter[ 1 ]! ) ).toBeLessThanOrEqual( 0.01 );
 
 	} );
 
