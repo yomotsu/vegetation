@@ -3,6 +3,7 @@ import {
 	LineBasicMaterial,
 	LineSegments,
 	Mesh,
+	MeshBasicMaterial,
 	PerspectiveCamera,
 	WireframeGeometry,
 } from 'three';
@@ -14,7 +15,7 @@ import { kinds } from './registry';
 import type { VegetationKind } from './registry';
 import { createScatter } from './scatter';
 import type { ScatterController } from './scatter';
-import { createPreviewScene, setPreviewShadowFlags } from './rendering';
+import { createPreviewScene, createWebGpuShadowProxy, setPreviewShadowFlags } from './rendering';
 import type { PreviewRenderer } from './rendering';
 
 type ViewMode = 'single' | 'compare' | 'scatter';
@@ -70,6 +71,7 @@ let optionFolder: GUI | null = null;
 let colorFolder: GUI | null = null;
 let labels: CompareLabel[] = [];
 let colliderLines: LineSegments[] = [];
+let shadowProxies: Mesh[] = [];
 let lastScatterShadowUpdate = - Infinity;
 
 for ( const part of activeKind.colorParts ) {
@@ -152,10 +154,28 @@ function disposePreview(): void {
 
 	}
 
+	for ( const proxy of shadowProxies ) {
+
+		proxy.geometry.dispose();
+		( proxy.material as MeshBasicMaterial ).dispose();
+
+	}
+	shadowProxies = [];
+
 	colliderLines = [];
 	root.clear();
 	compareLabels.replaceChildren();
 	labels = [];
+
+}
+
+function addWebGpuShadowProxy( mesh: Mesh ): void {
+
+	if ( import.meta.env.MODE !== 'webgpu' ) return;
+
+	const proxy = createWebGpuShadowProxy( mesh );
+	root.add( proxy );
+	shadowProxies.push( proxy );
 
 }
 
@@ -205,6 +225,7 @@ function rebuildPreview(): void {
 		const mesh = new VegetationMesh( asset, state.lod );
 		setPreviewShadowFlags( mesh );
 		root.add( mesh );
+		addWebGpuShadowProxy( mesh );
 		addCollider( 0, state.collider );
 	} else if ( state.mode === 'compare' ) {
 		for ( let lod = 0; lod < 5; lod ++ ) {
@@ -214,6 +235,7 @@ function rebuildPreview(): void {
 			mesh.position.x = x;
 			setPreviewShadowFlags( mesh );
 			root.add( mesh );
+			addWebGpuShadowProxy( mesh );
 			addCollider( x, state.collider );
 
 			const label = document.createElement( 'div' );

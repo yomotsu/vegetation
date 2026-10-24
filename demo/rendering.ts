@@ -6,6 +6,7 @@ import {
 	Fog,
 	HemisphereLight,
 	Mesh,
+	MeshBasicMaterial,
 	MeshStandardMaterial,
 	Object3D,
 	PCFShadowMap,
@@ -83,5 +84,25 @@ export function setPreviewShadowFlags( object: Object3D ): void {
 
 	object.castShadow = true;
 	object.receiveShadow = true;
+
+}
+
+export function createWebGpuShadowProxy( object: Mesh ): Mesh {
+
+	object.castShadow = false;
+	const geometry = object.geometry.clone();
+	geometry.clearGroups();
+
+	const proxy = new Mesh(
+		geometry,
+		new MeshBasicMaterial( { colorWrite: false, depthWrite: false } ),
+	);
+	proxy.position.copy( object.position );
+	proxy.rotation.copy( object.rotation );
+	proxy.scale.copy( object.scale );
+	proxy.layers.mask = object.layers.mask;
+	proxy.castShadow = true;
+
+	return proxy;
 
 }
