@@ -125,6 +125,7 @@ describe( 'stylized broadleaf tree data', () => {
 		expect( counts[ 1 ] ).toBeGreaterThan( counts[ 2 ]! );
 		expect( counts[ 2 ] ).toBeGreaterThan( counts[ 3 ]! );
 		expect( counts[ 3 ] ).toBeGreaterThan( counts[ 4 ]! );
+		expect( counts[ 3 ] ).toBeLessThanOrEqual( 40 );
 		expect( counts[ 4 ] ).toBeLessThanOrEqual( 12 );
 		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, 2 ) );
 
@@ -237,6 +238,52 @@ describe( 'stylized broadleaf tree data', () => {
 
 	} );
 
+	it( 'winds the LOD3 crossed cards toward explicit outward fronts', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 3 ]!;
+		const leaves = mesh.groups.find( ( group ) => group.partIndex === 1 )!;
+		const [ minX, minY, minZ, maxX, maxY, maxZ ] = leafBounds( mesh );
+		const center = [ ( minX + maxX ) * 0.5, ( minY + maxY ) * 0.5, ( minZ + maxZ ) * 0.5 ];
+		const frontNormals = [ [ 0, 0, 1 ], [ - 1, 0, 0 ], [ Math.SQRT1_2, 0, Math.SQRT1_2 ] ];
+
+		for ( let card = 0; card < frontNormals.length; card ++ ) {
+
+			const front = frontNormals[ card ]!;
+
+			for ( let triangle = 0; triangle < 2; triangle ++ ) {
+
+				const start = leaves.start + card * 6 + triangle * 3;
+				const indices = [ mesh.indices[ start ]!, mesh.indices[ start + 1 ]!, mesh.indices[ start + 2 ]! ];
+				const points = indices.map( ( index ) => [ mesh.positions[ index * 3 ]!, mesh.positions[ index * 3 + 1 ]!, mesh.positions[ index * 3 + 2 ]! ] );
+				const first = points[ 0 ]!;
+				const second = points[ 1 ]!;
+				const third = points[ 2 ]!;
+				const edgeA = [ second[ 0 ]! - first[ 0 ]!, second[ 1 ]! - first[ 1 ]!, second[ 2 ]! - first[ 2 ]! ];
+				const edgeB = [ third[ 0 ]! - first[ 0 ]!, third[ 1 ]! - first[ 1 ]!, third[ 2 ]! - first[ 2 ]! ];
+				const geometricNormal = [
+					edgeA[ 1 ]! * edgeB[ 2 ]! - edgeA[ 2 ]! * edgeB[ 1 ]!,
+					edgeA[ 2 ]! * edgeB[ 0 ]! - edgeA[ 0 ]! * edgeB[ 2 ]!,
+					edgeA[ 0 ]! * edgeB[ 1 ]! - edgeA[ 1 ]! * edgeB[ 0 ]!,
+				];
+
+				expect( geometricNormal.reduce( ( sum, value, axis ) => sum + value * front[ axis ]!, 0 ) ).toBeGreaterThan( 0 );
+
+			}
+
+		}
+
+		for ( let index = leaves.start; index < leaves.start + leaves.count; index ++ ) {
+
+			const vertex = mesh.indices[ index ]!;
+			const offset = vertex * 3;
+			const normalDotPosition = [ 0, 1, 2 ].reduce( ( sum, axis ) => sum + mesh.normals[ offset + axis ]! * ( mesh.positions[ offset + axis ]! - center[ axis ]! ), 0 );
+
+			expect( normalDotPosition ).toBeGreaterThan( 0 );
+
+		}
+
+	} );
+
 	it( 'bakes an opaque canopy across at least eighty percent of its inscribed +Z crown ellipse', () => {
 
 		const data = generateTreeData( { seed: 1 } );
@@ -336,6 +383,42 @@ describe( 'stylized broadleaf tree data', () => {
 			expect( canopyCards ).toBe( 3 );
 
 		}
+
+	} );
+
+	it( 'keeps the baked LOD3 canopy silhouette close to LOD0 and ends its trunk inside the crown', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const colors = defaultColors( data );
+		const reference = bakeImpostor( data, colors, 128 );
+		const lod3Data = { ...data, lods: [ data.lods[ 3 ]!, ...data.lods.slice( 1 ) ] };
+		const candidate = bakeImpostor( lod3Data, colors, 128 );
+		let intersection = 0;
+		let union = 0;
+
+		for ( let i = 3; i < reference.data.length; i += 4 ) {
+
+			const referenceOpaque = reference.data[ i ]! === 255;
+			const candidateOpaque = candidate.data[ i ]! === 255;
+
+			if ( referenceOpaque && candidateOpaque ) intersection ++;
+			if ( referenceOpaque || candidateOpaque ) union ++;
+
+		}
+
+		expect( intersection / union ).toBeGreaterThanOrEqual( 0.75 );
+
+		const trunk = data.lods[ 3 ]!;
+		const bark = trunk.groups.find( ( group ) => group.partIndex === 0 )!;
+		let trunkMaximumY = - Infinity;
+
+		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
+
+			trunkMaximumY = Math.max( trunkMaximumY, trunk.positions[ trunk.indices[ i ]! * 3 + 1 ]! );
+
+		}
+
+		expect( trunkMaximumY ).toBeLessThanOrEqual( data.bounds.height * 0.68 );
 
 	} );
 

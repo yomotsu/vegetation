@@ -3,7 +3,7 @@ import { buildBillboard, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
-import type { Color3, ColliderData, MeshData, Vec3, VegetationData } from '../types';
+import type { Color3, ColliderData, MeshData, TextureData, Vec3, VegetationData } from '../types';
 import { createLeafClusterTexture } from '../leafTexture';
 
 export interface TreeOptions {
@@ -101,6 +101,55 @@ function normalize( vector: Vec3 ): Vec3 {
 function clamp( value: number, minimum: number, maximum: number ): number {
 
 	return Math.max( minimum, Math.min( maximum, value ) );
+
+}
+
+function createLeafAtlas( leafTexture: TextureData ): TextureData {
+
+	const width = leafTexture.width * 2;
+	const height = leafTexture.height;
+	const data = new Uint8Array( width * height * 4 );
+	const repeats = 4;
+
+	for ( let y = 0; y < height; y ++ ) {
+
+		for ( let x = 0; x < leafTexture.width; x ++ ) {
+
+			const source = ( y * leafTexture.width + x ) * 4;
+			const target = ( y * width + x ) * 4;
+
+			data[ target ] = leafTexture.data[ source ]!;
+			data[ target + 1 ] = leafTexture.data[ source + 1 ]!;
+			data[ target + 2 ] = leafTexture.data[ source + 2 ]!;
+			data[ target + 3 ] = leafTexture.data[ source + 3 ]!;
+
+		}
+
+		for ( let x = 0; x < leafTexture.width; x ++ ) {
+
+			const u = ( x + 0.5 ) / leafTexture.width;
+			const v = ( y + 0.5 ) / height;
+			const offsetX = ( u - 0.5 ) * 2;
+			const offsetY = ( v - 0.5 ) * 2;
+			const angle = Math.atan2( offsetY, offsetX );
+			const edge = 0.97 + Math.sin( angle * 11 ) * 0.018 + Math.cos( angle * 17 ) * 0.012;
+			const inside = offsetX * offsetX + offsetY * offsetY <= edge * edge;
+			const sampleX = Math.floor( ( u * repeats % 1 ) * leafTexture.width );
+			const sampleY = Math.floor( ( v * repeats % 1 ) * leafTexture.height );
+			const sample = ( sampleY * leafTexture.width + sampleX ) * 4;
+			const target = ( y * width + leafTexture.width + x ) * 4;
+			const gray = leafTexture.data[ sample + 3 ] === 255 ? Math.max( 191, leafTexture.data[ sample ]! - 24 ) : 232;
+
+			data[ target ] = inside ? gray : 255;
+			data[ target + 1 ] = inside ? gray : 255;
+			data[ target + 2 ] = inside ? gray : 255;
+			data[ target + 3 ] = inside ? 255 : 0;
+
+		}
+
+	}
+
+	return { width, height, data };
 
 }
 
@@ -376,7 +425,7 @@ function addReducedMainBranches( builder: MeshBuilder, branches: BranchLayout[],
 
 }
 
-function addLeafCard( builder: MeshBuilder, card: LeafCard, cluster: LeafCluster, height: number ): void {
+function addLeafCard( builder: MeshBuilder, card: LeafCard, cluster: LeafCluster, height: number, uvRegion: [ number, number ] = [ 0, 0.5 ], fixedWinding = false ): void {
 
 	const corners = [
 		add( add( card.center, multiply( card.right, - 1 ) ), multiply( card.up, - 1 ) ),
@@ -395,7 +444,7 @@ function addLeafCard( builder: MeshBuilder, card: LeafCard, cluster: LeafCluster
 
 		}
 
-		return [ u, v ] as [ number, number ];
+		return [ uvRegion[ 0 ] + u * uvRegion[ 1 ], v ] as [ number, number ];
 
 	} );
 	const normals = corners.map( ( corner ) => normalize( subtract( corner, cluster.center ) ) );
@@ -403,7 +452,7 @@ function addLeafCard( builder: MeshBuilder, card: LeafCard, cluster: LeafCluster
 	const averageNormal = normals.reduce( ( sum, normal ) => add( sum, normal ), [ 0, 0, 0 ] as Vec3 );
 	const outward = Math.hypot( cardOffset[ 0 ], cardOffset[ 1 ], cardOffset[ 2 ] ) < cluster.radius * 0.05 ? averageNormal : cardOffset;
 	const frontNormal = normalize( cross( card.right, card.up ) );
-	const reverseWinding = dot( frontNormal, outward ) < 0;
+	const reverseWinding = fixedWinding ? false : dot( frontNormal, outward ) < 0;
 	const indices = corners.map( ( corner, i ) => {
 
 		const distance = Math.hypot( corner[ 0 ] - cluster.center[ 0 ], corner[ 1 ] - cluster.center[ 1 ], corner[ 2 ] - cluster.center[ 2 ] ) / cluster.radius;
@@ -566,9 +615,9 @@ function getLeafLayoutBounds( clusters: LeafCluster[] ): [ number, number, numbe
 function buildLod3( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
-	const trunkIndices = [ 0, 3, 6 ];
-	const trunkSpine = trunkIndices.map( ( index ) => layout.trunkSpine[ index ]! );
-	const trunkRadii = trunkIndices.map( ( index ) => layout.trunkRadii[ index ]! );
+	const trunkTop = clamp( layout.firstBranchRatio + 0.08, 0.44, 0.86 );
+	const trunkSpine = [ layout.trunkSpine[ 0 ]!, layout.trunkSpine[ 3 ]!, getTrunkPoint( layout.trunkSpine, trunkTop ) ];
+	const trunkRadii = [ layout.trunkRadii[ 0 ]!, layout.trunkRadii[ 3 ]!, interpolateRadius( layout.trunkRadii, trunkTop ) ];
 
 	builder.beginGroup( 0 );
 	addTube( builder, trunkSpine, trunkRadii, 3, {
@@ -583,20 +632,26 @@ function buildLod3( layout: TreeLayout ): MeshData {
 	const width = maxX - minX;
 	const height = maxY - minY;
 	const depth = maxZ - minZ;
-	const horizontalHalf = Math.max( width, depth ) * Math.SQRT1_2;
 	const silhouette: LeafCluster = { center, radius: Math.max( width, height, depth ) * 0.5, cards: [], lod0CardCount: 0 };
 
 	builder.beginGroup( 1 );
 
-	const cards: LeafCard[] = [
-		{ center, right: [ horizontalHalf * Math.SQRT1_2, 0, - horizontalHalf * Math.SQRT1_2 ], up: [ 0, height * 0.5, 0 ], uvRotation: 0, uvFlip: false },
-		{ center, right: [ horizontalHalf * Math.SQRT1_2, 0, horizontalHalf * Math.SQRT1_2 ], up: [ 0, height * 0.5, 0 ], uvRotation: 1, uvFlip: false },
-		{ center: [ center[ 0 ], maxY - height * 0.16, center[ 2 ] ], right: [ width * 0.5, 0, 0 ], up: [ 0, 0, - depth * 0.5 ], uvRotation: 2, uvFlip: false },
+	const cardAxes: [ Vec3, number ][] = [
+		[ [ 0, 0, 1 ], width * 0.47 ],
+		[ [ - 1, 0, 0 ], depth * 0.47 ],
+		[ [ Math.SQRT1_2, 0, Math.SQRT1_2 ], Math.max( width, depth ) * 0.47 ],
 	];
+	const cards = cardAxes.map( ( [ normal, halfWidth ], index ): LeafCard => ( {
+		center,
+		right: [ normal[ 2 ] * halfWidth, 0, - normal[ 0 ] * halfWidth ],
+		up: [ 0, height * 0.47, 0 ],
+		uvRotation: index,
+		uvFlip: false,
+	} ) );
 
 	for ( const card of cards ) {
 
-		addLeafCard( builder, card, silhouette, layout.height );
+		addLeafCard( builder, card, silhouette, layout.height, [ 0.5, 0.5 ], true );
 
 	}
 
@@ -669,7 +724,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	}
 
 	const layout = createTreeLayout( seed, height, crownSize, branchCount );
-	const leafTexture = createLeafClusterTexture( seed );
+	const leafTexture = createLeafAtlas( createLeafClusterTexture( seed ) );
 	const lod0 = buildLod0( layout );
 	const lod1 = buildLod1( layout );
 	const lod2 = buildLod2( layout );

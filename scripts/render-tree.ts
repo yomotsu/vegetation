@@ -117,6 +117,7 @@ async function main(): Promise<void> {
 	const data = generateTreeData( { seed } );
 	const colors = data.parts.map( ( part ) => hexToLinear( part.defaultColor ) );
 	const suffix = `tree-seed${ seed }`;
+	const renders: TextureData[] = [];
 
 	await mkdir( outputDirectory, { recursive: true } );
 
@@ -126,6 +127,7 @@ async function main(): Promise<void> {
 		const image = bakeImpostor( lodData, colors, 256 );
 		const png = encodePng( image.width, image.height, composite( image ) );
 		const path = `${ outputDirectory }/${ suffix }-lod${ lod }.png`;
+		renders.push( image );
 
 		await writeFile( path, png );
 		process.stdout.write( `${ path }\n` );
@@ -137,6 +139,50 @@ async function main(): Promise<void> {
 		}
 
 	}
+
+	const lodZeroTexture = renders[ 0 ]!;
+	const billboardData: VegetationData = {
+		...data,
+		lods: [ data.lods[ 4 ]!, ...data.lods.slice( 1 ) ],
+		textures: { ...data.textures, impostor: lodZeroTexture },
+	};
+	const lod4 = bakeImpostor( billboardData, colors, 256 );
+	const lod4Path = `${ outputDirectory }/${ suffix }-lod4.png`;
+
+	await writeFile( lod4Path, encodePng( lod4.width, lod4.height, composite( lod4 ) ) );
+	process.stdout.write( `${ lod4Path }\n` );
+	renders.push( lod4 );
+
+	const panelSize = 256;
+	const comparisonWidth = panelSize * 3;
+	const comparisonHeight = panelSize * 2;
+	const comparisonPixels = Buffer.alloc( comparisonWidth * comparisonHeight * 4 );
+	const comparisonRenders = [ renders[ 0 ]!, renders[ 3 ]!, renders[ 4 ]! ];
+
+	for ( let view = 0; view < 2; view ++ ) {
+
+		for ( let panel = 0; panel < comparisonRenders.length; panel ++ ) {
+
+			const image = comparisonRenders[ panel ]!;
+			const pixels = composite( image );
+
+			for ( let y = 0; y < panelSize; y ++ ) {
+
+				const sourceStart = ( y * image.width + view * panelSize ) * 4;
+				const targetStart = ( ( view * panelSize + y ) * comparisonWidth + panel * panelSize ) * 4;
+
+				pixels.copy( comparisonPixels, targetStart, sourceStart, sourceStart + panelSize * 4 );
+
+			}
+
+		}
+
+	}
+
+	const comparisonPath = `${ outputDirectory }/${ suffix }-lod0-lod3-lod4.png`;
+
+	await writeFile( comparisonPath, encodePng( comparisonWidth, comparisonHeight, comparisonPixels ) );
+	process.stdout.write( `${ comparisonPath }\n` );
 
 }
 
