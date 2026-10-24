@@ -4,6 +4,7 @@ const projectRoot = new URL( '.', import.meta.url ).pathname;
 
 export default defineConfig( ( { mode } ) => ( {
 	root: new URL( './demo', import.meta.url ).pathname,
+	cacheDir: new URL( './node_modules/.vite-' + mode, import.meta.url ).pathname,
 	resolve: {
 		alias: [
 			...( mode === 'webgpu' ? [ { find: /^three$/, replacement: 'three/webgpu' } ] : [] ),
