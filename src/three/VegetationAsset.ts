@@ -112,6 +112,8 @@ export class VegetationAsset {
 				alphaTest: part.alphaTest,
 				alphaToCoverage: false,
 				transparent: false,
+				emissive: part.emissive ?? 0x000000,
+				emissiveIntensity: part.emissiveIntensity ?? 1,
 				roughness: part.roughness ?? 1,
 				metalness: 0,
 			} );

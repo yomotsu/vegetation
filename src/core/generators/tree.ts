@@ -278,10 +278,10 @@ function getFrondVertexColor( longitudinal: number, radius: number, lateral: num
 
 	if ( lateral === 0.5 ) return [ 1, 1, 1 ];
 
-	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.08;
-	const green = 1.09 + tierLift - longitudinal * 0.04;
+	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.03;
+	const green = 1.02 + tierLift - longitudinal * 0.015;
 
-	return [ 0.35, green, 0.2 ];
+	return [ 0.8, green, 0.65 ];
 
 }
 
@@ -593,6 +593,8 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 			defaultColor: 0xffffff,
 			texture: 'leaf',
 			roughness: 0.95,
+			emissive: 0x234b14,
+			emissiveIntensity: 0.45,
 			alphaTest: 0.5,
 			// 三角形数を抑え、両側から一枚の折れ面を見せる。
 			doubleSided: true,

@@ -112,6 +112,8 @@ describe( 'conifer tree data', () => {
 			doubleSided: true,
 			flatShading: false,
 			roughness: 0.95,
+			emissive: 0x234b14,
+			emissiveIntensity: 0.45,
 		} );
 		expect( data.parts[ 2 ] ).toEqual( impostorPart() );
 		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf' ] );
@@ -163,13 +165,13 @@ describe( 'conifer tree data', () => {
 		const edgeOffset = firstVertex * 3;
 		const midribOffset = ( firstVertex + 4 ) * 3;
 
-		expect( mesh.colors[ edgeOffset ] ).toBeCloseTo( 0.35, 5 );
-		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 1.17, 2 );
-		expect( mesh.colors[ edgeOffset + 2 ] ).toBeCloseTo( 0.2, 5 );
+		expect( mesh.colors[ edgeOffset ] ).toBeCloseTo( 0.8, 5 );
+		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 1.05, 2 );
+		expect( mesh.colors[ edgeOffset + 2 ] ).toBeCloseTo( 0.65, 5 );
 		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 1, 5 );
-		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.13, 2 );
+		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.035, 2 );
 
 	} );
 
@@ -206,8 +208,8 @@ describe( 'conifer tree data', () => {
 		const lowerGreen = mesh.colors[ lowerVertex * 3 + 1 ]!;
 		const upperGreen = mesh.colors[ upperVertex * 3 + 1 ]!;
 
-		expect( lowerGreen - upperGreen ).toBeGreaterThan( 0.05 );
-		expect( lowerGreen - upperGreen ).toBeLessThan( 0.09 );
+		expect( lowerGreen - upperGreen ).toBeGreaterThan( 0.015 );
+		expect( lowerGreen - upperGreen ).toBeLessThan( 0.04 );
 
 	} );
 

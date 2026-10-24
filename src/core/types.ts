@@ -23,6 +23,8 @@ export interface PartDef {
 	defaultColor: number; // sRGB hex（0x5a8f3a）
 	texture: string | null; // VegetationData.textures のキー（'impostor' は three 層で焼く）
 	roughness?: number;
+	emissive?: number;
+	emissiveIntensity?: number;
 	alphaTest: number; // テクスチャなしは 0
 	doubleSided: boolean;
 	flatShading: boolean;
