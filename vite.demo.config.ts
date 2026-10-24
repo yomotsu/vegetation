@@ -1,0 +1,18 @@
+import { defineConfig } from 'vite';
+
+const projectRoot = new URL( '.', import.meta.url ).pathname;
+
+export default defineConfig( ( { mode } ) => ( {
+	root: new URL( './demo', import.meta.url ).pathname,
+	resolve: {
+		alias: [
+			...( mode === 'webgpu' ? [ { find: /^three$/, replacement: 'three/webgpu' } ] : [] ),
+			{ find: 'vegetation', replacement: new URL( './src/index.ts', import.meta.url ).pathname },
+		],
+	},
+	server: {
+		fs: {
+			allow: [ projectRoot ],
+		},
+	},
+} ) );

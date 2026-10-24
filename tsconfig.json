@@ -7,7 +7,11 @@
 		"noUncheckedIndexedAccess": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
+		"baseUrl": ".",
+		"paths": {
+			"vegetation": [ "src/index.ts" ]
+		},
 		"types": [ "vitest/globals", "vite/client" ]
 	},
-	"include": [ "src/**/*.ts", "tests/**/*.ts", "vite.config.ts" ]
+	"include": [ "src/**/*.ts", "tests/**/*.ts", "demo/**/*.ts", "vite.config.ts", "vite.demo.config.ts" ]
 }
