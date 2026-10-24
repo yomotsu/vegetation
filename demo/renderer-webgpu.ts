@@ -1,20 +1,12 @@
-import {
-	ACESFilmicToneMapping,
-	PCFShadowMap,
-	SRGBColorSpace,
-	WebGPURenderer,
-} from 'three/webgpu';
-import type { PreviewRenderer } from './renderer-webgl';
+import { WebGPURenderer } from 'three/webgpu';
+import { configurePreviewRenderer } from './rendering';
+import type { PreviewRenderer } from './rendering';
 
 export async function createRenderer(): Promise<PreviewRenderer> {
 
 	const renderer = new WebGPURenderer( { antialias: true } );
+	configurePreviewRenderer( renderer );
 	await renderer.init();
-	renderer.outputColorSpace = SRGBColorSpace;
-	renderer.toneMapping = ACESFilmicToneMapping;
-	renderer.toneMappingExposure = 1.05;
-	renderer.shadowMap.enabled = true;
-	renderer.shadowMap.type = PCFShadowMap;
 
 	return renderer;
 

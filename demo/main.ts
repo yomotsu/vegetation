@@ -1,17 +1,9 @@
 import {
-	Color,
-	DirectionalLight,
-	Fog,
 	Group,
-	HemisphereLight,
 	LineBasicMaterial,
 	LineSegments,
 	Mesh,
-	MeshStandardMaterial,
-	PlaneGeometry,
 	PerspectiveCamera,
-	Scene,
-	Vector3,
 	WireframeGeometry,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -22,7 +14,8 @@ import { kinds } from './registry';
 import type { VegetationKind } from './registry';
 import { createScatter } from './scatter';
 import type { ScatterController } from './scatter';
-import type { PreviewRenderer } from './renderer-webgl';
+import { createPreviewScene, setPreviewShadowFlags } from './rendering';
+import type { PreviewRenderer } from './rendering';
 
 type ViewMode = 'single' | 'compare' | 'scatter';
 
@@ -48,42 +41,13 @@ const canvasContainer = document.querySelector<HTMLDivElement>( '#canvas' )!;
 const rendererLabel = document.querySelector<HTMLDivElement>( '#renderer-label' )!;
 const status = document.querySelector<HTMLDivElement>( '#status' )!;
 const compareLabels = document.querySelector<HTMLDivElement>( '#compare-labels' )!;
-const scene = new Scene();
-scene.background = new Color( '#c8e0e9' );
-scene.fog = new Fog( '#c8e0e9', 90, 190 );
+const { scene } = createPreviewScene();
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
 let controls: OrbitControls;
 
 const root = new Group();
 scene.add( root );
-
-const ground = new Mesh(
-	new PlaneGeometry( 200, 200 ),
-	new MeshStandardMaterial( { color: '#708654', roughness: 1, metalness: 0 } ),
-);
-ground.rotation.x = - Math.PI / 2;
-ground.position.y = - 0.02;
-ground.receiveShadow = true;
-scene.add( ground );
-
-const hemisphere = new HemisphereLight( '#e7f5ff', '#637044', 1.8 );
-scene.add( hemisphere );
-
-const sunlight = new DirectionalLight( '#fff1d6', 3.2 );
-sunlight.position.set( - 12, 22, 12 );
-sunlight.castShadow = true;
-sunlight.shadow.mapSize.set( 2048, 2048 );
-sunlight.shadow.camera.left = - 42;
-sunlight.shadow.camera.right = 42;
-sunlight.shadow.camera.top = 42;
-sunlight.shadow.camera.bottom = - 42;
-sunlight.shadow.camera.near = 0.5;
-sunlight.shadow.camera.far = 90;
-sunlight.shadow.bias = - 0.00025;
-sunlight.shadow.normalBias = 0.025;
-sunlight.shadow.radius = 3;
-scene.add( sunlight );
 
 const state: DemoState = {
 	kind: kinds[ 0 ]!.name,
@@ -238,8 +202,7 @@ function rebuildPreview(): void {
 
 	if ( state.mode === 'single' ) {
 		const mesh = new VegetationMesh( asset, state.lod );
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
+		setPreviewShadowFlags( mesh );
 		root.add( mesh );
 		addCollider( 0, state.collider );
 	} else if ( state.mode === 'compare' ) {
@@ -248,8 +211,7 @@ function rebuildPreview(): void {
 			const x = ( lod - 2 ) * 4.5;
 			const mesh = new VegetationMesh( asset, lod );
 			mesh.position.x = x;
-			mesh.castShadow = true;
-			mesh.receiveShadow = true;
+			setPreviewShadowFlags( mesh );
 			root.add( mesh );
 			addCollider( x, state.collider );
 

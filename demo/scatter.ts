@@ -10,6 +10,7 @@ import {
 } from 'three';
 import { createRandom } from '../src/index';
 import type { VegetationAsset } from '../src/index';
+import { setPreviewShadowFlags } from './rendering';
 
 const lodDistances = [ 12, 24, 42, 65 ];
 const up = new Vector3( 0, 1, 0 );
@@ -86,7 +87,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 				mesh.count = 0;
 				mesh.visible = false;
 				mesh.frustumCulled = false;
-				mesh.castShadow = true;
+				setPreviewShadowFlags( mesh );
 				mesh.instanceMatrix.setUsage( StaticDrawUsage );
 				mesh.userData.lod = lod;
 				mesh.userData.part = definition.name;

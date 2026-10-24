@@ -14,6 +14,7 @@ describe( 'scatter preview', () => {
 
 		expect( meshes ).toHaveLength( asset.data.parts.length * 5 );
 		expect( meshes.every( ( mesh ) => mesh instanceof InstancedMesh ) ).toBe( true );
+		expect( meshes.every( ( mesh ) => mesh.castShadow && mesh.receiveShadow ) ).toBe( true );
 
 		const camera = new PerspectiveCamera();
 		camera.position.set( 0, 3, 0 );
