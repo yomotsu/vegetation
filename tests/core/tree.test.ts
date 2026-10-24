@@ -50,6 +50,22 @@ function leafGroup( mesh: MeshData ) {
 
 }
 
+function frondPoint( mesh: MeshData, group: ReturnType<typeof leafGroup>, frondIndex: number, row: number, column: number, indicesPerFrond = 24 ): [ number, number, number ] {
+
+	const firstIndex = group.start + frondIndex * indicesPerFrond;
+	const firstVertex = mesh.indices[ firstIndex ]!;
+	const offset = ( firstVertex + row * 3 + column ) * 3;
+
+	return [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+
+}
+
+function frondCount( mesh: MeshData, trianglesPerFrond: number ): number {
+
+	return leafGroup( mesh ).count / ( trianglesPerFrond * 3 );
+
+}
+
 describe( 'conifer tree data', () => {
 
 	it( 'builds five valid, strictly decreasing LOD meshes and reference-matched parts', () => {
@@ -74,7 +90,7 @@ describe( 'conifer tree data', () => {
 			defaultColor: 0xd0d8c0,
 			texture: 'leaf',
 			alphaTest: 0.5,
-			doubleSided: false,
+			doubleSided: true,
 			flatShading: false,
 			roughness: 0.95,
 		} );
@@ -85,7 +101,7 @@ describe( 'conifer tree data', () => {
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 600 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBe( 168 + 14 * 6 * 8 );
+		expect( counts[ 0 ] ).toBe( 168 + 76 * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
@@ -155,84 +171,118 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps both near-horizontal paired frond faces non-degenerate with upward normals', () => {
+	it( 'builds folded 3 by 3 frond grids with upward vertex normals and two-sided rendering', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
+		const referencedVertices = new Set<number>();
 
-		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 24 ) {
+		expect( frondCount( mesh, 8 ) ).toBe( 76 );
 
-			const faceNormals: [ number, number, number ][][] = [ [], [] ];
+		for ( let index = leaves.start; index < leaves.start + leaves.count; index ++ ) {
 
-			for ( let face = 0; face < 2; face ++ ) {
+			referencedVertices.add( mesh.indices[ index ]! );
 
-				for ( let triangle = 0; triangle < 4; triangle ++ ) {
+		}
 
-					const triangleStart = start + face * 12 + triangle * 3;
-					const indices = [ mesh.indices[ triangleStart ]!, mesh.indices[ triangleStart + 1 ]!, mesh.indices[ triangleStart + 2 ]! ];
-					const points = indices.map( ( index ) => [ mesh.positions[ index * 3 ]!, mesh.positions[ index * 3 + 1 ]!, mesh.positions[ index * 3 + 2 ]! ] );
-					const first = points[ 0 ]!;
-					const second = points[ 1 ]!;
-					const third = points[ 2 ]!;
-					const edgeA = [ second[ 0 ]! - first[ 0 ]!, second[ 1 ]! - first[ 1 ]!, second[ 2 ]! - first[ 2 ]! ];
-					const edgeB = [ third[ 0 ]! - first[ 0 ]!, third[ 1 ]! - first[ 1 ]!, third[ 2 ]! - first[ 2 ]! ];
-					const normal: [ number, number, number ] = [
-						edgeA[ 1 ]! * edgeB[ 2 ]! - edgeA[ 2 ]! * edgeB[ 1 ]!,
-						edgeA[ 2 ]! * edgeB[ 0 ]! - edgeA[ 0 ]! * edgeB[ 2 ]!,
-						edgeA[ 0 ]! * edgeB[ 1 ]! - edgeA[ 1 ]! * edgeB[ 0 ]!,
-					];
+		expect( referencedVertices.size ).toBe( 76 * 9 );
 
-					const normalLength = Math.hypot( ...normal );
+		for ( let frond = 0; frond < frondCount( mesh, 8 ); frond ++ ) {
 
-					expect( normalLength ).toBeGreaterThan( 0 );
-					expect( Math.abs( normal[ 1 ]! ) / normalLength ).toBeGreaterThanOrEqual( 0.8 );
-					faceNormals[ face ]!.push( normal );
+			for ( let row = 0; row < 3; row ++ ) {
 
-					for ( const index of indices ) {
+				for ( let column = 0; column < 3; column ++ ) {
 
-						expect( mesh.normals[ index * 3 ] ).toBeCloseTo( 0 );
-						expect( mesh.normals[ index * 3 + 1 ] ).toBeCloseTo( 1 );
-						expect( mesh.normals[ index * 3 + 2 ] ).toBeCloseTo( 0 );
+					const firstVertex = mesh.indices[ leaves.start + frond * 24 ]!;
+					const vertex = firstVertex + row * 3 + column;
+					const offset = vertex * 3;
+					const uvOffset = vertex * 2;
 
-					}
+					expect( mesh.normals[ offset ] ).toBeCloseTo( 0 );
+					expect( mesh.normals[ offset + 1 ] ).toBeCloseTo( 1 );
+					expect( mesh.normals[ offset + 2 ] ).toBeCloseTo( 0 );
+					expect( mesh.uvs[ uvOffset ]! * 3 ).toBeCloseTo( column * 0.5, 2 );
+					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( [ 1, 0.6, 0 ][ row ]! );
 
 				}
 
 			}
 
-			const frontAlignment = faceNormals[ 0 ]![ 0 ]!.reduce( ( sum, value, axis ) => sum + value * faceNormals[ 0 ]![ 1 ]![ axis ]!, 0 );
-			const backAlignment = faceNormals[ 1 ]![ 0 ]!.reduce( ( sum, value, axis ) => sum + value * faceNormals[ 1 ]![ 1 ]![ axis ]!, 0 );
-			const faceDot = faceNormals[ 0 ]![ 0 ]!.reduce( ( sum, value, axis ) => sum + value * faceNormals[ 1 ]![ 0 ]![ axis ]!, 0 );
+			const left = frondPoint( mesh, leaves, frond, 1, 0 );
+			const midrib = frondPoint( mesh, leaves, frond, 1, 1 );
+			const right = frondPoint( mesh, leaves, frond, 1, 2 );
+			const width = Math.hypot( right[ 0 ] - left[ 0 ], right[ 2 ] - left[ 2 ] );
+			const fold = ( left[ 1 ] + right[ 1 ] ) * 0.5 - midrib[ 1 ];
 
-			expect( frontAlignment ).toBeGreaterThan( 0 );
-			expect( backAlignment ).toBeGreaterThan( 0 );
-			expect( faceDot ).toBeLessThan( 0 );
+			expect( fold / width ).toBeGreaterThanOrEqual( 0.2 );
+			expect( fold / width ).toBeLessThanOrEqual( 0.34 );
 
 		}
 
 	} );
 
-	it( 'places frond widths tangentially and length radially', () => {
+	it( 'bends each frond tip upward by about 25 degrees and keeps the width tangential', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 
-		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 24 ) {
+		let steepestPitch = - Infinity;
 
-			const innerLeft = mesh.positions.subarray( mesh.indices[ start ]! * 3, mesh.indices[ start ]! * 3 + 3 );
-			const innerRight = mesh.positions.subarray( mesh.indices[ start + 1 ]! * 3, mesh.indices[ start + 1 ]! * 3 + 3 );
-			const middleRight = mesh.positions.subarray( mesh.indices[ start + 2 ]! * 3, mesh.indices[ start + 2 ]! * 3 + 3 );
-			const middleLeft = mesh.positions.subarray( mesh.indices[ start + 5 ]! * 3, mesh.indices[ start + 5 ]! * 3 + 3 );
-			const width = [ innerRight[ 0 ]! - innerLeft[ 0 ]!, innerRight[ 1 ]! - innerLeft[ 1 ]!, innerRight[ 2 ]! - innerLeft[ 2 ]! ];
-			const radial = [ ( middleRight[ 0 ]! + middleLeft[ 0 ]! - innerRight[ 0 ]! - innerLeft[ 0 ]! ) * 0.5, ( middleRight[ 1 ]! + middleLeft[ 1 ]! - innerRight[ 1 ]! - innerLeft[ 1 ]! ) * 0.5, ( middleRight[ 2 ]! + middleLeft[ 2 ]! - innerRight[ 2 ]! - innerLeft[ 2 ]! ) * 0.5 ];
-			const widthLength = Math.hypot( ...width );
-			const radialLength = Math.hypot( radial[ 0 ]!, radial[ 2 ]! );
-			const horizontalDot = width[ 0 ]! * radial[ 0 ]! + width[ 2 ]! * radial[ 2 ]!;
+		for ( let frond = 0; frond < frondCount( mesh, 8 ); frond ++ ) {
 
-			expect( Math.abs( width[ 1 ]! ) / widthLength ).toBeLessThan( 0.21 );
-			expect( Math.abs( horizontalDot ) / ( Math.hypot( width[ 0 ]!, width[ 2 ]! ) * radialLength ) ).toBeLessThan( 0.05 );
+			const base = frondPoint( mesh, leaves, frond, 0, 1 );
+			const mid = frondPoint( mesh, leaves, frond, 1, 1 );
+			const tip = frondPoint( mesh, leaves, frond, 2, 1 );
+			const firstPitch = Math.atan2( mid[ 1 ] - base[ 1 ], Math.hypot( mid[ 0 ] - base[ 0 ], mid[ 2 ] - base[ 2 ] ) ) * 180 / Math.PI;
+			const secondPitch = Math.atan2( tip[ 1 ] - mid[ 1 ], Math.hypot( tip[ 0 ] - mid[ 0 ], tip[ 2 ] - mid[ 2 ] ) ) * 180 / Math.PI;
+			const left = frondPoint( mesh, leaves, frond, 1, 0 );
+			const right = frondPoint( mesh, leaves, frond, 1, 2 );
+			const width: [ number, number ] = [ right[ 0 ] - left[ 0 ], right[ 2 ] - left[ 2 ] ];
+			const radial: [ number, number ] = [ tip[ 0 ] - base[ 0 ], tip[ 2 ] - base[ 2 ] ];
+			const dot = width[ 0 ] * radial[ 0 ] + width[ 1 ] * radial[ 1 ];
+
+			steepestPitch = Math.max( steepestPitch, secondPitch );
+			expect( secondPitch - firstPitch ).toBeGreaterThanOrEqual( 18 );
+			expect( secondPitch - firstPitch ).toBeLessThanOrEqual( 32 );
+			expect( Math.abs( dot ) / ( Math.hypot( ...width ) * Math.hypot( ...radial ) ) ).toBeLessThan( 0.05 );
 
 		}
+
+		expect( steepestPitch ).toBeGreaterThan( 75 );
+		expect( frondPoint( mesh, leaves, frondCount( mesh, 8 ) - 1, 0, 1 )[ 1 ] ).toBeCloseTo( 7.1, 1 );
+
+	} );
+
+	it( 'distributes fifteen regular frond bands below the near-vertical apex leader', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const bandHeights = Array.from( { length: 15 }, ( _, index ) => frondPoint( mesh, leaves, index * 5, 0, 1 )[ 1 ] );
+
+		expect( bandHeights[ 0 ] ).toBeGreaterThanOrEqual( 1.85 );
+		expect( bandHeights[ 0 ] ).toBeLessThanOrEqual( 1.95 );
+		expect( bandHeights[ 14 ] ).toBeGreaterThanOrEqual( 5.95 );
+		expect( bandHeights[ 14 ] ).toBeLessThanOrEqual( 6.05 );
+		expect( frondPoint( mesh, leaves, 75, 0, 1 )[ 1 ] ).toBeCloseTo( 7.1, 1 );
+
+		for ( let index = 1; index < bandHeights.length; index ++ ) {
+
+			expect( bandHeights[ index ] ).toBeGreaterThan( bandHeights[ index - 1 ]! );
+
+		}
+
+	} );
+
+	it( 'reduces frond counts and grid density across LOD0, LOD1, and LOD2', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+
+		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 76 );
+		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 61 );
+		expect( frondCount( data.lods[ 2 ]!, 4 ) ).toBe( 31 );
+		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 776 );
+		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 364 );
+		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 172 );
 
 	} );
 
@@ -307,8 +357,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( baseRadius ).toBeCloseTo( 0.35, 2 );
-		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 5 * 6 * 8 );
-		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 8 * 6 * 8 );
+		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 26 * 8 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 41 * 8 );
 
 	} );
 
