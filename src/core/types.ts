@@ -1,5 +1,6 @@
 export type LodLevel = 0 | 1 | 2 | 3 | 4;
 export type Color3 = [ number, number, number ]; // リニア RGB 0〜1
+export type Vec3 = [ number, number, number ];
 
 export interface MeshGroup {
 	start: number;
