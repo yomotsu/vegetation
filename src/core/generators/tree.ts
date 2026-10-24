@@ -3,7 +3,7 @@ import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
 import { createBarkTexture } from '../barkTexture';
-import { createFirSprigTexture } from '../leafTexture';
+import { createFirSprigTexture, padTextureEdges } from '../leafTexture';
 import type { Color3, ColliderData, MeshData, PartDef, TextureData, Vec3, VegetationData } from '../types';
 
 export interface TreeOptions {
@@ -47,8 +47,8 @@ interface CrownBounds {
 const barkColor: Color3 = [ 1, 1, 1 ];
 const leafColor: Color3 = [ 1, 1, 1 ];
 const trunkTopFraction = 0.98;
-const frondsPerTier = 37;
-const branchesPerTier = 12;
+const frondsPerTier = 16;
+const branchesPerTier = 16;
 const trunkProfile = [ 0.35, 0.3, 0.255, 0.22, 0.19, 0.16, 0.135, 0.112, 0.094, 0.078, 0.064, 0.05, 0.035 ];
 
 function clamp( value: number, minimum: number, maximum: number ): number {
@@ -167,7 +167,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 		const tierRandom = random.fork( tierIndex + 1 );
 		const t = branchCount === 1 ? 0.5 : tierIndex / ( branchCount - 1 );
 		const tierY = height * ( 0.193 + t * 0.774 + tierRandom.range( - 0.004, 0.004 ) );
-		const radiusProfile = 0.035 + 0.965 * Math.pow( 1 - t, 1.12 );
+		const radiusProfile = 0.05 + 0.95 * Math.pow( 1 - t, 0.65 );
 		const tierRadius = maximumRadius * radiusProfile * tierRandom.range( 0.987, 1.013 );
 		const trunkPoint = getTrunkPoint( { height, trunkSpine: trunk.spine, trunkRadii: trunk.radii, tiers: [], fronds: [], firstTierY: tierY }, tierY / height );
 		const fronds: Frond[] = [];
@@ -176,15 +176,13 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 		for ( let frondIndex = 0; frondIndex < frondsPerTier; frondIndex ++ ) {
 
 			const branchIndex = frondIndex % branchesPerTier;
-			const segmentIndex = Math.floor( frondIndex / branchesPerTier );
 			const branchRandom = tierRandom.fork( branchIndex + 101 );
 			const frondRandom = tierRandom.fork( frondIndex + 401 );
 			const angle = angleOffset + branchIndex / branchesPerTier * Math.PI * 2 + branchRandom.range( - 0.045, 0.045 );
-			const startFractions = [ 0, 0.18, 0.38, 0.58 ];
-			const startDistance = tierRadius * startFractions[ segmentIndex ]! * branchRandom.range( 0.97, 1.03 );
-			const targetDistance = tierRadius * frondRandom.range( 0.96, 1.02 );
+			const startDistance = tierRadius * branchRandom.range( 0.015, 0.055 );
+			const targetDistance = tierRadius * frondRandom.range( 0.96, 1.04 );
 			const length = Math.max( tierRadius * 0.08, targetDistance - startDistance );
-			const droopFactor = branchRandom.range( 0.09, 0.2 );
+			const droopFactor = branchRandom.range( 0.045, 0.105 );
 			const start: Vec3 = [
 				trunkPoint[ 0 ] + Math.cos( angle ) * startDistance,
 				tierY - startDistance * droopFactor,
@@ -194,7 +192,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 			const forward = multiply( subtract( end, start ), 0.5 );
 			const roll = frondRandom.range( - 0.38, 0.38 );
 			const rightDirection = [ - Math.sin( angle ) * Math.sin( roll ), Math.cos( roll ), Math.cos( angle ) * Math.sin( roll ) ] as Vec3;
-			const halfWidth = length * frondRandom.range( 0.14, 0.19 );
+			const halfWidth = length * frondRandom.range( 0.2, 0.26 );
 			const right = multiply( rightDirection, halfWidth );
 			const center = add( add( start, forward ), [ 0, frondRandom.range( - 0.006, 0.006 ) * height, 0 ] );
 
@@ -268,6 +266,8 @@ function addFrond( builder: MeshBuilder, frond: Frond ): void {
 
 	builder.addTriangle( indices[ 0 ]!, indices[ 1 ]!, indices[ 2 ]! );
 	builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 3 ]! );
+	builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 1 ]! );
+	builder.addTriangle( indices[ 0 ]!, indices[ 3 ]!, indices[ 2 ]! );
 
 }
 
@@ -323,7 +323,7 @@ function buildLod1( layout: TreeLayout ): MeshData {
 	builder.beginGroup( 0 );
 	addTube( builder, layout.trunkSpine, layout.trunkRadii, 5, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
 	const trunkVertexCount = layout.trunkSpine.length * 5;
-	addFronds( builder, layout, 18 );
+	addFronds( builder, layout, 8 );
 
 	const mesh = builder.build();
 
@@ -343,7 +343,7 @@ function buildLod2( layout: TreeLayout ): MeshData {
 	builder.beginGroup( 0 );
 	addTube( builder, trunkSpine, trunkRadii, 4, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
 	const trunkVertexCount = trunkSpine.length * 4;
-	addFronds( builder, layout, 9 );
+	addFronds( builder, layout, 4 );
 
 	const mesh = builder.build();
 
@@ -424,6 +424,8 @@ function addSilhouetteCard( builder: MeshBuilder, centerX: number, centerZ: numb
 
 	builder.addTriangle( indices[ 0 ]!, indices[ 1 ]!, indices[ 2 ]! );
 	builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 3 ]! );
+	builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 1 ]! );
+	builder.addTriangle( indices[ 0 ]!, indices[ 3 ]!, indices[ 2 ]! );
 
 }
 
@@ -484,7 +486,7 @@ export function getTreeCrownBounds( options: TreeOptions = {} ): { minX: number;
 
 	const height = options.height ?? 7.5;
 	const crownSize = clamp( options.crownSize ?? 1, 0.5, 1.5 );
-	const branchCount = options.branchCount ?? 8;
+	const branchCount = options.branchCount ?? 12;
 	const layout = createTreeLayout( options.seed ?? 1, height, crownSize, branchCount );
 	const crown = getLeafBounds( layout.fronds );
 
@@ -497,7 +499,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	const seed = options.seed ?? 1;
 	const height = options.height ?? 7.5;
 	const crownSizeInput = options.crownSize ?? 1;
-	const branchCount = options.branchCount ?? 8;
+	const branchCount = options.branchCount ?? 12;
 
 	if ( ! Number.isFinite( height ) || height <= 0 ) {
 		throw new RangeError( 'Tree height must be a positive finite number' );
@@ -530,7 +532,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 			defaultColor: 0xffffff,
 			texture: 'leaf',
 			alphaTest: 0.5,
-			doubleSided: true,
+			doubleSided: false,
 			flatShading: false,
 		},
 		impostorPart(),
@@ -543,6 +545,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	const silhouette = bakeLeafSilhouette( lod0, textures.leaf, parts, lod0Bounds );
 
 	updateCrownAtlas( textures.leaf, silhouette );
+	padTextureEdges( textures.leaf );
 
 	const lod3 = buildLod3( layout, lod0Bounds.radius );
 	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ), getBoundsRadius( lod3 ) ), height };

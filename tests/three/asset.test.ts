@@ -1,7 +1,7 @@
 import {
 	BufferGeometry,
 	DataTexture,
-	DoubleSide,
+	FrontSide,
 	LinearFilter,
 	LinearMipmapLinearFilter,
 	MeshStandardMaterial,
@@ -26,7 +26,7 @@ describe( 'VegetationAsset', () => {
 		expect( asset.geometries[ 0 ]!.groups.map( ( group ) => group.materialIndex ) ).toEqual( [ 0, 1 ] );
 		expect( asset.materials ).toHaveLength( 3 );
 		expect( asset.materials[ 0 ] ).toBeInstanceOf( MeshStandardMaterial );
-		expect( asset.materials[ 1 ]!.side ).toBe( DoubleSide );
+		expect( asset.materials[ 1 ]!.side ).toBe( FrontSide );
 		expect( asset.collider ).toBeInstanceOf( BufferGeometry );
 
 	} );

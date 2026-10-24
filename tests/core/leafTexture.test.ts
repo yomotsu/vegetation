@@ -138,6 +138,89 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
+	it( 'uses broad, connected needle strokes instead of a hairy edge', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const tileWidth = texture.width / 3;
+		let opaquePixels = 0;
+		let perimeter = 0;
+
+		for ( let y = 0; y < texture.height; y ++ ) {
+
+			for ( let x = 0; x < tileWidth; x ++ ) {
+
+				const offset = ( y * texture.width + x ) * 4;
+
+				if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+				opaquePixels ++;
+
+				for ( const [ dx, dy ] of [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ] ) {
+
+					const neighborX = x + dx!;
+					const neighborY = y + dy!;
+
+					if ( neighborX < 0 || neighborX >= tileWidth || neighborY < 0 || neighborY >= texture.height || alphaAt( texture, neighborX, neighborY ) < 128 ) perimeter ++;
+
+				}
+
+			}
+
+		}
+
+		expect( perimeter / opaquePixels ).toBeLessThan( 0.42 );
+
+	} );
+
+	it( 'pads transparent RGB with colors from its own opaque atlas region', () => {
+
+		const texture = createFirSprigTexture( 31 );
+		const tileWidth = texture.width / 3;
+
+		for ( let tile = 0; tile < 3; tile ++ ) {
+
+			const colors = new Set<string>();
+
+			for ( let y = 0; y < texture.height; y ++ ) {
+
+				for ( let x = tile * tileWidth; x < ( tile + 1 ) * tileWidth; x ++ ) {
+
+					const offset = ( y * texture.width + x ) * 4;
+					const color = `${ texture.data[ offset ] },${ texture.data[ offset + 1 ] },${ texture.data[ offset + 2 ] }`;
+
+					if ( texture.data[ offset + 3 ] === 255 ) {
+
+						colors.add( color );
+
+					}
+
+				}
+
+			}
+
+			for ( let y = 0; y < texture.height; y ++ ) {
+
+				for ( let x = tile * tileWidth; x < ( tile + 1 ) * tileWidth; x ++ ) {
+
+					const offset = ( y * texture.width + x ) * 4;
+
+					if ( texture.data[ offset + 3 ] === 0 ) {
+
+						const color = `${ texture.data[ offset ] },${ texture.data[ offset + 1 ] },${ texture.data[ offset + 2 ] }`;
+
+						expect( color ).not.toBe( '255,255,255' );
+						expect( colors.has( color ) ).toBe( true );
+
+					}
+
+				}
+
+			}
+
+		}
+
+	} );
+
 	it( 'accepts a positive explicit tile size', () => {
 
 		const texture = createFirSprigTexture( 7, 64 );

@@ -47,6 +47,50 @@ describe( 'bark texture', () => {
 
 	} );
 
+	it( 'keeps knots as broad marks without repeated concentric rings', () => {
+
+		const texture = createBarkTexture( 17 );
+		const radii: number[] = [];
+		const centerX = texture.width * 0.24;
+		const centerY = texture.height * 0.32;
+
+		for ( let step = 0; step <= 36; step ++ ) {
+
+			const radius = step / 12;
+			let total = 0;
+
+			for ( let angle = 0; angle < 24; angle ++ ) {
+
+				const theta = angle / 24 * Math.PI * 2;
+				const x = Math.round( centerX + Math.cos( theta ) * radius * texture.width * 0.055 );
+				const y = Math.round( centerY + Math.sin( theta ) * radius * texture.height * 0.16 );
+				const offset = ( ( y + texture.height ) % texture.height * texture.width + ( x + texture.width ) % texture.width ) * 4;
+
+				total += texture.data[ offset ]! * 0.2126 + texture.data[ offset + 1 ]! * 0.7152 + texture.data[ offset + 2 ]! * 0.0722;
+
+			}
+
+			radii.push( total / 24 );
+
+		}
+
+		let rings = 0;
+
+		for ( let i = 1; i < radii.length - 1; i ++ ) {
+
+			const before = radii[ i - 1 ]!;
+			const current = radii[ i ]!;
+			const after = radii[ i + 1 ]!;
+
+			if ( current > before + 1.5 && current > after + 1.5 ) rings ++;
+			if ( current < before - 1.5 && current < after - 1.5 ) rings ++;
+
+		}
+
+		expect( rings ).toBeLessThan( 5 );
+
+	} );
+
 	it( 'accepts a positive explicit texture size', () => {
 
 		const texture = createBarkTexture( 9, 64 );

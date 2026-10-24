@@ -73,7 +73,7 @@ describe( 'conifer tree data', () => {
 			defaultColor: 0xffffff,
 			texture: 'leaf',
 			alphaTest: 0.5,
-			doubleSided: true,
+			doubleSided: false,
 			flatShading: false,
 		} );
 		expect( data.parts[ 2 ] ).toEqual( impostorPart() );
@@ -83,6 +83,7 @@ describe( 'conifer tree data', () => {
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 600 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
+		expect( counts[ 0 ] ).toBe( 168 + 12 * 16 * 4 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
@@ -152,38 +153,55 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps each frond quad non-degenerate and consistently wound', () => {
+	it( 'keeps both frond faces non-degenerate with upward normals', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 
-		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 6 ) {
+		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 12 ) {
 
-			const geometricNormals: [ number, number, number ][] = [];
+			const faceNormals: [ number, number, number ][][] = [ [], [] ];
 
-			for ( let triangle = 0; triangle < 2; triangle ++ ) {
+			for ( let face = 0; face < 2; face ++ ) {
 
-				const indices = [ mesh.indices[ start + triangle * 3 ]!, mesh.indices[ start + triangle * 3 + 1 ]!, mesh.indices[ start + triangle * 3 + 2 ]! ];
-				const points = indices.map( ( index ) => [ mesh.positions[ index * 3 ]!, mesh.positions[ index * 3 + 1 ]!, mesh.positions[ index * 3 + 2 ]! ] );
-				const first = points[ 0 ]!;
-				const second = points[ 1 ]!;
-				const third = points[ 2 ]!;
-				const edgeA = [ second[ 0 ]! - first[ 0 ]!, second[ 1 ]! - first[ 1 ]!, second[ 2 ]! - first[ 2 ]! ];
-				const edgeB = [ third[ 0 ]! - first[ 0 ]!, third[ 1 ]! - first[ 1 ]!, third[ 2 ]! - first[ 2 ]! ];
-				const normal: [ number, number, number ] = [
-					edgeA[ 1 ]! * edgeB[ 2 ]! - edgeA[ 2 ]! * edgeB[ 1 ]!,
-					edgeA[ 2 ]! * edgeB[ 0 ]! - edgeA[ 0 ]! * edgeB[ 2 ]!,
-					edgeA[ 0 ]! * edgeB[ 1 ]! - edgeA[ 1 ]! * edgeB[ 0 ]!,
-				];
+				for ( let triangle = 0; triangle < 2; triangle ++ ) {
 
-				expect( Math.hypot( ...normal ) ).toBeGreaterThan( 0 );
-				geometricNormals.push( normal );
+					const triangleStart = start + face * 6 + triangle * 3;
+					const indices = [ mesh.indices[ triangleStart ]!, mesh.indices[ triangleStart + 1 ]!, mesh.indices[ triangleStart + 2 ]! ];
+					const points = indices.map( ( index ) => [ mesh.positions[ index * 3 ]!, mesh.positions[ index * 3 + 1 ]!, mesh.positions[ index * 3 + 2 ]! ] );
+					const first = points[ 0 ]!;
+					const second = points[ 1 ]!;
+					const third = points[ 2 ]!;
+					const edgeA = [ second[ 0 ]! - first[ 0 ]!, second[ 1 ]! - first[ 1 ]!, second[ 2 ]! - first[ 2 ]! ];
+					const edgeB = [ third[ 0 ]! - first[ 0 ]!, third[ 1 ]! - first[ 1 ]!, third[ 2 ]! - first[ 2 ]! ];
+					const normal: [ number, number, number ] = [
+						edgeA[ 1 ]! * edgeB[ 2 ]! - edgeA[ 2 ]! * edgeB[ 1 ]!,
+						edgeA[ 2 ]! * edgeB[ 0 ]! - edgeA[ 0 ]! * edgeB[ 2 ]!,
+						edgeA[ 0 ]! * edgeB[ 1 ]! - edgeA[ 1 ]! * edgeB[ 0 ]!,
+					];
+
+					expect( Math.hypot( ...normal ) ).toBeGreaterThan( 0 );
+					faceNormals[ face ]!.push( normal );
+
+					for ( const index of indices ) {
+
+						expect( mesh.normals[ index * 3 ] ).toBeCloseTo( 0 );
+						expect( mesh.normals[ index * 3 + 1 ] ).toBeCloseTo( 1 );
+						expect( mesh.normals[ index * 3 + 2 ] ).toBeCloseTo( 0 );
+
+					}
+
+				}
 
 			}
 
-			const alignment = geometricNormals[ 0 ]!.reduce( ( sum, value, axis ) => sum + value * geometricNormals[ 1 ]![ axis ]!, 0 );
+			const frontAlignment = faceNormals[ 0 ]![ 0 ]!.reduce( ( sum, value, axis ) => sum + value * faceNormals[ 0 ]![ 1 ]![ axis ]!, 0 );
+			const backAlignment = faceNormals[ 1 ]![ 0 ]!.reduce( ( sum, value, axis ) => sum + value * faceNormals[ 1 ]![ 1 ]![ axis ]!, 0 );
+			const faceDot = faceNormals[ 0 ]![ 0 ]!.reduce( ( sum, value, axis ) => sum + value * faceNormals[ 1 ]![ 0 ]![ axis ]!, 0 );
 
-			expect( alignment ).toBeGreaterThan( 0 );
+			expect( frontAlignment ).toBeGreaterThan( 0 );
+			expect( backAlignment ).toBeGreaterThan( 0 );
+			expect( faceDot ).toBeLessThan( 0 );
 
 		}
 
@@ -234,8 +252,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( baseRadius ).toBeCloseTo( 0.35, 2 );
-		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 5 * 74 );
-		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 8 * 74 );
+		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 5 * 16 * 4 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 8 * 16 * 4 );
 
 	} );
 

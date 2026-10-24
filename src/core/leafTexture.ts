@@ -101,7 +101,8 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 	const random = createRandom( seed );
 	const center = size * 0.5;
 	const stemPoints: [ number, number ][] = [];
-	const nodeSpacing = Math.max( 2.2, size / 82 );
+	const pixelScale = size / 256;
+	const nodeSpacing = Math.max( 2.5, size / 30 );
 
 	for ( let y = size * 0.035; y <= size * 0.985; y += nodeSpacing ) {
 
@@ -115,27 +116,27 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 
 		for ( const side of [ - 1, 1 ] ) {
 
-			const needleCount = random.int( 3, 4 );
+			const needleCount = random.next() < 0.18 ? 2 : 1;
 
 			for ( let needle = 0; needle < needleCount; needle ++ ) {
 
-				const baseY = y + random.range( - 0.7, 0.7 );
-				const rootX = stemX + random.range( - 0.9, 0.9 );
-				const length = envelope * random.range( needle === 0 ? 0.65 : 0.42, needle === 0 ? 1.02 : 0.76 );
-				const rise = length * random.range( 0.24, 0.48 );
-				const curveX = side * length * random.range( 0.48, 0.7 );
-				const curveY = rise * random.range( 0.42, 0.62 );
+				const baseY = y + random.range( - 1.2, 1.2 ) * pixelScale;
+				const rootX = stemX + random.range( - 1.4, 1.4 ) * pixelScale;
+				const length = envelope * random.range( needle === 0 ? 0.68 : 0.48, needle === 0 ? 1.02 : 0.82 );
+				const rise = length * random.range( 0.24, 0.42 );
+				const curveX = side * length * random.range( 0.42, 0.61 );
+				const curveY = rise * random.range( 0.38, 0.54 );
 				const endX = rootX + side * length;
 				const endY = Math.min( size - 1, baseY + rise );
 				const midX = rootX + curveX;
 				const midY = baseY + curveY;
 				const dark = getNeedleColor( random, false );
 				const bright = getNeedleColor( random, true );
-				const stemWidth = random.range( 1.5, 2.8 );
-				const tipWidth = random.range( 0.85, 1.35 );
+				const stemWidth = random.range( 13.5, 16.5 ) * pixelScale;
+				const tipWidth = random.range( 2.4, 3.4 ) * pixelScale;
 
-				drawStroke( data, width, size, [ rootX, baseY ], [ midX, midY ], stemWidth, ( stemWidth + tipWidth ) * 0.5, dark, bright );
-				drawStroke( data, width, size, [ midX, midY ], [ endX, endY ], ( stemWidth + tipWidth ) * 0.5, tipWidth, bright, bright );
+				drawStroke( data, width, size, [ rootX, baseY ], [ midX, midY ], stemWidth, ( stemWidth + tipWidth ) * 0.52, dark, bright );
+				drawStroke( data, width, size, [ midX, midY ], [ endX, endY ], ( stemWidth + tipWidth ) * 0.52, tipWidth, bright, bright );
 
 			}
 
@@ -148,7 +149,7 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 		const a = stemPoints[ i - 1 ]!;
 		const b = stemPoints[ i ]!;
 
-		drawStroke( data, width, size, a, b, 2.2, 1.4, [ 76, 49, 24 ], [ 92, 63, 31 ] );
+		drawStroke( data, width, size, a, b, 2.2 * pixelScale, 1.4 * pixelScale, [ 76, 49, 24 ], [ 92, 63, 31 ] );
 
 	}
 
@@ -184,6 +185,75 @@ function drawCrownSilhouette( data: Uint8Array, width: number, size: number, til
 
 }
 
+export function padTextureEdges( texture: TextureData ): void {
+
+	const tileSize = texture.height;
+	const tileCount = Math.floor( texture.width / tileSize );
+
+	for ( let tile = 0; tile < tileCount; tile ++ ) {
+
+		const tileOffset = tile * tileSize;
+		const assigned = new Uint8Array( tileSize * tileSize );
+		const queue = new Int32Array( tileSize * tileSize );
+		let queueEnd = 0;
+
+		for ( let y = 0; y < tileSize; y ++ ) {
+
+			for ( let x = 0; x < tileSize; x ++ ) {
+
+				const localIndex = y * tileSize + x;
+				const textureIndex = ( y * texture.width + tileOffset + x ) * 4;
+
+				if ( texture.data[ textureIndex + 3 ]! > 0 ) {
+
+					assigned[ localIndex ] = 1;
+					queue[ queueEnd ++ ] = localIndex;
+
+				}
+
+			}
+
+		}
+
+		if ( queueEnd === 0 ) continue;
+
+		let queueStart = 0;
+
+		while ( queueStart < queueEnd ) {
+
+			const source = queue[ queueStart ++ ]!;
+			const sourceX = source % tileSize;
+			const sourceY = Math.floor( source / tileSize );
+			const sourceTextureIndex = ( sourceY * texture.width + tileOffset + sourceX ) * 4;
+
+			for ( const [ dx, dy ] of [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ] ) {
+
+				const x = sourceX + dx!;
+				const y = sourceY + dy!;
+
+				if ( x < 0 || x >= tileSize || y < 0 || y >= tileSize ) continue;
+
+				const neighbor = y * tileSize + x;
+
+				if ( assigned[ neighbor ] !== 0 ) continue;
+
+				assigned[ neighbor ] = 1;
+				queue[ queueEnd ++ ] = neighbor;
+
+				const textureIndex = ( y * texture.width + tileOffset + x ) * 4;
+
+				texture.data[ textureIndex ] = texture.data[ sourceTextureIndex ]!;
+				texture.data[ textureIndex + 1 ] = texture.data[ sourceTextureIndex + 1 ]!;
+				texture.data[ textureIndex + 2 ] = texture.data[ sourceTextureIndex + 2 ]!;
+
+			}
+
+		}
+
+	}
+
+}
+
 export function createFirSprigTexture( seed: number, size = 256, includeCrownSilhouettes = true ): TextureData {
 
 	if ( ! Number.isInteger( size ) || size < 1 ) {
@@ -206,6 +276,7 @@ export function createFirSprigTexture( seed: number, size = 256, includeCrownSil
 		drawCrownSilhouette( data, width, size, size * 2, seed + 1 );
 	
 	}
+	padTextureEdges( { width, height: size, data } );
 
 	return { width, height: size, data };
 
