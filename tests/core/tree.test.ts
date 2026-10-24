@@ -106,7 +106,7 @@ describe( 'conifer tree data', () => {
 		} );
 		expect( data.parts[ 1 ] ).toEqual( {
 			name: 'leaf',
-			defaultColor: 0x00ff00,
+			defaultColor: 0xffffff,
 			texture: 'leaf',
 			alphaTest: 0.5,
 			doubleSided: true,
@@ -166,10 +166,33 @@ describe( 'conifer tree data', () => {
 		expect( mesh.colors[ edgeOffset ] ).toBeCloseTo( 0.35, 5 );
 		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 1.17, 2 );
 		expect( mesh.colors[ edgeOffset + 2 ] ).toBeCloseTo( 0.2, 5 );
-		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 0.35, 5 );
-		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1.154, 2 );
-		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 0.2, 5 );
+		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 1, 5 );
+		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1, 5 );
+		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.13, 2 );
+
+	} );
+
+	it( 'keeps the centerline untinted so the brown texture stem stays brown', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+
+		for ( let frond = 0; frond < 5; frond ++ ) {
+
+			const firstVertex = mesh.indices[ leaves.start + frond * 24 ]!;
+
+			for ( let row = 0; row < 3; row ++ ) {
+
+				const offset = ( firstVertex + row * 3 + 1 ) * 3;
+
+				expect( mesh.colors[ offset ] ).toBeCloseTo( 1, 5 );
+				expect( mesh.colors[ offset + 1 ] ).toBeCloseTo( 1, 5 );
+				expect( mesh.colors[ offset + 2 ] ).toBeCloseTo( 1, 5 );
+
+			}
+
+		}
 
 	} );
 
@@ -188,19 +211,18 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'softens color variation across fronds and between tiers', () => {
+	it( 'softens color variation at the frond edges and between tiers', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 		const firstVertex = mesh.indices[ leaves.start ]!;
 		const edgeGreen = mesh.colors[ firstVertex * 3 + 1 ]!;
-		const centerGreen = mesh.colors[ ( firstVertex + 1 ) * 3 + 1 ]!;
 		const tipGreen = mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ]!;
 		const lastFrondIndex = frondCount( mesh, 8 ) - 1;
 		const upperVertex = mesh.indices[ leaves.start + lastFrondIndex * 24 ]!;
 		const upperGreen = mesh.colors[ upperVertex * 3 + 1 ]!;
 
-		expect( Math.abs( centerGreen - edgeGreen ) ).toBeLessThanOrEqual( 0.01 );
+		expect( mesh.colors[ ( firstVertex + 4 ) * 3 + 1 ] ).toBeCloseTo( 1, 5 );
 		expect( edgeGreen - tipGreen ).toBeLessThanOrEqual( 0.05 );
 		expect( edgeGreen - upperGreen ).toBeLessThanOrEqual( 0.1 );
 

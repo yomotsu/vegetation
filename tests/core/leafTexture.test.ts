@@ -211,7 +211,7 @@ describe( 'fir sprig texture', () => {
 		expect( opaquePixels ).toBe( sprigOpaquePixels );
 		expect( sprigOpaquePixels / ( tileWidth * first.height ) ).toBeGreaterThan( 0.2 );
 		expect( greenPixels ).toBeGreaterThan( 1000 );
-		expect( brownPixels ).toBe( 0 );
+		expect( brownPixels ).toBeGreaterThan( 50 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeGreaterThan( 0.18 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeLessThan( 0.5 );
 		expect( alphaCoverage( first, tileWidth, tileWidth ) ).toBe( 0 );
@@ -234,6 +234,35 @@ describe( 'fir sprig texture', () => {
 		expect( baseRow ).toBeGreaterThan( 0 );
 		expect( middleRow ).toBeGreaterThan( baseRow );
 		expect( tipRow ).toBeLessThan( middleRow );
+
+	} );
+
+	it( 'draws a narrow brown stem along the center from mid-sprig to base', () => {
+
+		const seed = 1;
+		const texture = createFirSprigTexture( seed );
+
+		for ( const y of [ 136, 152, 168, 184, 200, 216, 232, 248 ] ) {
+
+			const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+			const brownPixels: number[] = [];
+
+			for ( let x = center - 4; x <= center + 4; x ++ ) {
+
+				const offset = ( y * texture.width + x ) * 4;
+
+				if ( texture.data[ offset + 3 ]! < 128 ) continue;
+				if ( texture.data[ offset ]! <= texture.data[ offset + 1 ]! + 2 ) continue;
+				if ( texture.data[ offset + 1 ]! <= texture.data[ offset + 2 ]! * 1.5 ) continue;
+
+				brownPixels.push( x );
+
+			}
+
+			expect( brownPixels.length ).toBeGreaterThan( 0 );
+			expect( brownPixels.length ).toBeLessThanOrEqual( 4 );
+
+		}
 
 	} );
 
