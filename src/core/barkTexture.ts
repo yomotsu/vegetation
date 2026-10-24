@@ -55,7 +55,7 @@ function wrapIndex( value: number, size: number ): number {
 
 }
 
-export function createBarkTexture( seed: number, size = 256 ): TextureData {
+export function createBarkTexture( seed: number, size = 128 ): TextureData {
 
 	if ( ! Number.isInteger( size ) || size < 1 ) {
 		throw new RangeError( 'Texture size must be a positive integer' );

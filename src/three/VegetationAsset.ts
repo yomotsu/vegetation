@@ -1,6 +1,7 @@
 import {
 	BufferAttribute,
 	BufferGeometry,
+	ClampToEdgeWrapping,
 	Color,
 	DataTexture,
 	DoubleSide,
@@ -17,17 +18,16 @@ import type { ColorRepresentation, Texture } from 'three';
 import { bakeImpostor } from '../core/impostor';
 import type { LodLevel, MeshData, TextureData, VegetationData } from '../core/types';
 
-function createTexture( data: TextureData, repeat = false ): DataTexture {
+function createTexture( data: TextureData ): DataTexture {
 
 	const texture = new DataTexture( data.data, data.width, data.height, RGBAFormat, UnsignedByteType );
 	texture.flipY = false;
 	texture.colorSpace = SRGBColorSpace;
 	texture.magFilter = LinearFilter;
 	texture.minFilter = LinearMipmapLinearFilter;
-	if ( repeat ) {
-		texture.wrapS = RepeatWrapping;
-		texture.wrapT = RepeatWrapping;
-	}
+	const wrapping = data.wrap === 'repeat' ? RepeatWrapping : ClampToEdgeWrapping;
+	texture.wrapS = wrapping;
+	texture.wrapT = wrapping;
 	texture.generateMipmaps = true;
 	texture.needsUpdate = true;
 
@@ -102,7 +102,7 @@ export class VegetationAsset {
 
 			this.partIndices.set( part.name, index );
 
-			const texture = part.texture === 'impostor' ? this.impostorTexture : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]!, true );
+			const texture = part.texture === 'impostor' ? this.impostorTexture : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]! );
 			const material = new MeshStandardMaterial( {
 				color: partColors[ index ]!,
 				map: texture,
@@ -112,7 +112,7 @@ export class VegetationAsset {
 				alphaTest: part.alphaTest,
 				alphaToCoverage: false,
 				transparent: false,
-				roughness: part.name === 'leaf' ? 0.95 : part.name === 'bark' ? 0.85 : 1,
+				roughness: part.roughness ?? 1,
 				metalness: 0,
 			} );
 

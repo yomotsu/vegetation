@@ -15,8 +15,8 @@ describe( 'bark texture', () => {
 		let invalidAlphaPixels = 0;
 		let invalidHuePixels = 0;
 
-		expect( first.width ).toBe( 256 );
-		expect( first.height ).toBe( 256 );
+		expect( first.width ).toBe( 128 );
+		expect( first.height ).toBe( 128 );
 		expect( first.data ).toEqual( repeated.data );
 		expect( first.data ).not.toEqual( other.data );
 
@@ -44,6 +44,12 @@ describe( 'bark texture', () => {
 		expect( greenTotal / ( first.width * first.height ) ).toBeLessThan( 70 );
 		expect( blueTotal / ( first.width * first.height ) ).toBeGreaterThan( 20 );
 		expect( blueTotal / ( first.width * first.height ) ).toBeLessThan( 40 );
+
+	} );
+
+	it( 'repeats the same pixels for a fixed seed', () => {
+
+		expect( createBarkTexture( 73 ).data ).toEqual( createBarkTexture( 73 ).data );
 
 	} );
 

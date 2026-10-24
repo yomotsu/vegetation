@@ -66,15 +66,17 @@ describe( 'conifer tree data', () => {
 			texture: 'bark',
 			alphaTest: 0,
 			doubleSided: false,
-			flatShading: true,
+			flatShading: false,
+			roughness: 0.85,
 		} );
 		expect( data.parts[ 1 ] ).toEqual( {
 			name: 'leaf',
-			defaultColor: 0xffffff,
+			defaultColor: 0xd0d8c0,
 			texture: 'leaf',
 			alphaTest: 0.5,
 			doubleSided: false,
 			flatShading: false,
+			roughness: 0.95,
 		} );
 		expect( data.parts[ 2 ] ).toEqual( impostorPart() );
 		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf' ] );
@@ -83,7 +85,7 @@ describe( 'conifer tree data', () => {
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 600 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBe( 168 + 12 * 16 * 4 );
+		expect( counts[ 0 ] ).toBe( 168 + 14 * 6 * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
@@ -153,20 +155,20 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps both frond faces non-degenerate with upward normals', () => {
+	it( 'keeps both near-horizontal paired frond faces non-degenerate with upward normals', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 
-		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 12 ) {
+		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 24 ) {
 
 			const faceNormals: [ number, number, number ][][] = [ [], [] ];
 
 			for ( let face = 0; face < 2; face ++ ) {
 
-				for ( let triangle = 0; triangle < 2; triangle ++ ) {
+				for ( let triangle = 0; triangle < 4; triangle ++ ) {
 
-					const triangleStart = start + face * 6 + triangle * 3;
+					const triangleStart = start + face * 12 + triangle * 3;
 					const indices = [ mesh.indices[ triangleStart ]!, mesh.indices[ triangleStart + 1 ]!, mesh.indices[ triangleStart + 2 ]! ];
 					const points = indices.map( ( index ) => [ mesh.positions[ index * 3 ]!, mesh.positions[ index * 3 + 1 ]!, mesh.positions[ index * 3 + 2 ]! ] );
 					const first = points[ 0 ]!;
@@ -180,7 +182,10 @@ describe( 'conifer tree data', () => {
 						edgeA[ 0 ]! * edgeB[ 1 ]! - edgeA[ 1 ]! * edgeB[ 0 ]!,
 					];
 
-					expect( Math.hypot( ...normal ) ).toBeGreaterThan( 0 );
+					const normalLength = Math.hypot( ...normal );
+
+					expect( normalLength ).toBeGreaterThan( 0 );
+					expect( Math.abs( normal[ 1 ]! ) / normalLength ).toBeGreaterThanOrEqual( 0.8 );
 					faceNormals[ face ]!.push( normal );
 
 					for ( const index of indices ) {
@@ -202,6 +207,56 @@ describe( 'conifer tree data', () => {
 			expect( frontAlignment ).toBeGreaterThan( 0 );
 			expect( backAlignment ).toBeGreaterThan( 0 );
 			expect( faceDot ).toBeLessThan( 0 );
+
+		}
+
+	} );
+
+	it( 'places frond widths tangentially and length radially', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+
+		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 24 ) {
+
+			const innerLeft = mesh.positions.subarray( mesh.indices[ start ]! * 3, mesh.indices[ start ]! * 3 + 3 );
+			const innerRight = mesh.positions.subarray( mesh.indices[ start + 1 ]! * 3, mesh.indices[ start + 1 ]! * 3 + 3 );
+			const middleRight = mesh.positions.subarray( mesh.indices[ start + 2 ]! * 3, mesh.indices[ start + 2 ]! * 3 + 3 );
+			const middleLeft = mesh.positions.subarray( mesh.indices[ start + 5 ]! * 3, mesh.indices[ start + 5 ]! * 3 + 3 );
+			const width = [ innerRight[ 0 ]! - innerLeft[ 0 ]!, innerRight[ 1 ]! - innerLeft[ 1 ]!, innerRight[ 2 ]! - innerLeft[ 2 ]! ];
+			const radial = [ ( middleRight[ 0 ]! + middleLeft[ 0 ]! - innerRight[ 0 ]! - innerLeft[ 0 ]! ) * 0.5, ( middleRight[ 1 ]! + middleLeft[ 1 ]! - innerRight[ 1 ]! - innerLeft[ 1 ]! ) * 0.5, ( middleRight[ 2 ]! + middleLeft[ 2 ]! - innerRight[ 2 ]! - innerLeft[ 2 ]! ) * 0.5 ];
+			const widthLength = Math.hypot( ...width );
+			const radialLength = Math.hypot( radial[ 0 ]!, radial[ 2 ]! );
+			const horizontalDot = width[ 0 ]! * radial[ 0 ]! + width[ 2 ]! * radial[ 2 ]!;
+
+			expect( Math.abs( width[ 1 ]! ) / widthLength ).toBeLessThan( 0.21 );
+			expect( Math.abs( horizontalDot ) / ( Math.hypot( width[ 0 ]!, width[ 2 ]! ) * radialLength ) ).toBeLessThan( 0.05 );
+
+		}
+
+	} );
+
+	it( 'uses smooth radial trunk normals in LOD0 through LOD3', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+
+		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
+
+		for ( let lod = 0; lod < 4; lod ++ ) {
+
+			const mesh = data.lods[ lod ]!;
+			const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+			const first = mesh.indices[ bark.start ]!;
+			const second = mesh.indices[ bark.start + 1 ]!;
+			const firstOffset = first * 3;
+			const secondOffset = second * 3;
+			const firstLength = Math.hypot( mesh.normals[ firstOffset ]!, mesh.normals[ firstOffset + 1 ]!, mesh.normals[ firstOffset + 2 ]! );
+			const secondLength = Math.hypot( mesh.normals[ secondOffset ]!, mesh.normals[ secondOffset + 1 ]!, mesh.normals[ secondOffset + 2 ]! );
+			const normalDot = mesh.normals[ firstOffset ]! * mesh.normals[ secondOffset ]! + mesh.normals[ firstOffset + 1 ]! * mesh.normals[ secondOffset + 1 ]! + mesh.normals[ firstOffset + 2 ]! * mesh.normals[ secondOffset + 2 ]!;
+
+			expect( firstLength ).toBeCloseTo( 1, 2 );
+			expect( secondLength ).toBeCloseTo( 1, 2 );
+			expect( normalDot ).toBeLessThan( 0.9 );
 
 		}
 
@@ -252,8 +307,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( baseRadius ).toBeCloseTo( 0.35, 2 );
-		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 5 * 16 * 4 );
-		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 8 * 16 * 4 );
+		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 5 * 6 * 8 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 8 * 6 * 8 );
 
 	} );
 
@@ -365,10 +420,23 @@ describe( 'conifer tree data', () => {
 
 		generateAndBake();
 
-		const start = performance.now();
-		generateAndBake();
+		const timings: number[] = [];
 
-		expect( performance.now() - start ).toBeLessThan( 50 );
+		for ( let run = 0; run < 10; run ++ ) {
+
+			const start = performance.now();
+			generateAndBake();
+			timings.push( performance.now() - start );
+
+		}
+
+		const sorted = [ ...timings ].sort( ( a, b ) => a - b );
+		const median = ( sorted[ 4 ]! + sorted[ 5 ]! ) / 2;
+		const maximum = sorted[ sorted.length - 1 ]!;
+
+		console.log( `Tree generate+bake warm runs: median ${ median.toFixed( 2 ) } ms, max ${ maximum.toFixed( 2 ) } ms` );
+		expect( median ).toBeLessThan( 50 );
+		expect( maximum ).toBeLessThan( 50 );
 
 	} );
 

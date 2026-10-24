@@ -1,6 +1,7 @@
 import {
 	BufferGeometry,
 	DataTexture,
+	ClampToEdgeWrapping,
 	FrontSide,
 	LinearFilter,
 	LinearMipmapLinearFilter,
@@ -83,6 +84,10 @@ describe( 'VegetationAsset', () => {
 		}
 		expect( barkTexture.wrapS ).toBe( RepeatWrapping );
 		expect( barkTexture.wrapT ).toBe( RepeatWrapping );
+		expect( leafTexture.wrapS ).toBe( ClampToEdgeWrapping );
+		expect( leafTexture.wrapT ).toBe( ClampToEdgeWrapping );
+		expect( impostorTexture.wrapS ).toBe( ClampToEdgeWrapping );
+		expect( impostorTexture.wrapT ).toBe( ClampToEdgeWrapping );
 
 		expect( leafMaterial.alphaTest ).toBe( 0.5 );
 		expect( leafMaterial.roughness ).toBe( 0.95 );
@@ -95,6 +100,32 @@ describe( 'VegetationAsset', () => {
 		expect( impostorMaterial.vertexColors ).toBe( false );
 		expect( impostorMaterial.roughness ).toBe( 1 );
 		expect( impostorMaterial.metalness ).toBe( 0 );
+
+	} );
+
+	it( 'uses part and texture settings without inferring them from names', () => {
+
+		const asset = generateTree( { seed: 1 } );
+
+		asset.data.parts[ 0 ]!.name = 'wood';
+		delete asset.data.parts[ 0 ]!.roughness;
+		asset.data.parts[ 1 ]!.name = 'needles';
+		delete asset.data.parts[ 1 ]!.roughness;
+		delete asset.data.textures.bark!.wrap;
+
+		const genericAsset = new VegetationAsset( asset.data );
+		const barkTexture = genericAsset.materials[ 0 ]!.map as DataTexture;
+		const leafTexture = genericAsset.materials[ 1 ]!.map as DataTexture;
+
+		expect( genericAsset.materials[ 0 ]!.roughness ).toBe( 1 );
+		expect( genericAsset.materials[ 1 ]!.roughness ).toBe( 1 );
+		expect( barkTexture.wrapS ).toBe( ClampToEdgeWrapping );
+		expect( barkTexture.wrapT ).toBe( ClampToEdgeWrapping );
+		expect( leafTexture.wrapS ).toBe( ClampToEdgeWrapping );
+		expect( leafTexture.wrapT ).toBe( ClampToEdgeWrapping );
+
+		genericAsset.dispose();
+		asset.dispose();
 
 	} );
 

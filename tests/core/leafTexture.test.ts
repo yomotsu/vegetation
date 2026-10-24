@@ -41,7 +41,7 @@ function rowWidth( texture: { width: number; data: Uint8Array }, xOffset: number
 
 describe( 'fir sprig texture', () => {
 
-	it( 'creates a deterministic two-region alpha atlas with needles, a brown stem, and a conical mask', () => {
+	it( 'creates a deterministic atlas with a fir sprig, needles, and a brown stem', () => {
 
 		const first = createFirSprigTexture( 42 );
 		const second = createFirSprigTexture( 42 );
@@ -60,8 +60,6 @@ describe( 'fir sprig texture', () => {
 		expect( first.height ).toBe( 256 );
 		expect( first.data ).toEqual( second.data );
 		expect( first.data ).not.toEqual( otherSeed.data );
-		expect( invalidAlphaPixels ).toBe( 0 );
-
 		for ( let y = 0; y < first.height; y ++ ) {
 
 			for ( let x = 0; x < first.width; x ++ ) {
@@ -95,13 +93,15 @@ describe( 'fir sprig texture', () => {
 
 		}
 
-		expect( opaquePixels / ( first.width * first.height ) ).toBeGreaterThan( 0.2 );
+		expect( invalidAlphaPixels ).toBe( 0 );
+		expect( opaquePixels ).toBe( sprigOpaquePixels );
+		expect( sprigOpaquePixels / ( tileWidth * first.height ) ).toBeGreaterThan( 0.2 );
 		expect( greenPixels ).toBeGreaterThan( 1000 );
 		expect( brownPixels ).toBeGreaterThan( 100 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeGreaterThan( 0.18 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeLessThan( 0.5 );
-		expect( alphaCoverage( first, tileWidth, tileWidth ) ).toBeGreaterThan( 0.25 );
-		expect( alphaCoverage( first, tileWidth * 2, tileWidth ) ).toBeGreaterThan( 0.25 );
+		expect( alphaCoverage( first, tileWidth, tileWidth ) ).toBe( 0 );
+		expect( alphaCoverage( first, tileWidth * 2, tileWidth ) ).toBe( 0 );
 		expect( redTotal / sprigOpaquePixels ).toBeGreaterThan( 20 );
 		expect( redTotal / sprigOpaquePixels ).toBeLessThan( 50 );
 		expect( greenTotal / sprigOpaquePixels ).toBeGreaterThan( 50 );
@@ -110,20 +110,16 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'stores the sprig base at v=0 and narrows the silhouette toward its tip', () => {
+	it( 'stores the sprig base at v=0 and narrows toward its tip', () => {
 
 		const texture = createFirSprigTexture( 7 );
 		const tileWidth = texture.width / 3;
 		const baseRow = rowWidth( texture, 0, 12, tileWidth );
 		const middleRow = rowWidth( texture, 0, 128, tileWidth );
 		const tipRow = rowWidth( texture, 0, 252, tileWidth );
-		const coneBottom = rowWidth( texture, tileWidth, 4, tileWidth );
-		const coneTop = rowWidth( texture, tileWidth, 252, tileWidth );
-
 		expect( baseRow ).toBeGreaterThan( 0 );
 		expect( middleRow ).toBeGreaterThan( baseRow );
 		expect( tipRow ).toBeLessThan( middleRow );
-		expect( coneBottom ).toBeGreaterThan( coneTop );
 
 	} );
 
@@ -177,7 +173,7 @@ describe( 'fir sprig texture', () => {
 		const texture = createFirSprigTexture( 31 );
 		const tileWidth = texture.width / 3;
 
-		for ( let tile = 0; tile < 3; tile ++ ) {
+		for ( let tile = 0; tile < 1; tile ++ ) {
 
 			const colors = new Set<string>();
 

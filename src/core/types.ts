@@ -22,6 +22,7 @@ export interface PartDef {
 	name: string; // 'bark' | 'leaf' | 'rock' | 'impostor' など
 	defaultColor: number; // sRGB hex（0x5a8f3a）
 	texture: string | null; // VegetationData.textures のキー（'impostor' は three 層で焼く）
+	roughness?: number;
 	alphaTest: number; // テクスチャなしは 0
 	doubleSided: boolean;
 	flatShading: boolean;
@@ -31,6 +32,7 @@ export interface TextureData {
 	width: number;
 	height: number;
 	data: Uint8Array;
+	wrap?: 'repeat' | 'clamp';
 } // RGBA8, sRGB。row 0 は v=0（画像下端）。three.js DataTexture は flipY=false で使う。
 
 export interface ColliderData {

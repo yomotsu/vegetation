@@ -3,6 +3,8 @@ import type { TextureData } from './types';
 
 type Rgb = [ number, number, number ];
 
+const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
+
 function clamp( value: number, minimum: number, maximum: number ): number {
 
 	return Math.max( minimum, Math.min( maximum, value ) );
@@ -155,36 +157,6 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 
 }
 
-function drawCrownSilhouette( data: Uint8Array, width: number, size: number, tileOffset: number, seed: number ): void {
-
-	for ( let y = 0; y < size; y ++ ) {
-
-		const v = ( y + 0.5 ) / size;
-		const radius = 0.49 * Math.pow( Math.max( 0, 1 - v ), 1.12 ) + 0.006;
-		const tierRipple = Math.sin( v * Math.PI * 16 + seed * 0.23 ) * 0.012 + Math.sin( v * Math.PI * 31 + seed ) * 0.005;
-		const edge = Math.max( 0, radius + tierRipple );
-
-		for ( let x = 0; x < size; x ++ ) {
-
-			const u = ( x + 0.5 ) / size;
-			const variation = Math.sin( ( u * 31 + v * 7 + seed * 0.01 ) * Math.PI ) * 5;
-
-			if ( Math.abs( u - 0.5 ) > edge ) continue;
-
-			const shade = Math.round( clamp( 0.68 * ( 1 - v ) + 0.32 + variation / 255, 0.24, 0.98 ) );
-			const offset = ( y * width + tileOffset + x ) * 4;
-
-			data[ offset ] = Math.round( 18 + shade * 43 );
-			data[ offset + 1 ] = Math.round( 48 + shade * 83 );
-			data[ offset + 2 ] = Math.round( 8 + shade * 18 );
-			data[ offset + 3 ] = 255;
-
-		}
-
-	}
-
-}
-
 export function padTextureEdges( texture: TextureData ): void {
 
 	const tileSize = texture.height;
@@ -226,7 +198,7 @@ export function padTextureEdges( texture: TextureData ): void {
 			const sourceY = Math.floor( source / tileSize );
 			const sourceTextureIndex = ( sourceY * texture.width + tileOffset + sourceX ) * 4;
 
-			for ( const [ dx, dy ] of [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ] ) {
+			for ( const [ dx, dy ] of neighborOffsets ) {
 
 				const x = sourceX + dx!;
 				const y = sourceY + dy!;
@@ -254,7 +226,7 @@ export function padTextureEdges( texture: TextureData ): void {
 
 }
 
-export function createFirSprigTexture( seed: number, size = 256, includeCrownSilhouettes = true ): TextureData {
+export function createFirSprigTexture( seed: number, size = 256, padEdges = true ): TextureData {
 
 	if ( ! Number.isInteger( size ) || size < 1 ) {
 		throw new RangeError( 'Texture size must be a positive integer' );
@@ -270,20 +242,12 @@ export function createFirSprigTexture( seed: number, size = 256, includeCrownSil
 	}
 
 	drawSprig( data, width, size, seed );
-	if ( includeCrownSilhouettes ) {
+	if ( padEdges ) {
 
-		drawCrownSilhouette( data, width, size, size, seed );
-		drawCrownSilhouette( data, width, size, size * 2, seed + 1 );
-	
+		padTextureEdges( { width, height: size, data } );
+
 	}
-	padTextureEdges( { width, height: size, data } );
 
 	return { width, height: size, data };
-
-}
-
-export function createLeafClusterTexture( seed: number, size = 256 ): TextureData {
-
-	return createFirSprigTexture( seed, size );
 
 }
