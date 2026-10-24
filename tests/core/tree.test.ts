@@ -87,7 +87,7 @@ describe( 'conifer tree data', () => {
 		} );
 		expect( data.parts[ 1 ] ).toEqual( {
 			name: 'leaf',
-			defaultColor: 0xffffff,
+			defaultColor: 0x00ff00,
 			texture: 'leaf',
 			alphaTest: 0.5,
 			doubleSided: true,
@@ -113,6 +113,42 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
 		expect( counts[ 4 ] ).toBeLessThanOrEqual( 12 );
 		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, 2 ) );
+
+	} );
+
+	it( 'keeps a soft green ramp along fronds and a subtle midrib lift', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const firstVertex = mesh.indices[ leaves.start ]!;
+		const edgeOffset = firstVertex * 3;
+		const midribOffset = ( firstVertex + 4 ) * 3;
+
+		expect( mesh.colors[ edgeOffset ] ).toBeCloseTo( 0.35, 5 );
+		expect( mesh.colors[ edgeOffset + 1 ] ).toBeGreaterThan( 1.2 );
+		expect( mesh.colors[ edgeOffset + 1 ] ).toBeLessThan( 1.23 );
+		expect( mesh.colors[ edgeOffset + 2 ] ).toBeCloseTo( 0.2, 5 );
+		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 0.35, 5 );
+		expect( mesh.colors[ midribOffset + 1 ] ).toBeGreaterThan( 1.2 );
+		expect( mesh.colors[ midribOffset + 1 ] ).toBeLessThan( 1.24 );
+		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 0.2, 5 );
+		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeGreaterThan( 1.12 );
+		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeLessThan( 1.15 );
+
+	} );
+
+	it( 'lifts lower-tier greens to soften the dark-to-bright tier change', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const lastFrondIndex = frondCount( mesh, 8 ) - 1;
+		const lowerVertex = mesh.indices[ leaves.start ]!;
+		const upperVertex = mesh.indices[ leaves.start + lastFrondIndex * 24 ]!;
+		const lowerGreen = mesh.colors[ lowerVertex * 3 + 1 ]!;
+		const upperGreen = mesh.colors[ upperVertex * 3 + 1 ]!;
+
+		expect( lowerGreen - upperGreen ).toBeGreaterThan( 0.1 );
+		expect( lowerGreen - upperGreen ).toBeLessThan( 0.19 );
 
 	} );
 

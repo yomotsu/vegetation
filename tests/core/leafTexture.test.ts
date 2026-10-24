@@ -63,6 +63,46 @@ function opaqueChannelValues( texture: { width: number; height: number; data: Ui
 
 }
 
+function opaqueNeighborGradientValues( texture: { width: number; height: number; data: Uint8Array } ): number[] {
+
+	const tileWidth = texture.width / 3;
+	const values: number[] = [];
+
+	for ( let y = 0; y < texture.height; y ++ ) {
+
+		for ( let x = 0; x < tileWidth; x ++ ) {
+
+			const offset = ( y * texture.width + x ) * 4;
+
+			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+			const luminance = 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]!;
+
+			for ( const [ dx, dy ] of [ [ 1, 0 ], [ 0, 1 ] ] ) {
+
+				const neighborX = x + dx!;
+				const neighborY = y + dy!;
+
+				if ( neighborX >= tileWidth || neighborY >= texture.height ) continue;
+
+				const neighborOffset = ( neighborY * texture.width + neighborX ) * 4;
+
+				if ( texture.data[ neighborOffset + 3 ]! < 128 ) continue;
+
+				const neighborLuminance = 0.2126 * texture.data[ neighborOffset ]! + 0.7152 * texture.data[ neighborOffset + 1 ]! + 0.0722 * texture.data[ neighborOffset + 2 ]!;
+
+				values.push( Math.abs( neighborLuminance - luminance ) );
+
+			}
+
+		}
+
+	}
+
+	return values;
+
+}
+
 function percentile( values: number[], fraction: number ): number {
 
 	const sorted = [ ...values ].sort( ( a, b ) => a - b );
@@ -73,7 +113,7 @@ function percentile( values: number[], fraction: number ): number {
 
 describe( 'fir sprig texture', () => {
 
-	it( 'creates a deterministic atlas with a fir sprig, needles, and a brown stem', () => {
+	it( 'creates a deterministic atlas with a fir sprig, needles, and a green midrib', () => {
 
 		const first = createFirSprigTexture( 42 );
 		const second = createFirSprigTexture( 42 );
@@ -129,7 +169,7 @@ describe( 'fir sprig texture', () => {
 		expect( opaquePixels ).toBe( sprigOpaquePixels );
 		expect( sprigOpaquePixels / ( tileWidth * first.height ) ).toBeGreaterThan( 0.2 );
 		expect( greenPixels ).toBeGreaterThan( 1000 );
-		expect( brownPixels ).toBeGreaterThan( 100 );
+		expect( brownPixels ).toBe( 0 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeGreaterThan( 0.18 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeLessThan( 0.5 );
 		expect( alphaCoverage( first, tileWidth, tileWidth ) ).toBe( 0 );
@@ -187,6 +227,24 @@ describe( 'fir sprig texture', () => {
 		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 60 );
 		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 71 );
 		expect( percentile( luminance, 0.9 ) ).toBeLessThanOrEqual( 79 );
+
+	} );
+
+	it( 'keeps neighboring needle tones softly graduated', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const gradients = opaqueNeighborGradientValues( texture );
+
+		expect( percentile( gradients, 0.9 ) ).toBeLessThanOrEqual( 4 );
+
+	} );
+
+	it( 'keeps the needle luminance range compact', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const luminance = opaqueChannelValues( texture, 3 );
+
+		expect( percentile( luminance, 0.9 ) - percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 27 );
 
 	} );
 

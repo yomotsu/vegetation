@@ -238,6 +238,16 @@ function getFrondWind( point: Vec3, frond: Frond ): number {
 
 }
 
+function getFrondVertexColor( longitudinal: number, lateral: number, radius: number ): Color3 {
+
+	const midrib = 1 - Math.abs( lateral * 2 - 1 );
+	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.18;
+	const green = 1.04 + tierLift - longitudinal * 0.08 + midrib * 0.04;
+
+	return [ 0.35, green, 0.2 ];
+
+}
+
 function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: number[] ): void {
 
 	const lateralSamples = [ 0, 0.5, 1 ];
@@ -258,7 +268,7 @@ function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: numb
 			const point = add( add( center, multiply( frond.widthDirection, widthOffset ) ), [ 0, foldOffset, 0 ] );
 			const uv: [ number, number ] = [ inset + ( 1 / 3 - inset * 2 ) * u, 1 - t ];
 
-			indices.push( builder.addVertex( point, [ 0, 1, 0 ], uv, leafColor, getFrondWind( point, frond ) ) );
+			indices.push( builder.addVertex( point, [ 0, 1, 0 ], uv, getFrondVertexColor( t, u, frond.radius ), getFrondWind( point, frond ) ) );
 
 		}
 
@@ -534,7 +544,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 		},
 		{
 			name: 'leaf',
-			defaultColor: 0xffffff,
+		defaultColor: 0x00ff00,
 			texture: 'leaf',
 			roughness: 0.95,
 			alphaTest: 0.5,

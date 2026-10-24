@@ -4,7 +4,7 @@ import type { TextureData } from './types';
 type Rgb = [ number, number, number ];
 
 const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
-const leafLuminanceStops: [ number, number ][] = [ [ 18, 32 ], [ 31, 44 ], [ 59, 57 ], [ 85, 75 ], [ 91, 80 ] ];
+const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 48 ], [ 59, 57 ], [ 85, 75 ], [ 91, 80 ] ];
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -86,9 +86,8 @@ function drawStroke(
 
 }
 
-function getNeedleColor( random: ReturnType<typeof createRandom>, bright: boolean ): Rgb {
+function getNeedleColor( random: ReturnType<typeof createRandom>, bright: boolean, variation: number ): Rgb {
 
-	const variation = random.range( 0.72, 1.25 );
 	const base: Rgb = bright ? [ 35, 88, 10 ] : [ 9, 30, 3 ];
 
 	return [
@@ -157,12 +156,27 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 	for ( let y = size * 0.035; y <= size * 0.985; y += nodeSpacing ) {
 
 		const v = y / size;
-		const widthProfile = getSprigWidthProfile( v );
-		const envelope = size * 0.31 * widthProfile;
 		const curve = Math.sin( v * Math.PI * 1.3 + seed * 0.37 ) * size * 0.009;
 		const stemX = center + curve;
 
 		stemPoints.push( [ stemX, y ] );
+
+	}
+
+	for ( let i = 1; i < stemPoints.length; i ++ ) {
+
+		const a = stemPoints[ i - 1 ]!;
+		const b = stemPoints[ i ]!;
+
+		drawStroke( data, width, size, a, b, 1.2 * pixelScale, 0.8 * pixelScale, [ 20, 66, 4 ], [ 26, 75, 5 ] );
+
+	}
+
+	for ( const [ stemX, y ] of stemPoints ) {
+
+		const v = y / size;
+		const widthProfile = getSprigWidthProfile( v );
+		const envelope = size * 0.31 * widthProfile;
 
 		for ( const side of [ - 1, 1 ] ) {
 
@@ -180,8 +194,9 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 				const endY = Math.min( size - 1, baseY + rise );
 				const midX = rootX + curveX;
 				const midY = baseY + curveY;
-				const dark = getNeedleColor( random, false );
-				const bright = getNeedleColor( random, true );
+				const variation = random.range( 0.82, 1.18 );
+				const dark = getNeedleColor( random, false, variation );
+				const bright = getNeedleColor( random, true, variation );
 				const stemWidth = random.range( 13.5, 16.5 ) * pixelScale;
 				const tipWidth = random.range( 2.4, 3.4 ) * pixelScale;
 
@@ -191,15 +206,6 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 			}
 
 		}
-
-	}
-
-	for ( let i = 1; i < stemPoints.length; i ++ ) {
-
-		const a = stemPoints[ i - 1 ]!;
-		const b = stemPoints[ i ]!;
-
-		drawStroke( data, width, size, a, b, 2.2 * pixelScale, 1.4 * pixelScale, [ 76, 49, 24 ], [ 92, 63, 31 ] );
 
 	}
 
