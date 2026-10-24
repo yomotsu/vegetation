@@ -318,6 +318,15 @@ function addFronds( builder: MeshBuilder, layout: TreeLayout, frondsPerTierAtLod
 
 }
 
+function selectTrunkRings( layout: TreeLayout, indices: number[] ): { spine: Vec3[]; radii: number[] } {
+
+	return {
+		spine: indices.map( ( index ) => layout.trunkSpine[ index ]! ),
+		radii: indices.map( ( index ) => layout.trunkRadii[ index ]! ),
+	};
+
+}
+
 function scaleTrunkV( mesh: MeshData, trunkVertexCount: number ): void {
 
 	for ( let vertex = 0; vertex < trunkVertexCount; vertex ++ ) {
@@ -331,9 +340,10 @@ function scaleTrunkV( mesh: MeshData, trunkVertexCount: number ): void {
 function buildLod0( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
+	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 9, 11, 12 ] );
 	builder.beginGroup( 0 );
-	addTube( builder, layout.trunkSpine, layout.trunkRadii, 7, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
-	const trunkVertexCount = layout.trunkSpine.length * 7;
+	addTube( builder, trunk.spine, trunk.radii, 7, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
+	const trunkVertexCount = trunk.spine.length * 7;
 	addFronds( builder, layout, frondsPerTier, [ 0, 0.4, 1 ] );
 
 	const mesh = builder.build();
@@ -347,9 +357,10 @@ function buildLod0( layout: TreeLayout ): MeshData {
 function buildLod1( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
+	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 7, 10, 11, 12 ] );
 	builder.beginGroup( 0 );
-	addTube( builder, layout.trunkSpine, layout.trunkRadii, 5, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
-	const trunkVertexCount = layout.trunkSpine.length * 5;
+	addTube( builder, trunk.spine, trunk.radii, 5, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
+	const trunkVertexCount = trunk.spine.length * 5;
 	addFronds( builder, layout, 4, [ 0, 1 ] );
 
 	const mesh = builder.build();
@@ -363,13 +374,11 @@ function buildLod1( layout: TreeLayout ): MeshData {
 function buildLod2( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
-	const spineIndices = [ 0, 2, 4, 6, 8, 10, 12 ];
-	const trunkSpine = spineIndices.map( ( index ) => layout.trunkSpine[ index ]! );
-	const trunkRadii = spineIndices.map( ( index ) => layout.trunkRadii[ index ]! );
+	const trunk = selectTrunkRings( layout, [ 0, 2, 6, 10, 12 ] );
 
 	builder.beginGroup( 0 );
-	addTube( builder, trunkSpine, trunkRadii, 4, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
-	const trunkVertexCount = trunkSpine.length * 4;
+	addTube( builder, trunk.spine, trunk.radii, 4, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
+	const trunkVertexCount = trunk.spine.length * 4;
 	addFronds( builder, layout, 2, [ 0, 1 ] );
 
 	const mesh = builder.build();

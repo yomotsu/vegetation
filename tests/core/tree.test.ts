@@ -10,6 +10,12 @@ function triangleCount( mesh: { indices: Uint32Array } ): number {
 
 }
 
+function vertexCount( mesh: { positions: Float32Array } ): number {
+
+	return mesh.positions.length / 3;
+
+}
+
 function minimumY( positions: Float32Array ): number {
 
 	let minimum = Infinity;
@@ -101,7 +107,7 @@ describe( 'conifer tree data', () => {
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 600 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBe( 168 + 76 * 8 );
+		expect( counts[ 0 ] ).toBe( 84 + 76 * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
@@ -113,6 +119,26 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
 		expect( counts[ 4 ] ).toBeLessThanOrEqual( 12 );
 		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, 2 ) );
+
+	} );
+
+	it( 'keeps LOD vertex counts below the reference and removes hidden trunk rings', () => {
+
+		for ( const seed of [ 1, 2, 3, 4, 5 ] ) {
+
+			const lods = generateTreeData( { seed } ).lods;
+			const counts = lods.map( vertexCount );
+
+			expect( counts[ 0 ] ).toBeLessThanOrEqual( 740 );
+			expect( counts[ 1 ] ).toBeLessThanOrEqual( 410 );
+			expect( counts[ 2 ] ).toBeLessThanOrEqual( 210 );
+			expect( counts[ 0 ] ).toBeLessThanOrEqual( 795 );
+			expect( counts[ 1 ] ).toBeLessThanOrEqual( 513 );
+			expect( counts[ 2 ] ).toBeLessThanOrEqual( 331 );
+			expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
+			expect( counts[ 4 ] ).toBeLessThan( counts[ 2 ]! );
+
+		}
 
 	} );
 
@@ -316,9 +342,9 @@ describe( 'conifer tree data', () => {
 		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 76 );
 		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 61 );
 		expect( frondCount( data.lods[ 2 ]!, 4 ) ).toBe( 31 );
-		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 776 );
-		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 364 );
-		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 172 );
+		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 692 );
+		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 314 );
+		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 156 );
 
 	} );
 
@@ -393,8 +419,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( baseRadius ).toBeCloseTo( 0.35, 2 );
-		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 26 * 8 );
-		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 41 * 8 );
+		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 84 + 26 * 8 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 84 + 41 * 8 );
 
 	} );
 
