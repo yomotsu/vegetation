@@ -87,7 +87,7 @@ describe( 'conifer tree data', () => {
 		} );
 		expect( data.parts[ 1 ] ).toEqual( {
 			name: 'leaf',
-			defaultColor: 0xd0d8c0,
+			defaultColor: 0xffffff,
 			texture: 'leaf',
 			alphaTest: 0.5,
 			doubleSided: true,

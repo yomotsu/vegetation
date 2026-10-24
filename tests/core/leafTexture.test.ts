@@ -39,6 +39,38 @@ function rowWidth( texture: { width: number; data: Uint8Array }, xOffset: number
 
 }
 
+function opaqueChannelValues( texture: { width: number; height: number; data: Uint8Array }, channel: number ): number[] {
+
+	const tileWidth = texture.width / 3;
+	const values: number[] = [];
+
+	for ( let y = 0; y < texture.height; y ++ ) {
+		for ( let x = 0; x < tileWidth; x ++ ) {
+			const offset = ( y * texture.width + x ) * 4;
+
+			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+			if ( channel === 3 ) {
+				values.push( Math.round( 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]! ) );
+			} else {
+				values.push( texture.data[ offset + channel ]! );
+			}
+
+		}
+	}
+
+	return values;
+
+}
+
+function percentile( values: number[], fraction: number ): number {
+
+	const sorted = [ ...values ].sort( ( a, b ) => a - b );
+
+	return sorted[ Math.round( ( sorted.length - 1 ) * fraction ) ]!;
+
+}
+
 describe( 'fir sprig texture', () => {
 
 	it( 'creates a deterministic atlas with a fir sprig, needles, and a brown stem', () => {
@@ -131,6 +163,30 @@ describe( 'fir sprig texture', () => {
 
 		expect( coverage ).toBeGreaterThan( 0.26 );
 		expect( coverage ).toBeLessThan( 0.34 );
+
+	} );
+
+	it( 'matches the Tree01 opaque texel hue and value distribution', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const red = opaqueChannelValues( texture, 0 );
+		const green = opaqueChannelValues( texture, 1 );
+		const blue = opaqueChannelValues( texture, 2 );
+		const luminance = opaqueChannelValues( texture, 3 );
+		const mean = ( values: number[] ): number => values.reduce( ( total, value ) => total + value, 0 ) / values.length;
+
+		expect( mean( red ) ).toBeGreaterThanOrEqual( 27 );
+		expect( mean( red ) ).toBeLessThanOrEqual( 31 );
+		expect( mean( green ) ).toBeGreaterThanOrEqual( 69 );
+		expect( mean( green ) ).toBeLessThanOrEqual( 75 );
+		expect( mean( blue ) ).toBeGreaterThanOrEqual( 4 );
+		expect( mean( blue ) ).toBeLessThanOrEqual( 9 );
+		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 41 );
+		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 47 );
+		expect( percentile( luminance, 0.5 ) ).toBeGreaterThanOrEqual( 54 );
+		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 60 );
+		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 71 );
+		expect( percentile( luminance, 0.9 ) ).toBeLessThanOrEqual( 79 );
 
 	} );
 

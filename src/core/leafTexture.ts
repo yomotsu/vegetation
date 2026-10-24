@@ -4,6 +4,7 @@ import type { TextureData } from './types';
 type Rgb = [ number, number, number ];
 
 const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
+const leafLuminanceStops: [ number, number ][] = [ [ 18, 32 ], [ 31, 44 ], [ 59, 57 ], [ 85, 75 ], [ 91, 80 ] ];
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -95,6 +96,53 @@ function getNeedleColor( random: ReturnType<typeof createRandom>, bright: boolea
 		Math.round( clamp( base[ 1 ] * variation + random.range( - 5, 7 ), 0, 255 ) ),
 		Math.round( clamp( base[ 2 ] * variation + random.range( - 2, 3 ), 0, 255 ) ),
 	];
+
+}
+
+function mapLeafLuminance( luminance: number ): number {
+
+	for ( let index = 1; index < leafLuminanceStops.length; index ++ ) {
+
+		const lower = leafLuminanceStops[ index - 1 ]!;
+		const upper = leafLuminanceStops[ index ]!;
+
+		if ( luminance <= upper[ 0 ] || index === leafLuminanceStops.length - 1 ) {
+
+			const amount = ( luminance - lower[ 0 ] ) / ( upper[ 0 ] - lower[ 0 ] );
+
+			return lower[ 1 ] + ( upper[ 1 ] - lower[ 1 ] ) * amount;
+
+		}
+
+	}
+
+	return luminance;
+
+}
+
+function matchLeafColorDistribution( data: Uint8Array, width: number, size: number ): void {
+
+	for ( let y = 0; y < size; y ++ ) {
+
+		for ( let x = 0; x < size; x ++ ) {
+
+			const offset = ( y * width + x ) * 4;
+			const red = data[ offset ]!;
+			const green = data[ offset + 1 ]!;
+			const blue = data[ offset + 2 ]!;
+
+			if ( data[ offset + 3 ] === 0 || green <= red || green <= blue ) continue;
+
+			const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+			const scale = mapLeafLuminance( luminance ) / luminance;
+
+			data[ offset ] = Math.round( clamp( red * scale, 0, 255 ) );
+			data[ offset + 1 ] = Math.round( clamp( green * scale, 0, 255 ) );
+			data[ offset + 2 ] = Math.round( clamp( blue * scale - 2, 0, 255 ) );
+
+		}
+
+	}
 
 }
 
@@ -242,6 +290,7 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 	}
 
 	drawSprig( data, width, size, seed );
+	matchLeafColorDistribution( data, width, size );
 	if ( padEdges ) {
 
 		padTextureEdges( { width, height: size, data } );
