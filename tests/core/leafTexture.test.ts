@@ -1,51 +1,151 @@
 import { describe, expect, it } from 'vitest';
-import { createLeafClusterTexture } from '../../src/core';
+import { createFirSprigTexture } from '../../src/core';
 
-describe( 'leaf cluster texture', () => {
+function alphaAt( texture: { width: number; data: Uint8Array }, x: number, y: number ): number {
 
-	it( 'creates a deterministic 128 pixel texture with binary alpha and centered leaf coverage', () => {
+	return texture.data[ ( y * texture.width + x ) * 4 + 3 ]!;
 
-		const first = createLeafClusterTexture( 42 );
-		const second = createLeafClusterTexture( 42 );
-		const otherSeed = createLeafClusterTexture( 43 );
-		let opaquePixels = 0;
+}
 
-		expect( first.width ).toBe( 128 );
-		expect( first.height ).toBe( 128 );
-		expect( first.data ).toEqual( second.data );
-		expect( first.data ).not.toEqual( otherSeed.data );
+function alphaCoverage( texture: { width: number; height: number; data: Uint8Array }, xOffset: number, width: number ): number {
 
-		for ( let i = 0; i < first.data.length; i += 4 ) {
+	let covered = 0;
 
-			const red = first.data[ i ]!;
-			const green = first.data[ i + 1 ]!;
-			const blue = first.data[ i + 2 ]!;
-			const alpha = first.data[ i + 3 ]!;
+	for ( let y = 0; y < texture.height; y ++ ) {
 
-			expect( red ).toBeGreaterThanOrEqual( 191 );
-			expect( red ).toBeLessThanOrEqual( 255 );
-			expect( green ).toBe( red );
-			expect( blue ).toBe( red );
-			expect( alpha === 0 || alpha === 255 ).toBe( true );
+		for ( let x = xOffset; x < xOffset + width; x ++ ) {
 
-			if ( alpha === 255 ) opaquePixels ++;
+			if ( alphaAt( texture, x, y ) >= 128 ) covered ++;
 
 		}
 
-		const coverage = opaquePixels / ( first.width * first.height );
+	}
 
-		expect( coverage ).toBeGreaterThanOrEqual( 0.2 );
-		expect( coverage ).toBeLessThanOrEqual( 0.7 );
+	return covered / ( width * texture.height );
+
+}
+
+function rowWidth( texture: { width: number; data: Uint8Array }, xOffset: number, y: number, width: number ): number {
+
+	let count = 0;
+
+	for ( let x = xOffset; x < xOffset + width; x ++ ) {
+
+		if ( alphaAt( texture, x, y ) >= 128 ) count ++;
+
+	}
+
+	return count;
+
+}
+
+describe( 'fir sprig texture', () => {
+
+	it( 'creates a deterministic two-region alpha atlas with needles, a brown stem, and a conical mask', () => {
+
+		const first = createFirSprigTexture( 42 );
+		const second = createFirSprigTexture( 42 );
+		const otherSeed = createFirSprigTexture( 43 );
+		const tileWidth = first.width / 3;
+		let opaquePixels = 0;
+		let sprigOpaquePixels = 0;
+		let greenPixels = 0;
+		let brownPixels = 0;
+		let redTotal = 0;
+		let greenTotal = 0;
+		let blueTotal = 0;
+		let invalidAlphaPixels = 0;
+
+		expect( first.width ).toBe( 768 );
+		expect( first.height ).toBe( 256 );
+		expect( first.data ).toEqual( second.data );
+		expect( first.data ).not.toEqual( otherSeed.data );
+		expect( invalidAlphaPixels ).toBe( 0 );
+
+		for ( let y = 0; y < first.height; y ++ ) {
+
+			for ( let x = 0; x < first.width; x ++ ) {
+
+				const offset = ( y * first.width + x ) * 4;
+				const red = first.data[ offset ]!;
+				const green = first.data[ offset + 1 ]!;
+				const blue = first.data[ offset + 2 ]!;
+				const alpha = first.data[ offset + 3 ]!;
+
+				if ( alpha !== 0 && alpha !== 255 ) invalidAlphaPixels ++;
+
+				if ( alpha === 255 ) {
+
+					opaquePixels ++;
+					if ( x < tileWidth ) {
+
+						sprigOpaquePixels ++;
+						redTotal += red;
+						greenTotal += green;
+						blueTotal += blue;
+
+					}
+
+				}
+
+				if ( x < tileWidth && alpha === 255 && green > red && green > blue ) greenPixels ++;
+				if ( x < tileWidth && alpha === 255 && red > green && green > blue ) brownPixels ++;
+
+			}
+
+		}
+
+		expect( opaquePixels / ( first.width * first.height ) ).toBeGreaterThan( 0.2 );
+		expect( greenPixels ).toBeGreaterThan( 1000 );
+		expect( brownPixels ).toBeGreaterThan( 100 );
+		expect( alphaCoverage( first, 0, tileWidth ) ).toBeGreaterThan( 0.18 );
+		expect( alphaCoverage( first, 0, tileWidth ) ).toBeLessThan( 0.5 );
+		expect( alphaCoverage( first, tileWidth, tileWidth ) ).toBeGreaterThan( 0.25 );
+		expect( alphaCoverage( first, tileWidth * 2, tileWidth ) ).toBeGreaterThan( 0.25 );
+		expect( redTotal / sprigOpaquePixels ).toBeGreaterThan( 20 );
+		expect( redTotal / sprigOpaquePixels ).toBeLessThan( 50 );
+		expect( greenTotal / sprigOpaquePixels ).toBeGreaterThan( 50 );
+		expect( greenTotal / sprigOpaquePixels ).toBeLessThan( 110 );
+		expect( blueTotal / sprigOpaquePixels ).toBeLessThan( 20 );
 
 	} );
 
-	it( 'accepts an explicit texture size', () => {
+	it( 'stores the sprig base at v=0 and narrows the silhouette toward its tip', () => {
 
-		const texture = createLeafClusterTexture( 7, 64 );
+		const texture = createFirSprigTexture( 7 );
+		const tileWidth = texture.width / 3;
+		const baseRow = rowWidth( texture, 0, 12, tileWidth );
+		const middleRow = rowWidth( texture, 0, 128, tileWidth );
+		const tipRow = rowWidth( texture, 0, 252, tileWidth );
+		const coneBottom = rowWidth( texture, tileWidth, 4, tileWidth );
+		const coneTop = rowWidth( texture, tileWidth, 252, tileWidth );
 
-		expect( texture.width ).toBe( 64 );
+		expect( baseRow ).toBeGreaterThan( 0 );
+		expect( middleRow ).toBeGreaterThan( baseRow );
+		expect( tipRow ).toBeLessThan( middleRow );
+		expect( coneBottom ).toBeGreaterThan( coneTop );
+
+	} );
+
+	it( 'keeps a dense needle mask similar to the Tree01 albedo', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const tileWidth = texture.width / 3;
+		const coverage = alphaCoverage( texture, 0, tileWidth );
+
+		expect( coverage ).toBeGreaterThan( 0.26 );
+		expect( coverage ).toBeLessThan( 0.34 );
+
+	} );
+
+	it( 'accepts a positive explicit tile size', () => {
+
+		const texture = createFirSprigTexture( 7, 64 );
+
+		expect( texture.width ).toBe( 192 );
 		expect( texture.height ).toBe( 64 );
-		expect( texture.data.length ).toBe( 64 * 64 * 4 );
+		expect( texture.data.length ).toBe( 192 * 64 * 4 );
+		expect( () => createFirSprigTexture( 7, 0 ) ).toThrow( RangeError );
 
 	} );
 

@@ -6,4 +6,5 @@ export * from './meshBuilder';
 export * from './primitives';
 export * from './impostor';
 export * from './leafTexture';
+export * from './barkTexture';
 export * from './generators/tree';

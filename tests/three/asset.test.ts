@@ -5,6 +5,7 @@ import {
 	LinearFilter,
 	LinearMipmapLinearFilter,
 	MeshStandardMaterial,
+	RepeatWrapping,
 	SRGBColorSpace,
 } from 'three';
 import { describe, expect, it } from 'vitest';
@@ -44,18 +45,23 @@ describe( 'VegetationAsset', () => {
 
 	} );
 
-	it( 'uses bottom-origin sRGB data textures with mipmaps and alpha-tested materials', () => {
+	it( 'creates bark and leaf data textures with bottom-origin sRGB sampling', () => {
 
 		const asset = generateTree( { seed: 1 } );
+		const barkMaterial = asset.materials[ 0 ]!;
 		const leafMaterial = asset.materials[ 1 ]!;
 		const impostorMaterial = asset.materials[ 2 ]!;
+		const barkTexture = barkMaterial.map as DataTexture;
 		const leafTexture = leafMaterial.map as DataTexture;
 		const impostorTexture = impostorMaterial.map as DataTexture;
 
+		expect( barkTexture ).toBeInstanceOf( DataTexture );
 		expect( leafTexture ).toBeInstanceOf( DataTexture );
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
+		expect( asset.data.parts[ 0 ]!.texture ).toBe( 'bark' );
+		expect( asset.data.textures.bark ).toBeDefined();
 
-		for ( const texture of [ leafTexture, impostorTexture ] ) {
+		for ( const texture of [ barkTexture, leafTexture, impostorTexture ] ) {
 
 			expect( texture.flipY ).toBe( false );
 			expect( texture.colorSpace ).toBe( SRGBColorSpace );
@@ -65,8 +71,12 @@ describe( 'VegetationAsset', () => {
 			expect( texture.version ).toBeGreaterThan( 0 );
 
 		}
+		expect( barkTexture.wrapS ).toBe( RepeatWrapping );
+		expect( barkTexture.wrapT ).toBe( RepeatWrapping );
 
 		expect( leafMaterial.alphaTest ).toBe( 0.5 );
+		expect( leafMaterial.roughness ).toBe( 0.95 );
+		expect( barkMaterial.roughness ).toBe( 0.85 );
 		expect( leafMaterial.alphaToCoverage ).toBe( false );
 		expect( leafMaterial.transparent ).toBe( false );
 		expect( impostorMaterial.alphaTest ).toBe( 0.5 );

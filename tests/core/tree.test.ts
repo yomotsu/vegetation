@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildBillboard, bakeImpostor, getTreeCrownBounds, hexToLinear, impostorPart } from '../../src/core';
+import { bakeImpostor, buildBillboard, hexToLinear, impostorPart } from '../../src/core';
 import { generateTreeData } from '../../src/core';
-import type { TreeOptions } from '../../src/core';
+import type { MeshData } from '../../src/core';
 import { validateMeshData } from '../helpers/validateMeshData';
 
 function triangleCount( mesh: { indices: Uint32Array } ): number {
@@ -44,94 +44,60 @@ function defaultColors( data: ReturnType<typeof generateTreeData> ): [ number, n
 
 }
 
-function leafBounds( mesh: ReturnType<typeof generateTreeData>[ 'lods' ][ number ] ): [ number, number, number, number, number, number ] {
+function leafGroup( mesh: MeshData ) {
 
-	const bounds: [ number, number, number, number, number, number ] = [ Infinity, Infinity, Infinity, - Infinity, - Infinity, - Infinity ];
-
-	for ( const group of mesh.groups ) {
-
-		if ( group.partIndex !== 1 ) {
-
-			continue;
-
-		}
-
-		for ( let i = group.start; i < group.start + group.count; i ++ ) {
-
-			const index = mesh.indices[ i ]! * 3;
-
-			for ( let axis = 0; axis < 3; axis ++ ) {
-
-				bounds[ axis ] = Math.min( bounds[ axis ]!, mesh.positions[ index + axis ]! );
-				bounds[ axis + 3 ] = Math.max( bounds[ axis + 3 ]!, mesh.positions[ index + axis ]! );
-
-			}
-
-		}
-
-	}
-
-	return bounds;
+	return mesh.groups.find( ( group ) => group.partIndex === 1 )!;
 
 }
 
-function boundsRadius( mesh: ReturnType<typeof generateTreeData>[ 'lods' ][ number ] ): number {
+describe( 'conifer tree data', () => {
 
-	let radius = 0;
+	it( 'builds five valid, strictly decreasing LOD meshes and reference-matched parts', () => {
 
-	for ( let i = 0; i < mesh.positions.length; i += 3 ) {
-
-		radius = Math.max( radius, Math.hypot( mesh.positions[ i ]!, mesh.positions[ i + 2 ]! ) );
-
-	}
-
-	return radius;
-
-}
-
-describe( 'stylized broadleaf tree data', () => {
-
-	it( 'builds five valid, strictly decreasing LOD meshes and a billboard as the last LOD', () => {
-
-		const options: TreeOptions = { seed: 1 };
-		const data = generateTreeData( options );
+		const data = generateTreeData( { seed: 1 } );
 		const counts = data.lods.map( triangleCount );
 
+		expect( data.bounds.height ).toBe( 7.5 );
 		expect( data.lods ).toHaveLength( 5 );
 		expect( data.parts ).toHaveLength( 3 );
 		expect( data.parts[ 0 ] ).toEqual( {
 			name: 'bark',
-			defaultColor: 0x6b4a32,
-			texture: null,
+			defaultColor: 0xffffff,
+			texture: 'bark',
 			alphaTest: 0,
 			doubleSided: false,
 			flatShading: true,
 		} );
 		expect( data.parts[ 1 ] ).toEqual( {
 			name: 'leaf',
-			defaultColor: 0x5a8f3a,
+			defaultColor: 0xffffff,
 			texture: 'leaf',
 			alphaTest: 0.5,
 			doubleSided: true,
 			flatShading: false,
 		} );
 		expect( data.parts[ 2 ] ).toEqual( impostorPart() );
+		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf' ] );
 
 		for ( const lod of data.lods ) validateMeshData( lod );
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 600 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBeGreaterThan( counts[ 1 ]! );
-		expect( counts[ 1 ] ).toBeGreaterThan( counts[ 2 ]! );
-		expect( counts[ 2 ] ).toBeGreaterThan( counts[ 3 ]! );
-		expect( counts[ 3 ] ).toBeGreaterThan( counts[ 4 ]! );
+		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
+		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
+		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
+		expect( counts[ 2 ] ).toBeLessThan( counts[ 1 ]! );
+		expect( counts[ 2 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.2 );
+		expect( counts[ 2 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.35 );
+		expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 		expect( counts[ 3 ] ).toBeLessThanOrEqual( 40 );
+		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
 		expect( counts[ 4 ] ).toBeLessThanOrEqual( 12 );
 		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, 2 ) );
 
 	} );
 
-	it( 'is deterministic per seed and changes shape for another seed', () => {
+	it( 'is deterministic per seed and changes the conifer silhouette for another seed', () => {
 
 		const first = generateTreeData( { seed: 1 } );
 		const repeated = generateTreeData( { seed: 1 } );
@@ -139,303 +105,192 @@ describe( 'stylized broadleaf tree data', () => {
 
 		expect( first.lods[ 0 ]!.positions ).toEqual( repeated.lods[ 0 ]!.positions );
 		expect( first.lods[ 0 ]!.positions ).not.toEqual( other.lods[ 0 ]!.positions );
+		expect( first.textures.leaf!.data ).toEqual( repeated.textures.leaf!.data );
+		expect( first.textures.leaf!.data ).not.toEqual( other.textures.leaf!.data );
 
 	} );
 
-	it( 'keeps every LOD above the ground', () => {
+	it( 'keeps every LOD above the ground and below its configured height', () => {
 
 		const data = generateTreeData( { seed: 6 } );
 
 		for ( const lod of data.lods ) {
 
 			expect( minimumY( lod.positions ) ).toBeGreaterThanOrEqual( - 0.05 );
-
-		}
-
-	} );
-
-	it( 'keeps the crown inside the tree height so impostor views do not clip', () => {
-
-		const data = generateTreeData( { seed: 1 } );
-
-		for ( const lod of data.lods ) {
 			expect( maximumY( lod.positions ) ).toBeLessThanOrEqual( data.bounds.height + 1e-5 );
+
 		}
 
 	} );
 
-	it( 'winds every LOD0 leaf triangle toward its spherical vertex normals', () => {
+	it( 'uses upward stylized leaf normals and separates trunk and frond wind weights', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const winds: number[] = [];
 
-		for ( const group of mesh.groups ) {
+		for ( let i = leaves.start; i < leaves.start + leaves.count; i ++ ) {
 
-			if ( group.partIndex !== 1 ) {
-				continue;
-			}
+			const index = mesh.indices[ i ]!;
+			const offset = index * 3;
 
-			for ( let i = group.start; i < group.start + group.count; i += 3 ) {
+			expect( mesh.normals[ offset ] ).toBeCloseTo( 0 );
+			expect( mesh.normals[ offset + 1 ] ).toBeCloseTo( 1 );
+			expect( mesh.normals[ offset + 2 ] ).toBeCloseTo( 0 );
+			winds.push( mesh.windWeight[ index ]! );
 
-				const indices = [ mesh.indices[ i ]!, mesh.indices[ i + 1 ]!, mesh.indices[ i + 2 ]! ];
+		}
+
+		expect( Math.min( ...winds ) ).toBeGreaterThanOrEqual( 0.5 );
+		expect( Math.max( ...winds ) ).toBeLessThanOrEqual( 1 );
+
+		const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+		const barkWinds = Array.from( { length: bark.count }, ( _, i ) => mesh.windWeight[ mesh.indices[ bark.start + i ]! ]! );
+
+		expect( Math.min( ...barkWinds ) ).toBeGreaterThanOrEqual( 0 );
+		expect( Math.max( ...barkWinds ) ).toBeLessThanOrEqual( 0.3001 );
+
+	} );
+
+	it( 'keeps each frond quad non-degenerate and consistently wound', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+
+		for ( let start = leaves.start; start < leaves.start + leaves.count; start += 6 ) {
+
+			const geometricNormals: [ number, number, number ][] = [];
+
+			for ( let triangle = 0; triangle < 2; triangle ++ ) {
+
+				const indices = [ mesh.indices[ start + triangle * 3 ]!, mesh.indices[ start + triangle * 3 + 1 ]!, mesh.indices[ start + triangle * 3 + 2 ]! ];
 				const points = indices.map( ( index ) => [ mesh.positions[ index * 3 ]!, mesh.positions[ index * 3 + 1 ]!, mesh.positions[ index * 3 + 2 ]! ] );
 				const first = points[ 0 ]!;
 				const second = points[ 1 ]!;
 				const third = points[ 2 ]!;
 				const edgeA = [ second[ 0 ]! - first[ 0 ]!, second[ 1 ]! - first[ 1 ]!, second[ 2 ]! - first[ 2 ]! ];
 				const edgeB = [ third[ 0 ]! - first[ 0 ]!, third[ 1 ]! - first[ 1 ]!, third[ 2 ]! - first[ 2 ]! ];
-				const geometricNormal = [
+				const normal: [ number, number, number ] = [
 					edgeA[ 1 ]! * edgeB[ 2 ]! - edgeA[ 2 ]! * edgeB[ 1 ]!,
 					edgeA[ 2 ]! * edgeB[ 0 ]! - edgeA[ 0 ]! * edgeB[ 2 ]!,
 					edgeA[ 0 ]! * edgeB[ 1 ]! - edgeA[ 1 ]! * edgeB[ 0 ]!,
 				];
-				const vertexNormal = [ 0, 1, 2 ].map( ( axis ) => indices.reduce( ( sum, index ) => sum + mesh.normals[ index * 3 + axis ]!, 0 ) );
-				const dot = geometricNormal.reduce( ( sum, value, axis ) => sum + value * vertexNormal[ axis ]!, 0 );
 
-				expect( dot ).toBeGreaterThanOrEqual( - 1e-5 );
+				expect( Math.hypot( ...normal ) ).toBeGreaterThan( 0 );
+				geometricNormals.push( normal );
 
 			}
+
+			const alignment = geometricNormals[ 0 ]!.reduce( ( sum, value, axis ) => sum + value * geometricNormals[ 1 ]![ axis ]!, 0 );
+
+			expect( alignment ).toBeGreaterThan( 0 );
 
 		}
 
 	} );
 
-	it( 'keeps every leaf clump in the LOD0–LOD2 canopy bounds', () => {
+	it( 'uses a trunk UV range suitable for repeating the bark grain', () => {
 
-		const data = generateTreeData( { seed: 1 } );
-		const reference = leafBounds( data.lods[ 0 ]! );
-		const tolerance = Math.max( ...[ 0, 1, 2 ].map( ( axis ) => reference[ axis + 3 ]! - reference[ axis ]! ) ) * 0.1;
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+		let minU = Infinity;
+		let maxU = - Infinity;
+		let minV = Infinity;
+		let maxV = - Infinity;
 
-		for ( const lod of data.lods.slice( 1, 3 ) ) {
+		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
 
-			const candidate = leafBounds( lod );
+			const vertex = mesh.indices[ i ]!;
+			minU = Math.min( minU, mesh.uvs[ vertex * 2 ]! );
+			maxU = Math.max( maxU, mesh.uvs[ vertex * 2 ]! );
+			minV = Math.min( minV, mesh.uvs[ vertex * 2 + 1 ]! );
+			maxV = Math.max( maxV, mesh.uvs[ vertex * 2 + 1 ]! );
 
-			for ( let axis = 0; axis < 6; axis ++ ) {
+		}
 
-				expect( Math.abs( candidate[ axis ]! - reference[ axis ]! ) ).toBeLessThanOrEqual( tolerance );
+		expect( minU ).toBe( 0 );
+		expect( maxU ).toBeGreaterThanOrEqual( 0.8 );
+		expect( minV ).toBe( 0 );
+		expect( maxV ).toBeGreaterThanOrEqual( 2 );
 
+	} );
+
+	it( 'keeps the trunk base near 0.35 m and assigns one whorl per branchCount', () => {
+
+		const fiveTiers = generateTreeData( { seed: 1, branchCount: 5 } );
+		const eightTiers = generateTreeData( { seed: 1, branchCount: 8 } );
+		const trunk = eightTiers.lods[ 0 ]!;
+		const bark = trunk.groups.find( ( group ) => group.partIndex === 0 )!;
+		let baseRadius = 0;
+
+		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
+
+			const offset = trunk.indices[ i ]! * 3;
+
+			if ( trunk.positions[ offset + 1 ]! < 1e-5 ) {
+				baseRadius = Math.max( baseRadius, Math.hypot( trunk.positions[ offset ]!, trunk.positions[ offset + 2 ]! ) );
 			}
 
 		}
 
+		expect( baseRadius ).toBeCloseTo( 0.35, 2 );
+		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 168 + 5 * 74 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 168 + 8 * 74 );
+
 	} );
 
-	it( 'keeps the LOD3 leaf silhouette within fifteen percent of LOD0', () => {
+	it( 'matches the crossed-card conical LOD3 silhouette to LOD0 in both impostor views', () => {
 
 		for ( const seed of [ 1, 2, 3 ] ) {
 
 			const data = generateTreeData( { seed } );
-			const reference = leafBounds( data.lods[ 0 ]! );
-			const candidate = leafBounds( data.lods[ 3 ]! );
+			const reference = bakeImpostor( data, defaultColors( data ), 128 );
+			const lod3Data = { ...data, lods: [ data.lods[ 3 ]!, ...data.lods.slice( 1 ) ] };
+			const candidate = bakeImpostor( lod3Data, defaultColors( data ), 128 );
 
-			for ( let axis = 0; axis < 6; axis ++ ) {
+			for ( let view = 0; view < 2; view ++ ) {
 
-				const extent = reference[ axis % 3 + 3 ]! - reference[ axis % 3 ]!;
-				expect( Math.abs( candidate[ axis ]! - reference[ axis ]! ) ).toBeLessThanOrEqual( extent * 0.15 );
+				let intersection = 0;
+				let union = 0;
 
-			}
+				for ( let y = 0; y < 128; y ++ ) {
 
-		}
+					for ( let x = 0; x < 128; x ++ ) {
 
-	} );
+						const offset = ( y * reference.width + view * 128 + x ) * 4 + 3;
+						const referenceOpaque = reference.data[ offset ]! >= 128;
+						const candidateOpaque = candidate.data[ offset ]! >= 128;
 
-	it( 'winds the LOD3 crossed cards toward explicit outward fronts', () => {
+						if ( referenceOpaque && candidateOpaque ) intersection ++;
+						if ( referenceOpaque || candidateOpaque ) union ++;
 
-		const mesh = generateTreeData( { seed: 1 } ).lods[ 3 ]!;
-		const leaves = mesh.groups.find( ( group ) => group.partIndex === 1 )!;
-		const [ minX, minY, minZ, maxX, maxY, maxZ ] = leafBounds( mesh );
-		const center = [ ( minX + maxX ) * 0.5, ( minY + maxY ) * 0.5, ( minZ + maxZ ) * 0.5 ];
-		const frontNormals = [ [ 0, 0, 1 ], [ - 1, 0, 0 ], [ Math.SQRT1_2, 0, Math.SQRT1_2 ] ];
-
-		for ( let card = 0; card < frontNormals.length; card ++ ) {
-
-			const front = frontNormals[ card ]!;
-
-			for ( let triangle = 0; triangle < 2; triangle ++ ) {
-
-				const start = leaves.start + card * 6 + triangle * 3;
-				const indices = [ mesh.indices[ start ]!, mesh.indices[ start + 1 ]!, mesh.indices[ start + 2 ]! ];
-				const points = indices.map( ( index ) => [ mesh.positions[ index * 3 ]!, mesh.positions[ index * 3 + 1 ]!, mesh.positions[ index * 3 + 2 ]! ] );
-				const first = points[ 0 ]!;
-				const second = points[ 1 ]!;
-				const third = points[ 2 ]!;
-				const edgeA = [ second[ 0 ]! - first[ 0 ]!, second[ 1 ]! - first[ 1 ]!, second[ 2 ]! - first[ 2 ]! ];
-				const edgeB = [ third[ 0 ]! - first[ 0 ]!, third[ 1 ]! - first[ 1 ]!, third[ 2 ]! - first[ 2 ]! ];
-				const geometricNormal = [
-					edgeA[ 1 ]! * edgeB[ 2 ]! - edgeA[ 2 ]! * edgeB[ 1 ]!,
-					edgeA[ 2 ]! * edgeB[ 0 ]! - edgeA[ 0 ]! * edgeB[ 2 ]!,
-					edgeA[ 0 ]! * edgeB[ 1 ]! - edgeA[ 1 ]! * edgeB[ 0 ]!,
-				];
-
-				expect( geometricNormal.reduce( ( sum, value, axis ) => sum + value * front[ axis ]!, 0 ) ).toBeGreaterThan( 0 );
-
-			}
-
-		}
-
-		for ( let index = leaves.start; index < leaves.start + leaves.count; index ++ ) {
-
-			const vertex = mesh.indices[ index ]!;
-			const offset = vertex * 3;
-			const normalDotPosition = [ 0, 1, 2 ].reduce( ( sum, axis ) => sum + mesh.normals[ offset + axis ]! * ( mesh.positions[ offset + axis ]! - center[ axis ]! ), 0 );
-
-			expect( normalDotPosition ).toBeGreaterThan( 0 );
-
-		}
-
-	} );
-
-	it( 'bakes an opaque canopy across at least eighty percent of its inscribed +Z crown ellipse', () => {
-
-		const data = generateTreeData( { seed: 1 } );
-		const image = bakeImpostor( data, defaultColors( data ), 128 );
-		const crown = getTreeCrownBounds( { seed: 1 } );
-		const centerX = ( crown.minX + crown.maxX ) * 0.5;
-		const centerY = ( crown.minY + crown.maxY ) * 0.5;
-		const radiusX = ( crown.maxX - crown.minX ) * 0.5;
-		const radiusY = ( crown.maxY - crown.minY ) * 0.5;
-		let covered = 0;
-		let pixels = 0;
-
-		for ( let y = 0; y < 128; y ++ ) {
-
-			for ( let x = 0; x < 128; x ++ ) {
-
-				const worldX = ( ( x + 0.5 ) / 128 * 2 - 1 ) * data.bounds.radius;
-				const worldY = ( y + 0.5 ) / 128 * data.bounds.height;
-				const ellipse = ( ( worldX - centerX ) / radiusX ) ** 2 + ( ( worldY - centerY ) / radiusY ) ** 2;
-
-				if ( ellipse > 1 ) {
-
-					continue;
+					}
 
 				}
 
-				pixels ++;
-
-				if ( image.data[ ( y * image.width + x ) * 4 + 3 ] === 255 ) {
-
-					covered ++;
-
-				}
-
-			}
-		}
-
-		expect( covered / pixels ).toBeGreaterThanOrEqual( 0.8 );
-
-	} );
-
-	it( 'includes the LOD3 crown extent in bounds and clamps crownSize to the supported range', () => {
-
-		const data = generateTreeData( { seed: 1 } );
-
-		for ( const lod of data.lods.slice( 0, 4 ) ) {
-
-			expect( data.bounds.radius ).toBeGreaterThanOrEqual( boundsRadius( lod ) );
-
-		}
-
-		expect( generateTreeData( { seed: 1, crownSize: 0.1 } ).lods[ 0 ]!.positions ).toEqual( generateTreeData( { seed: 1, crownSize: 0.5 } ).lods[ 0 ]!.positions );
-		expect( generateTreeData( { seed: 1, crownSize: 2 } ).lods[ 0 ]!.positions ).toEqual( generateTreeData( { seed: 1, crownSize: 1.5 } ).lods[ 0 ]!.positions );
-
-	} );
-
-	it( 'flares the trunk base to about 1.6 times its unflared radius', () => {
-
-		const data = generateTreeData( { seed: 1 } );
-		const mesh = data.lods[ 0 ]!;
-		const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
-		let baseRadius = 0;
-		let upperRadius = 0;
-
-		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
-
-			const index = mesh.indices[ i ]! * 3;
-			const y = mesh.positions[ index + 1 ]!;
-			const radius = Math.hypot( mesh.positions[ index ]!, mesh.positions[ index + 2 ]! );
-
-			if ( y <= data.bounds.height * 0.01 ) {
-
-				baseRadius = Math.max( baseRadius, radius );
-
-			}
-
-			if ( y >= data.bounds.height * 0.085 && y <= data.bounds.height * 0.095 ) {
-
-				upperRadius = Math.max( upperRadius, radius );
+				expect( intersection / union ).toBeGreaterThanOrEqual( 0.75 );
 
 			}
 
 		}
-
-		expect( baseRadius / upperRadius ).toBeGreaterThan( 1.5 );
-
 	} );
 
-	it( 'builds LOD3 from exactly three broad cards for custom branch counts', () => {
-
-		for ( const branchCount of [ 4, 8 ] ) {
-
-			const data = generateTreeData( { seed: 1, branchCount } );
-			const trunkTriangles = 15;
-			const canopyCards = ( triangleCount( data.lods[ 3 ]! ) - trunkTriangles ) / 2;
-
-			expect( canopyCards ).toBe( 3 );
-
-		}
-
-	} );
-
-	it( 'keeps the baked LOD3 canopy silhouette close to LOD0 and ends its trunk inside the crown', () => {
-
-		const data = generateTreeData( { seed: 1 } );
-		const colors = defaultColors( data );
-		const reference = bakeImpostor( data, colors, 128 );
-		const lod3Data = { ...data, lods: [ data.lods[ 3 ]!, ...data.lods.slice( 1 ) ] };
-		const candidate = bakeImpostor( lod3Data, colors, 128 );
-		let intersection = 0;
-		let union = 0;
-
-		for ( let i = 3; i < reference.data.length; i += 4 ) {
-
-			const referenceOpaque = reference.data[ i ]! === 255;
-			const candidateOpaque = candidate.data[ i ]! === 255;
-
-			if ( referenceOpaque && candidateOpaque ) intersection ++;
-			if ( referenceOpaque || candidateOpaque ) union ++;
-
-		}
-
-		expect( intersection / union ).toBeGreaterThanOrEqual( 0.75 );
-
-		const trunk = data.lods[ 3 ]!;
-		const bark = trunk.groups.find( ( group ) => group.partIndex === 0 )!;
-		let trunkMaximumY = - Infinity;
-
-		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
-
-			trunkMaximumY = Math.max( trunkMaximumY, trunk.positions[ trunk.indices[ i ]! * 3 + 1 ]! );
-
-		}
-
-		expect( trunkMaximumY ).toBeLessThanOrEqual( data.bounds.height * 0.68 );
-
-	} );
-
-	it( 'keeps the trunk collider compact and below the first branch', () => {
+	it( 'keeps the trunk collider inside 1.5 times the base radius and reaches 85 percent height', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const collider = data.collider!;
-		let rootRadius = 0;
+		const bark = data.lods[ 0 ]!.groups.find( ( group ) => group.partIndex === 0 )!;
+		let baseRadius = 0;
 		let colliderMaximumY = - Infinity;
 
-		for ( let i = 0; i < data.lods[ 0 ]!.positions.length; i += 3 ) {
+		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
 
-			const x = data.lods[ 0 ]!.positions[ i ]!;
-			const y = data.lods[ 0 ]!.positions[ i + 1 ]!;
-			const z = data.lods[ 0 ]!.positions[ i + 2 ]!;
+			const index = data.lods[ 0 ]!.indices[ i ]! * 3;
+			const x = data.lods[ 0 ]!.positions[ index ]!;
+			const y = data.lods[ 0 ]!.positions[ index + 1 ]!;
+			const z = data.lods[ 0 ]!.positions[ index + 2 ]!;
 
-			if ( y <= data.bounds.height * 0.04 ) rootRadius = Math.max( rootRadius, Math.hypot( x, z ) );
+			if ( y < data.bounds.height * 0.01 ) baseRadius = Math.max( baseRadius, Math.hypot( x, z ) );
 
 		}
 
@@ -446,16 +301,42 @@ describe( 'stylized broadleaf tree data', () => {
 			const z = collider.positions[ i + 2 ]!;
 
 			colliderMaximumY = Math.max( colliderMaximumY, y );
-			expect( Math.hypot( x, z ) ).toBeLessThanOrEqual( rootRadius * 1.5 );
+			expect( Math.hypot( x, z ) ).toBeLessThanOrEqual( baseRadius * 1.5 );
 
 		}
 
 		expect( triangleCount( { indices: collider.indices } ) ).toBeLessThanOrEqual( 48 );
-		expect( colliderMaximumY ).toBeLessThanOrEqual( data.bounds.height * 0.6 );
+		expect( colliderMaximumY ).toBeGreaterThanOrEqual( data.bounds.height * 0.84 );
+		expect( colliderMaximumY ).toBeLessThanOrEqual( data.bounds.height * 0.86 );
 
 	} );
 
-	it( 'generates all LODs and bakes a 128 pixel impostor in under 50 ms after warm-up', () => {
+	it( 'clamps crownSize, honors custom height, and keeps the requested number of whorls', () => {
+
+		const small = generateTreeData( { seed: 1, height: 5, crownSize: 0.5, branchCount: 5 } );
+		const wide = generateTreeData( { seed: 1, height: 5, crownSize: 1.5, branchCount: 8 } );
+		const clampedLow = generateTreeData( { seed: 1, crownSize: 0.1 } );
+		const minSize = generateTreeData( { seed: 1, crownSize: 0.5 } );
+		const clampedHigh = generateTreeData( { seed: 1, crownSize: 2 } );
+		const maxSize = generateTreeData( { seed: 1, crownSize: 1.5 } );
+
+		expect( small.bounds.height ).toBe( 5 );
+		expect( wide.bounds.height ).toBe( 5 );
+		expect( wide.bounds.radius ).toBeGreaterThan( small.bounds.radius );
+		expect( clampedLow.lods[ 0 ]!.positions ).toEqual( minSize.lods[ 0 ]!.positions );
+		expect( clampedHigh.lods[ 0 ]!.positions ).toEqual( maxSize.lods[ 0 ]!.positions );
+
+	} );
+
+	it( 'rejects invalid tree dimensions and tier counts', () => {
+
+		expect( () => generateTreeData( { height: 0 } ) ).toThrow( RangeError );
+		expect( () => generateTreeData( { crownSize: Infinity } ) ).toThrow( RangeError );
+		expect( () => generateTreeData( { branchCount: 0 } ) ).toThrow( RangeError );
+
+	} );
+
+	it( 'generates and bakes within the 50 ms budget after warm-up', () => {
 
 		const generateAndBake = (): void => {
 
@@ -468,9 +349,8 @@ describe( 'stylized broadleaf tree data', () => {
 
 		const start = performance.now();
 		generateAndBake();
-		const elapsed = performance.now() - start;
 
-		expect( elapsed ).toBeLessThan( 50 );
+		expect( performance.now() - start ).toBeLessThan( 50 );
 
 	} );
 

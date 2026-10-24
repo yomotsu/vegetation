@@ -86,6 +86,25 @@ function composite( texture: TextureData ): Buffer {
 
 }
 
+function encodeTextureTile( texture: TextureData, xOffset = 0, width = texture.width ): Buffer {
+
+	const pixels = Buffer.alloc( width * texture.height * 4 );
+
+	for ( let y = 0; y < texture.height; y ++ ) {
+		for ( let x = 0; x < width; x ++ ) {
+			const source = ( ( texture.height - y - 1 ) * texture.width + xOffset + x ) * 4;
+			const target = ( y * width + x ) * 4;
+			pixels[ target ] = texture.data[ source ]!;
+			pixels[ target + 1 ] = texture.data[ source + 1 ]!;
+			pixels[ target + 2 ] = texture.data[ source + 2 ]!;
+			pixels[ target + 3 ] = texture.data[ source + 3 ]!;
+		}
+	}
+
+	return encodePng( width, texture.height, pixels );
+
+}
+
 function encodePng( width: number, height: number, pixels: Buffer ): Buffer {
 
 	const header = Buffer.alloc( 13 );
@@ -120,6 +139,20 @@ async function main(): Promise<void> {
 	const renders: TextureData[] = [];
 
 	await mkdir( outputDirectory, { recursive: true } );
+	const leafTileWidth = data.textures.leaf.width / 3;
+	await writeFile( `${ outputDirectory }/tree-seed${ seed }-leaf.png`, encodeTextureTile( data.textures.leaf, 0, leafTileWidth ) );
+	await writeFile( `${ outputDirectory }/tree-seed${ seed }-crown.png`, encodeTextureTile( data.textures.leaf, leafTileWidth, leafTileWidth ) );
+	await writeFile( `${ outputDirectory }/tree-seed${ seed }-crown-side.png`, encodeTextureTile( data.textures.leaf, leafTileWidth * 2, leafTileWidth ) );
+	await writeFile( `${ outputDirectory }/tree-seed${ seed }-bark.png`, encodeTextureTile( data.textures.bark ) );
+
+	if ( seed === 1 ) {
+
+		await writeFile( `${ outputDirectory }/generated-leaf.png`, encodeTextureTile( data.textures.leaf, 0, leafTileWidth ) );
+		await writeFile( `${ outputDirectory }/generated-crown.png`, encodeTextureTile( data.textures.leaf, leafTileWidth, leafTileWidth ) );
+		await writeFile( `${ outputDirectory }/generated-crown-side.png`, encodeTextureTile( data.textures.leaf, leafTileWidth * 2, leafTileWidth ) );
+		await writeFile( `${ outputDirectory }/generated-bark.png`, encodeTextureTile( data.textures.bark ) );
+
+	}
 
 	for ( let lod = 0; lod < 4; lod ++ ) {
 
