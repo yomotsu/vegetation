@@ -266,6 +266,20 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
+	it( 'keeps the stem opaque at the v=0 base edge', () => {
+
+		const seed = 1;
+		const texture = createFirSprigTexture( seed );
+
+		for ( let y = 0; y < 5; y ++ ) {
+
+			const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+			expect( alphaAt( texture, center, y ) ).toBeGreaterThanOrEqual( 128 );
+
+		}
+
+	} );
+
 	it( 'keeps a dense needle mask similar to the Tree01 albedo', () => {
 
 		const texture = createFirSprigTexture( 1 );

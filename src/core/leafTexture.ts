@@ -197,17 +197,19 @@ function drawStem( data: Uint8Array, width: number, size: number, seed: number )
 
 	const pixelScale = size / 256;
 	const stemWidth = Math.max( 1.8, pixelScale * 3.2 );
+	const baseStemWidth = Math.max( 1.2, pixelScale * 1.6 );
 	const stemColor: Rgb = [ 58, 50, 22 ];
 	const nodeSpacing = Math.max( 2.5, size / 30 );
 	let previous: [ number, number ] | null = null;
 
-	for ( let y = size * 0.46; y <= size * 1.02; y += nodeSpacing ) {
+	for ( let y = 0; y <= size * 1.02; y += nodeSpacing ) {
 
 		const v = y / size;
 		const center = size * 0.5 + Math.sin( v * Math.PI * 1.3 + seed * 0.37 ) * size * 0.009;
 		const point: [ number, number ] = [ center, y ];
+		const strokeWidth = y < size * 0.46 ? baseStemWidth : stemWidth;
 
-		if ( previous !== null ) drawStroke( data, width, size, previous, point, stemWidth, stemWidth * 0.8, stemColor, stemColor );
+		if ( previous !== null ) drawStroke( data, width, size, previous, point, strokeWidth, strokeWidth * 0.8, stemColor, stemColor );
 
 		previous = point;
 

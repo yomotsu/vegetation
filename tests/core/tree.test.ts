@@ -72,6 +72,61 @@ function frondCount( mesh: MeshData, trianglesPerFrond: number ): number {
 
 }
 
+function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, y: number ): { center: [ number, number ]; radius: number } {
+
+	const ringCount = mesh.groups.find( ( group ) => group.partIndex === 0 )!.count / ( sides * 6 );
+	const rings: { center: [ number, number ]; y: number; radius: number }[] = [];
+
+	for ( let ring = 0; ring <= ringCount; ring ++ ) {
+
+		let centerX = 0;
+		let centerZ = 0;
+		let centerY = 0;
+
+		for ( let side = 0; side < sides; side ++ ) {
+
+			const offset = ( ring * sides + side ) * 3;
+			centerX += mesh.positions[ offset ]! / sides;
+			centerY += mesh.positions[ offset + 1 ]! / sides;
+			centerZ += mesh.positions[ offset + 2 ]! / sides;
+
+		}
+
+		let radius = 0;
+
+		for ( let side = 0; side < sides; side ++ ) {
+
+			const offset = ( ring * sides + side ) * 3;
+			radius += Math.hypot( mesh.positions[ offset ]! - centerX, mesh.positions[ offset + 2 ]! - centerZ ) / sides;
+
+		}
+
+		rings.push( { center: [ centerX, centerZ ], y: centerY, radius } );
+
+	}
+
+	for ( let ring = 1; ring < rings.length; ring ++ ) {
+
+		const lower = rings[ ring - 1 ]!;
+		const upper = rings[ ring ]!;
+
+		if ( y <= upper.y || ring === rings.length - 1 ) {
+
+			const amount = ( y - lower.y ) / ( upper.y - lower.y );
+
+			return {
+				center: [ lower.center[ 0 ] + ( upper.center[ 0 ] - lower.center[ 0 ] ) * amount, lower.center[ 1 ] + ( upper.center[ 1 ] - lower.center[ 1 ] ) * amount ],
+				radius: lower.radius + ( upper.radius - lower.radius ) * amount,
+			};
+
+		}
+
+	}
+
+	throw new RangeError( 'Frond root is outside the trunk rings' );
+
+}
+
 function frondPitches( mesh: MeshData, frondIndex: number ): [ number, number ] {
 
 	const leaves = leafGroup( mesh );
@@ -367,6 +422,34 @@ describe( 'conifer tree data', () => {
 		];
 
 		expect( Math.hypot( leaderBase[ 0 ] - trunkCenter[ 0 ]!, leaderBase[ 2 ] - trunkCenter[ 1 ]! ) ).toBeLessThanOrEqual( 0.01 );
+
+	} );
+
+	it( 'roots each frond midrib at or inside the trunk surface in LOD0 through LOD2', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const lodSettings = [
+			{ lod: 0, sides: 7, trianglesPerFrond: 8, indicesPerFrond: 24 },
+			{ lod: 1, sides: 5, trianglesPerFrond: 4, indicesPerFrond: 12 },
+			{ lod: 2, sides: 4, trianglesPerFrond: 4, indicesPerFrond: 12 },
+		];
+
+		for ( const setting of lodSettings ) {
+
+			const mesh = data.lods[ setting.lod ]!;
+			const leaves = leafGroup( mesh );
+
+			for ( let frond = 0; frond < frondCount( mesh, setting.trianglesPerFrond ); frond ++ ) {
+
+				const root = frondPoint( mesh, leaves, frond, 0, 1, setting.indicesPerFrond );
+				const trunk = trunkAxisAndRadiusAt( mesh, setting.sides, root[ 1 ] );
+				const distance = Math.hypot( root[ 0 ] - trunk.center[ 0 ], root[ 2 ] - trunk.center[ 1 ] );
+
+				expect( distance ).toBeLessThanOrEqual( trunk.radius + 0.005 );
+
+			}
+
+		}
 
 	} );
 

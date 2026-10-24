@@ -227,7 +227,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 
 			const branchRandom = tierRandom.fork( frondIndex + 101 );
 			const angle = angleOffset + frondIndex / frondsPerTier * Math.PI * 2 + branchRandom.range( - 0.2, 0.2 );
-			const startDistance = branchRandom.range( 0.05, 0.11 ) * heightScale;
+			const startDistance = getTrunkRadius( tierY / height, height ) - heightScale * branchRandom.range( 0.015, 0.02 );
 			const length = ( 2.2 - t * 0.9 ) * heightScale * branchRandom.range( 0.8, 1.2 );
 			const width = length * 0.85 * branchRandom.range( 0.8, 1.2 ) * crownSize;
 			const base = [ trunkPoint[ 0 ] + Math.cos( angle ) * startDistance, tierY, trunkPoint[ 2 ] + Math.sin( angle ) * startDistance ] as Vec3;
