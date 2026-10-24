@@ -31,7 +31,7 @@ export interface TextureData {
 	width: number;
 	height: number;
 	data: Uint8Array;
-} // RGBA8, sRGB
+} // RGBA8, sRGB。row 0 は v=0（画像下端）。three.js DataTexture は flipY=false で使う。
 
 export interface ColliderData {
 	positions: Float32Array;

@@ -68,6 +68,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 	depthBuffer.fill( - Infinity );
 
 	for ( let view = 0; view < 2; view ++ ) {
+
 		for ( const group of mesh.groups ) {
 
 			const partIndex = group.partIndex;
@@ -82,6 +83,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 			}
 
 		}
+
 	}
 
 	dilateEdges( image, width, size, height );
@@ -122,16 +124,23 @@ function rasterizeTriangle(
 	const yWorld2 = mesh.positions[ position2 + 1 ]!;
 	const zWorld2 = mesh.positions[ position2 + 2 ]!;
 	const centerOffset = data.bounds.radius;
+	// +Z 視点は +X を右へ、+X 視点は -Z を右へ投影する。
 	const x0 = ( ( view === 0 ? xWorld0 : - zWorld0 ) + centerOffset ) / ( centerOffset * 2 ) * size;
 	const x1 = ( ( view === 0 ? xWorld1 : - zWorld1 ) + centerOffset ) / ( centerOffset * 2 ) * size;
 	const x2 = ( ( view === 0 ? xWorld2 : - zWorld2 ) + centerOffset ) / ( centerOffset * 2 ) * size;
-	const y0 = ( data.bounds.height - yWorld0 ) / data.bounds.height * size;
-	const y1 = ( data.bounds.height - yWorld1 ) / data.bounds.height * size;
-	const y2 = ( data.bounds.height - yWorld2 ) / data.bounds.height * size;
+	// 行 0 が地面なので、ワールドの高さをそのまま下から上へ写す。
+	const y0 = yWorld0 / data.bounds.height * size;
+	const y1 = yWorld1 / data.bounds.height * size;
+	const y2 = yWorld2 / data.bounds.height * size;
 	const denominator = ( y1 - y2 ) * ( x0 - x2 ) + ( x2 - x1 ) * ( y0 - y2 );
 
-	if ( denominator === 0 ) return;
+	if ( denominator === 0 ) {
 
+		return;
+
+	}
+
+	// 画素中心を使って外接範囲を切り詰め、bounds の端も画像内に収める。
 	const minX = Math.max( 0, Math.ceil( Math.min( x0, x1, x2 ) - 0.5 ) );
 	const maxX = Math.min( size - 1, Math.floor( Math.max( x0, x1, x2 ) - 0.5 ) );
 	const minY = Math.max( 0, Math.ceil( Math.min( y0, y1, y2 ) - 0.5 ) );
@@ -156,6 +165,7 @@ function rasterizeTriangle(
 	const viewOffset = view * size;
 
 	for ( let y = minY; y <= maxY; y ++ ) {
+
 		for ( let x = minX; x <= maxX; x ++ ) {
 
 			const pixelX = x + 0.5;
@@ -164,12 +174,20 @@ function rasterizeTriangle(
 			const weight1 = ( ( y2 - y0 ) * ( pixelX - x2 ) + ( x0 - x2 ) * ( pixelY - y2 ) ) * inverseDenominator;
 			const weight2 = 1 - weight0 - weight1;
 
-			if ( weight0 < 0 || weight1 < 0 || weight2 < 0 ) continue;
+			if ( weight0 < 0 || weight1 < 0 || weight2 < 0 ) {
+
+				continue;
+
+			}
 
 			const pixelIndex = y * imageWidth + viewOffset + x;
 			const pixelDepth = weight0 * depth0 + weight1 * depth1 + weight2 * depth2;
 
-			if ( pixelDepth <= depthBuffer[ pixelIndex ]! ) continue;
+			if ( pixelDepth <= depthBuffer[ pixelIndex ]! ) {
+
+				continue;
+
+			}
 
 			let textureRed = 1;
 			let textureGreen = 1;
@@ -180,11 +198,16 @@ function rasterizeTriangle(
 				const u = weight0 * mesh.uvs[ uv0 ]! + weight1 * mesh.uvs[ uv1 ]! + weight2 * mesh.uvs[ uv2 ]!;
 				const v = weight0 * mesh.uvs[ uv0 + 1 ]! + weight1 * mesh.uvs[ uv1 + 1 ]! + weight2 * mesh.uvs[ uv2 + 1 ]!;
 				const textureX = Math.min( textureWidth - 1, Math.max( 0, Math.floor( u * textureWidth ) ) );
-				const textureY = Math.min( textureHeight - 1, Math.max( 0, Math.floor( ( 1 - v ) * textureHeight ) ) );
+				// TextureData の v=0 は row 0（画像下端）に揃える。
+				const textureY = Math.min( textureHeight - 1, Math.max( 0, Math.floor( v * textureHeight ) ) );
 				const textureOffset = ( textureY * textureWidth + textureX ) * 4;
 				const alpha = textureData[ textureOffset + 3 ]! / 255;
 
-				if ( alpha < alphaTest ) continue;
+				if ( alpha < alphaTest ) {
+
+					continue;
+
+				}
 
 				textureRed = linearSrgb[ textureData[ textureOffset ]! ]!;
 				textureGreen = linearSrgb[ textureData[ textureOffset + 1 ]! ]!;
@@ -210,6 +233,7 @@ function rasterizeTriangle(
 			depthBuffer[ pixelIndex ] = pixelDepth;
 
 		}
+
 	}
 
 }
@@ -217,29 +241,48 @@ function rasterizeTriangle(
 function dilateEdges( image: Uint8Array, width: number, size: number, height: number ): void {
 
 	for ( let view = 0; view < 2; view ++ ) {
+
 		for ( let y = 0; y < height; y ++ ) {
+
 			for ( let x = 0; x < size; x ++ ) {
 
 				const pixelIndex = y * width + view * size + x;
 				const imageOffset = pixelIndex * 4;
 
-				if ( image[ imageOffset + 3 ] !== 0 ) continue;
+				if ( image[ imageOffset + 3 ] !== 0 ) {
+
+					continue;
+
+				}
 
 				let copied = false;
 
 				for ( let dy = - 1; dy <= 1 && ! copied; dy ++ ) {
+
 					for ( let dx = - 1; dx <= 1; dx ++ ) {
 
-						if ( dx === 0 && dy === 0 ) continue;
+						if ( dx === 0 && dy === 0 ) {
+
+							continue;
+
+						}
 
 						const neighborX = x + dx;
 						const neighborY = y + dy;
 
-						if ( neighborX < 0 || neighborX >= size || neighborY < 0 || neighborY >= height ) continue;
+						if ( neighborX < 0 || neighborX >= size || neighborY < 0 || neighborY >= height ) {
+
+							continue;
+
+						}
 
 						const neighborIndex = ( neighborY * width + view * size + neighborX ) * 4;
 
-						if ( image[ neighborIndex + 3 ] !== 255 ) continue;
+						if ( image[ neighborIndex + 3 ] !== 255 ) {
+
+							continue;
+
+						}
 
 						image[ imageOffset ] = image[ neighborIndex ]!;
 						image[ imageOffset + 1 ] = image[ neighborIndex + 1 ]!;
@@ -248,10 +291,13 @@ function dilateEdges( image: Uint8Array, width: number, size: number, height: nu
 						break;
 
 					}
+
 				}
 
 			}
+
 		}
+
 	}
 
 }
