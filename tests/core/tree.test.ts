@@ -44,6 +44,33 @@ function maximumY( positions: Float32Array ): number {
 
 }
 
+function boundaryEdges( mesh: MeshData, group: { start: number; count: number } ): [ number, number ][] {
+
+	const counts = new Map<string, { edge: [ number, number ]; count: number }>();
+
+	for ( let index = group.start; index < group.start + group.count; index += 3 ) {
+
+		const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ];
+
+		for ( let edgeIndex = 0; edgeIndex < 3; edgeIndex ++ ) {
+
+			const first = triangle[ edgeIndex ]!;
+			const second = triangle[ ( edgeIndex + 1 ) % 3 ]!;
+			const edge: [ number, number ] = first < second ? [ first, second ] : [ second, first ];
+			const key = `${ edge[ 0 ] }:${ edge[ 1 ] }`;
+			const existing = counts.get( key );
+
+			if ( existing === undefined ) counts.set( key, { edge, count: 1 } );
+			else existing.count ++;
+
+		}
+
+	}
+
+	return [ ...counts.values() ].filter( ( value ) => value.count === 1 ).map( ( value ) => value.edge );
+
+}
+
 function defaultColors( data: ReturnType<typeof generateTreeData> ): [ number, number, number ][] {
 
 	return data.parts.map( ( part ) => hexToLinear( part.defaultColor ) );
@@ -72,9 +99,9 @@ function frondCount( mesh: MeshData, trianglesPerFrond: number ): number {
 
 }
 
-function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, y: number ): { center: [ number, number ]; radius: number } {
+function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, ringSegments: number, y: number ): { center: [ number, number ]; radius: number } {
 
-	const ringCount = mesh.groups.find( ( group ) => group.partIndex === 0 )!.count / ( sides * 6 );
+	const ringCount = ringSegments;
 	const rings: { center: [ number, number ]; y: number; radius: number }[] = [];
 
 	for ( let ring = 0; ring <= ringCount; ring ++ ) {
@@ -85,7 +112,8 @@ function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, y: number ): { cen
 
 		for ( let side = 0; side < sides; side ++ ) {
 
-			const offset = ( ring * sides + side ) * 3;
+			const vertex = ring === ringCount ? ring * sides : ring * sides + side;
+			const offset = vertex * 3;
 			centerX += mesh.positions[ offset ]! / sides;
 			centerY += mesh.positions[ offset + 1 ]! / sides;
 			centerZ += mesh.positions[ offset + 2 ]! / sides;
@@ -96,7 +124,8 @@ function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, y: number ): { cen
 
 		for ( let side = 0; side < sides; side ++ ) {
 
-			const offset = ( ring * sides + side ) * 3;
+			const vertex = ring === ringCount ? ring * sides : ring * sides + side;
+			const offset = vertex * 3;
 			radius += Math.hypot( mesh.positions[ offset ]! - centerX, mesh.positions[ offset + 2 ]! - centerZ ) / sides;
 
 		}
@@ -177,7 +206,7 @@ describe( 'conifer tree data', () => {
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 600 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBe( 84 + 76 * 8 );
+		expect( counts[ 0 ] ).toBe( 77 + 76 * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
@@ -396,32 +425,9 @@ describe( 'conifer tree data', () => {
 		const leaves = leafGroup( mesh );
 		const leaderBase = frondPoint( mesh, leaves, frondCount( mesh, 8 ) - 1, 0, 1 );
 		const sides = 7;
-		const lowerRing = 5;
-		const upperRing = 6;
-		const lowerCenter = [ 0, 0 ];
-		const upperCenter = [ 0, 0 ];
+		const trunk = trunkAxisAndRadiusAt( mesh, sides, 6, leaderBase[ 1 ] );
 
-		for ( let side = 0; side < sides; side ++ ) {
-
-			for ( const [ ring, center ] of [ [ lowerRing, lowerCenter ], [ upperRing, upperCenter ] ] as [ number, number[] ][] ) {
-
-				const vertex = ring * sides + side;
-				center[ 0 ]! += mesh.positions[ vertex * 3 ]! / sides;
-				center[ 1 ]! += mesh.positions[ vertex * 3 + 2 ]! / sides;
-
-			}
-
-		}
-
-		const lowerY = mesh.positions[ lowerRing * sides * 3 + 1 ]!;
-		const upperY = mesh.positions[ upperRing * sides * 3 + 1 ]!;
-		const amount = ( leaderBase[ 1 ] - lowerY ) / ( upperY - lowerY );
-		const trunkCenter = [
-			lowerCenter[ 0 ]! + ( upperCenter[ 0 ]! - lowerCenter[ 0 ]! ) * amount,
-			lowerCenter[ 1 ]! + ( upperCenter[ 1 ]! - lowerCenter[ 1 ]! ) * amount,
-		];
-
-		expect( Math.hypot( leaderBase[ 0 ] - trunkCenter[ 0 ]!, leaderBase[ 2 ] - trunkCenter[ 1 ]! ) ).toBeLessThanOrEqual( 0.01 );
+		expect( Math.hypot( leaderBase[ 0 ] - trunk.center[ 0 ], leaderBase[ 2 ] - trunk.center[ 1 ] ) ).toBeLessThanOrEqual( 0.01 );
 
 	} );
 
@@ -429,9 +435,9 @@ describe( 'conifer tree data', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const lodSettings = [
-			{ lod: 0, sides: 7, trianglesPerFrond: 8, indicesPerFrond: 24 },
-			{ lod: 1, sides: 5, trianglesPerFrond: 4, indicesPerFrond: 12 },
-			{ lod: 2, sides: 4, trianglesPerFrond: 4, indicesPerFrond: 12 },
+			{ lod: 0, sides: 7, ringSegments: 6, trianglesPerFrond: 8, indicesPerFrond: 24 },
+			{ lod: 1, sides: 5, ringSegments: 7, trianglesPerFrond: 4, indicesPerFrond: 12 },
+			{ lod: 2, sides: 4, ringSegments: 4, trianglesPerFrond: 4, indicesPerFrond: 12 },
 		];
 
 		for ( const setting of lodSettings ) {
@@ -442,7 +448,7 @@ describe( 'conifer tree data', () => {
 			for ( let frond = 0; frond < frondCount( mesh, setting.trianglesPerFrond ); frond ++ ) {
 
 				const root = frondPoint( mesh, leaves, frond, 0, 1, setting.indicesPerFrond );
-				const trunk = trunkAxisAndRadiusAt( mesh, setting.sides, root[ 1 ] );
+				const trunk = trunkAxisAndRadiusAt( mesh, setting.sides, setting.ringSegments, root[ 1 ] );
 				const distance = Math.hypot( root[ 0 ] - trunk.center[ 0 ], root[ 2 ] - trunk.center[ 1 ] );
 
 				expect( distance ).toBeLessThanOrEqual( trunk.radius + 0.005 );
@@ -547,9 +553,9 @@ describe( 'conifer tree data', () => {
 		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 76 );
 		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 61 );
 		expect( frondCount( data.lods[ 2 ]!, 4 ) ).toBe( 31 );
-		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 692 );
-		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 314 );
-		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 156 );
+		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 685 );
+		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 309 );
+		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 152 );
 
 	} );
 
@@ -574,6 +580,48 @@ describe( 'conifer tree data', () => {
 			expect( firstLength ).toBeCloseTo( 1, 2 );
 			expect( secondLength ).toBeCloseTo( 1, 2 );
 			expect( normalDot ).toBeLessThan( 0.9 );
+
+		}
+
+	} );
+
+	it( 'closes each trunk apex with a pointed tip and leaves only the base ring open', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const sideCounts = [ 7, 5, 4, 3 ];
+
+		for ( let lod = 0; lod < sideCounts.length; lod ++ ) {
+
+			const mesh = data.lods[ lod ]!;
+			const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+			const boundary = boundaryEdges( mesh, bark );
+
+			expect( boundary ).toHaveLength( sideCounts[ lod ]! );
+
+			for ( const [ first, second ] of boundary ) {
+
+				expect( Math.abs( mesh.positions[ first * 3 + 1 ]! ) ).toBeLessThan( 0.02 );
+				expect( Math.abs( mesh.positions[ second * 3 + 1 ]! ) ).toBeLessThan( 0.02 );
+
+			}
+
+			for ( let index = bark.start; index < bark.start + bark.count; index += 3 ) {
+
+				const a = mesh.indices[ index ]!;
+				const b = mesh.indices[ index + 1 ]!;
+				const c = mesh.indices[ index + 2 ]!;
+				const aOffset = a * 3;
+				const bOffset = b * 3;
+				const cOffset = c * 3;
+				const ab = [ mesh.positions[ bOffset ]! - mesh.positions[ aOffset ]!, mesh.positions[ bOffset + 1 ]! - mesh.positions[ aOffset + 1 ]!, mesh.positions[ bOffset + 2 ]! - mesh.positions[ aOffset + 2 ]! ];
+				const ac = [ mesh.positions[ cOffset ]! - mesh.positions[ aOffset ]!, mesh.positions[ cOffset + 1 ]! - mesh.positions[ aOffset + 1 ]!, mesh.positions[ cOffset + 2 ]! - mesh.positions[ aOffset + 2 ]! ];
+				const faceNormal = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+				const smoothNormal = [ 0, 1, 2 ].map( ( component ) => mesh.normals[ aOffset + component ]! + mesh.normals[ bOffset + component ]! + mesh.normals[ cOffset + component ]! );
+				const alignment = faceNormal[ 0 ]! * smoothNormal[ 0 ]! + faceNormal[ 1 ]! * smoothNormal[ 1 ]! + faceNormal[ 2 ]! * smoothNormal[ 2 ]!;
+
+				expect( alignment ).toBeGreaterThan( 0 );
+
+			}
 
 		}
 
@@ -624,8 +672,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( baseRadius ).toBeCloseTo( 0.35, 2 );
-		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 84 + 26 * 8 );
-		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 84 + 41 * 8 );
+		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 77 + 26 * 8 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 77 + 41 * 8 );
 
 	} );
 

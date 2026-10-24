@@ -37,7 +37,7 @@ interface TreeLayout {
 
 const barkColor: Color3 = [ 1, 1, 1 ];
 const leafColor: Color3 = [ 1, 1, 1 ];
-const trunkTopFraction = 0.98;
+const trunkTopFraction = 0.947;
 const frondsPerTier = 5;
 const trunkProfile = [ 0.35, 0.3, 0.255, 0.22, 0.19, 0.16, 0.135, 0.112, 0.094, 0.078, 0.064, 0.05, 0.035 ];
 const frondPitchProfile = [
@@ -374,16 +374,88 @@ function scaleTrunkV( mesh: MeshData, trunkVertexCount: number ): void {
 
 }
 
+function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNormal: Vec3 ): MeshData {
+
+	const topStart = ( ringCount - 1 ) * sides;
+	const topEnd = topStart + sides;
+	const indices: number[] = [];
+	const groups = [];
+
+	mesh.normals[ topStart * 3 ] = tipNormal[ 0 ];
+	mesh.normals[ topStart * 3 + 1 ] = tipNormal[ 1 ];
+	mesh.normals[ topStart * 3 + 2 ] = tipNormal[ 2 ];
+	mesh.uvs[ topStart * 2 ] = 0.5;
+	mesh.uvs[ topStart * 2 + 1 ] = 1;
+
+	for ( const group of mesh.groups ) {
+
+		const start = indices.length;
+
+		for ( let index = group.start; index < group.start + group.count; index += 3 ) {
+
+			const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ].map( ( vertex ) => vertex >= topStart && vertex < topEnd ? topStart : vertex );
+
+			if ( triangle[ 0 ] === triangle[ 1 ] || triangle[ 1 ] === triangle[ 2 ] || triangle[ 2 ] === triangle[ 0 ] ) continue;
+
+			indices.push( triangle[ 0 ]!, triangle[ 1 ]!, triangle[ 2 ]! );
+
+		}
+
+		if ( indices.length > start ) groups.push( { start, count: indices.length - start, partIndex: group.partIndex } );
+
+	}
+
+	const usedVertices = new Set( indices );
+	const vertexMap = new Map<number, number>();
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const uvs: number[] = [];
+	const colors: number[] = [];
+	const windWeight: number[] = [];
+
+	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
+
+		if ( ! usedVertices.has( vertex ) ) continue;
+
+		vertexMap.set( vertex, positions.length / 3 );
+		positions.push( mesh.positions[ vertex * 3 ]!, mesh.positions[ vertex * 3 + 1 ]!, mesh.positions[ vertex * 3 + 2 ]! );
+		normals.push( mesh.normals[ vertex * 3 ]!, mesh.normals[ vertex * 3 + 1 ]!, mesh.normals[ vertex * 3 + 2 ]! );
+		uvs.push( mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! );
+		colors.push( mesh.colors[ vertex * 3 ]!, mesh.colors[ vertex * 3 + 1 ]!, mesh.colors[ vertex * 3 + 2 ]! );
+		windWeight.push( mesh.windWeight[ vertex ]! );
+
+	}
+
+	return {
+		positions: new Float32Array( positions ),
+		normals: new Float32Array( normals ),
+		uvs: new Float32Array( uvs ),
+		colors: new Float32Array( colors ),
+		windWeight: new Float32Array( windWeight ),
+		indices: new Uint32Array( indices.map( ( vertex ) => vertexMap.get( vertex )! ) ),
+		groups,
+	};
+
+}
+
+function addPointedTrunk( builder: MeshBuilder, spine: Vec3[], radii: number[], sides: number ): number {
+
+	const pointedRadii = [ ...radii ];
+	pointedRadii[ pointedRadii.length - 1 ] = 0;
+	addTube( builder, spine, pointedRadii, sides, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
+
+	return ( spine.length - 1 ) * sides + 1;
+
+}
+
 function buildLod0( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
 	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 9, 11, 12 ] );
 	builder.beginGroup( 0 );
-	addTube( builder, trunk.spine, trunk.radii, 7, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
-	const trunkVertexCount = trunk.spine.length * 7;
+	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 7 );
 	addFronds( builder, layout, frondsPerTier, [ 0, 0.4, 1 ] );
-
-	const mesh = builder.build();
+	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 7, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
@@ -396,11 +468,9 @@ function buildLod1( layout: TreeLayout ): MeshData {
 	const builder = new MeshBuilder();
 	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 7, 10, 11, 12 ] );
 	builder.beginGroup( 0 );
-	addTube( builder, trunk.spine, trunk.radii, 5, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
-	const trunkVertexCount = trunk.spine.length * 5;
+	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 5 );
 	addFronds( builder, layout, 4, [ 0, 1 ] );
-
-	const mesh = builder.build();
+	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 5, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
@@ -414,11 +484,9 @@ function buildLod2( layout: TreeLayout ): MeshData {
 	const trunk = selectTrunkRings( layout, [ 0, 2, 6, 10, 12 ] );
 
 	builder.beginGroup( 0 );
-	addTube( builder, trunk.spine, trunk.radii, 4, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
-	const trunkVertexCount = trunk.spine.length * 4;
+	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 4 );
 	addFronds( builder, layout, 2, [ 0, 1 ] );
-
-	const mesh = builder.build();
+	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 4, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
@@ -510,13 +578,12 @@ function buildLod3( layout: TreeLayout, radius: number ): MeshData {
 	const trunkRadii = trunkFractions.map( ( fraction ) => getTrunkRadius( fraction, layout.height ) );
 
 	builder.beginGroup( 0 );
-	addTube( builder, trunkSpine, trunkRadii, 3, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
-	const trunkVertexCount = trunkSpine.length * 3;
+	const trunkVertexCount = addPointedTrunk( builder, trunkSpine, trunkRadii, 3 );
 	builder.beginGroup( 1 );
 	addSilhouetteCard( builder, 0, 0, 0, layout.height, radius, 0, 1 );
 	addSilhouetteCard( builder, 0, 0, 0, layout.height, radius, Math.PI * 1.5, 2 );
 
-	const mesh = builder.build();
+	const mesh = closeTrunkTip( builder.build(), trunkSpine.length, 3, normalize( subtract( trunkSpine[ trunkSpine.length - 1 ]!, trunkSpine[ trunkSpine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
