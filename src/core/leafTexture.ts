@@ -8,6 +8,7 @@ interface LeafShape {
 	sine: number;
 	halfLength: number;
 	halfWidth: number;
+	baseGray: number;
 }
 
 export function createLeafClusterTexture( seed: number, size = 128 ): TextureData {
@@ -23,14 +24,31 @@ export function createLeafClusterTexture( seed: number, size = 128 ): TextureDat
 	for ( let i = 0; i < 20; i ++ ) {
 
 		const angle = random.range( - Math.PI, Math.PI );
+		const halfLength = random.range( 0.15, 0.18 );
+		let centerX = random.range( 0.07, 0.93 );
+		let centerY = random.range( 0.07, 0.93 );
+
+		for ( let attempt = 0; attempt < 12; attempt ++ ) {
+
+			if ( leaves.every( ( leaf ) => Math.hypot( centerX - leaf.centerX, centerY - leaf.centerY ) >= 0.13 ) ) {
+
+				break;
+
+			}
+
+			centerX = random.range( 0.07, 0.93 );
+			centerY = random.range( 0.07, 0.93 );
+
+		}
 
 		leaves.push( {
-			centerX: random.range( 0.33, 0.67 ),
-			centerY: random.range( 0.33, 0.67 ),
+			centerX,
+			centerY,
 			cosine: Math.cos( angle ),
 			sine: Math.sin( angle ),
-			halfLength: random.range( 0.155, 0.23 ),
-			halfWidth: random.range( 0.045, 0.075 ),
+			halfLength,
+			halfWidth: halfLength / random.range( 1.65, 1.95 ),
+			baseGray: random.int( 191, 225 ),
 		} );
 
 	}
@@ -42,7 +60,7 @@ export function createLeafClusterTexture( seed: number, size = 128 ): TextureDat
 			const u = ( x + 0.5 ) / size;
 			const v = ( y + 0.5 ) / size;
 			const offset = ( y * size + x ) * 4;
-			const gray = random.int( 191, 255 );
+			let gray = 191;
 			let opaque = false;
 
 			for ( const leaf of leaves ) {
@@ -53,22 +71,29 @@ export function createLeafClusterTexture( seed: number, size = 128 ): TextureDat
 				const across = relativeX * leaf.cosine - relativeY * leaf.sine;
 				const longitudinal = along / leaf.halfLength;
 
-				if ( Math.abs( longitudinal ) > 1 ) continue;
+				if ( Math.abs( longitudinal ) > 1 ) {
+
+					continue;
+
+				}
 
 				const pointedWidth = leaf.halfWidth * Math.sin( ( longitudinal + 1 ) * Math.PI * 0.5 ) ** 0.7;
 
-				if ( Math.abs( across ) <= pointedWidth ) {
+				if ( pointedWidth > 0 && Math.abs( across ) <= pointedWidth ) {
 
 					opaque = true;
-					break;
+					const crossGradient = 1 - Math.abs( across ) / pointedWidth;
+					const lengthGradient = 1 - longitudinal * longitudinal;
+					const brightness = leaf.baseGray + ( 255 - leaf.baseGray ) * ( 0.12 + lengthGradient * 0.58 + crossGradient * 0.3 );
+					gray = Math.max( gray, Math.min( 255, Math.round( brightness ) ) );
 
 				}
 
 			}
 
-			data[ offset ] = gray;
-			data[ offset + 1 ] = gray;
-			data[ offset + 2 ] = gray;
+			data[ offset ] = opaque ? gray : 255;
+			data[ offset + 1 ] = opaque ? gray : 255;
+			data[ offset + 2 ] = opaque ? gray : 255;
 			data[ offset + 3 ] = opaque ? 255 : 0;
 
 		}
