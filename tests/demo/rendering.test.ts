@@ -56,6 +56,8 @@ describe( 'demo rendering', () => {
 		expect( sunlight.shadow.bias ).toBe( - 0.00025 );
 		expect( sunlight.shadow.normalBias ).toBe( 0.025 );
 		expect( sunlight.shadow.radius ).toBe( 3 );
+		expect( sunlight.shadow.autoUpdate ).toBe( false );
+		expect( sunlight.shadow.needsUpdate ).toBe( true );
 
 	} );
 

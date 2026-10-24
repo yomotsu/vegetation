@@ -71,6 +71,8 @@ export function createPreviewScene(): {
 	sunlight.shadow.bias = - 0.00025;
 	sunlight.shadow.normalBias = 0.025;
 	sunlight.shadow.radius = 3;
+	sunlight.shadow.autoUpdate = false;
+	sunlight.shadow.needsUpdate = true;
 	scene.add( sunlight );
 
 	return { scene, ground, hemisphere, sunlight };

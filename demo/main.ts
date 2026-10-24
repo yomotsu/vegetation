@@ -41,7 +41,7 @@ const canvasContainer = document.querySelector<HTMLDivElement>( '#canvas' )!;
 const rendererLabel = document.querySelector<HTMLDivElement>( '#renderer-label' )!;
 const status = document.querySelector<HTMLDivElement>( '#status' )!;
 const compareLabels = document.querySelector<HTMLDivElement>( '#compare-labels' )!;
-const { scene } = createPreviewScene();
+const { scene, sunlight } = createPreviewScene();
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
 let controls: OrbitControls;
@@ -70,6 +70,7 @@ let optionFolder: GUI | null = null;
 let colorFolder: GUI | null = null;
 let labels: CompareLabel[] = [];
 let colliderLines: LineSegments[] = [];
+let lastScatterShadowUpdate = - Infinity;
 
 for ( const part of activeKind.colorParts ) {
 
@@ -234,6 +235,8 @@ function rebuildPreview(): void {
 	}
 
 	setWireframe( state.wireframe );
+	sunlight.shadow.needsUpdate = true;
+	lastScatterShadowUpdate = - Infinity;
 	status.hidden = state.mode !== 'scatter';
 	frameView();
 
@@ -381,6 +384,14 @@ async function start(): Promise<void> {
 
 		if ( scatter !== null ) {
 			const triangles = scatter.update( camera, now );
+
+			if ( now - lastScatterShadowUpdate >= 500 ) {
+
+				sunlight.shadow.needsUpdate = true;
+				lastScatterShadowUpdate = now;
+
+			}
+
 			frames ++;
 
 			if ( now - lastFpsTime >= 500 ) {
