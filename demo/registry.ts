@@ -22,9 +22,9 @@ export const kinds: VegetationKind[] = [
 		colorParts: [ 'leaf', 'bark' ],
 		options: {
 			seed: 1,
-			height: 6,
+			height: 7.5,
 			crownSize: 1,
-			branchCount: 6,
+			branchCount: 15,
 		},
 	},
 ];
