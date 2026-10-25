@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFirSprigTexture } from '../../src/core';
+import { createBarkTexture, createFirSprigTexture } from '../../src/core';
 import { getFirSprigNeedleGeometry } from '../../src/core/leafTexture';
 
 function alphaAt( texture: { width: number; data: Uint8Array }, x: number, y: number ): number {
@@ -29,6 +29,48 @@ function brownStemWidthAt( texture: { width: number; height: number; data: Uint8
 	}
 
 	return width;
+
+}
+
+function meanStemColorAtBase( texture: { width: number; height: number; data: Uint8Array }, seed: number ): [ number, number, number ] {
+
+	const channels = [ 0, 0, 0 ];
+	let count = 0;
+
+	for ( let y = 4; y <= 12; y ++ ) {
+
+		const sourceY = texture.height - y - 1;
+		const center = Math.round( texture.height * 0.5 + Math.sin( sourceY / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+
+		for ( let x = center - 8; x <= center + 8; x ++ ) {
+
+			if ( ! isBrownStemPixel( texture, x, y ) ) continue;
+
+			const offset = ( y * texture.width + x ) * 4;
+
+			for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
+			count ++;
+
+		}
+
+	}
+
+	return channels.map( ( channel ) => channel / count ) as [ number, number, number ];
+
+}
+
+function meanBarkColor( texture: { width: number; height: number; data: Uint8Array } ): [ number, number, number ] {
+
+	const channels = [ 0, 0, 0 ];
+	const pixelCount = texture.width * texture.height;
+
+	for ( let offset = 0; offset < texture.data.length; offset += 4 ) {
+
+		for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
+
+	}
+
+	return channels.map( ( channel ) => channel / pixelCount ) as [ number, number, number ];
 
 }
 
@@ -341,6 +383,26 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
+	it( 'matches the trunk brown and doubles the stem width at v=0', () => {
+
+		const seed = 1;
+		const texture = createFirSprigTexture( seed );
+		const trunkColor = meanBarkColor( createBarkTexture( seed ) );
+		const stemColor = meanStemColorAtBase( texture, seed );
+		const baseWidth = brownStemWidthAt( texture, seed, 8 );
+		const upperWidth = brownStemWidthAt( texture, seed, 128 );
+
+		expect( baseWidth ).toBeGreaterThanOrEqual( 8 );
+		expect( baseWidth ).toBeGreaterThan( upperWidth );
+
+		for ( let channel = 0; channel < 3; channel ++ ) {
+
+			expect( Math.abs( stemColor[ channel ]! - trunkColor[ channel ]! ) ).toBeLessThanOrEqual( 8 );
+
+		}
+
+	} );
+
 	it( 'ends the stem before the needle-only tip', () => {
 
 		const seed = 1;
@@ -450,13 +512,13 @@ describe( 'fir sprig texture', () => {
 		const mean = ( values: number[] ): number => values.reduce( ( total, value ) => total + value, 0 ) / values.length;
 
 		expect( mean( red ) ).toBeGreaterThanOrEqual( 27 );
-		expect( mean( red ) ).toBeLessThanOrEqual( 31 );
+		expect( mean( red ) ).toBeLessThanOrEqual( 32 );
 		expect( mean( green ) ).toBeGreaterThanOrEqual( 69 );
 		expect( mean( green ) ).toBeLessThanOrEqual( 75 );
 		expect( mean( blue ) ).toBeGreaterThanOrEqual( 4 );
 		expect( mean( blue ) ).toBeLessThanOrEqual( 9 );
 		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 41 );
-		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 49 );
+		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 51 );
 		expect( percentile( luminance, 0.5 ) ).toBeGreaterThanOrEqual( 54 );
 		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 60 );
 		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 71 );

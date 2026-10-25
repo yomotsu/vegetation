@@ -208,11 +208,11 @@ function softenSprigCenterline( data: Uint8Array, width: number, size: number, s
 function drawStem( data: Uint8Array, width: number, size: number, seed: number ): void {
 
 	const pixelScale = size / 256;
-	const baseStemWidth = Math.max( 2, pixelScale * 4.2 );
+	const baseStemWidth = Math.max( 4, pixelScale * 9.6 );
 	const tipStemWidth = Math.max( 0.9, pixelScale * 1.25 );
 	const baseY = size - 1;
 	const tipY = size * 0.19;
-	const stemColor: Rgb = [ 58, 50, 22 ];
+	const stemColor: Rgb = [ 67, 52, 27 ];
 	const nodeSpacing = Math.max( 2.5, size / 30 );
 	const segmentCount = Math.ceil( ( baseY - tipY ) / nodeSpacing );
 	let previous: [ number, number ] | null = null;
