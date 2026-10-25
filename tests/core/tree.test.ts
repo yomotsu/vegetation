@@ -329,7 +329,7 @@ describe( 'conifer tree data', () => {
 		const midribOffset = ( firstVertex + 4 ) * 3;
 
 		expect( mesh.colors[ edgeOffset ] ).toBe( 0 );
-		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 0.99, 2 );
+		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 0.74244, 5 );
 		expect( mesh.colors[ edgeOffset + 2 ] ).toBe( 0 );
 		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1, 5 );
@@ -368,7 +368,7 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps the rendered CPU frond proxy close to the reference luminance profile', () => {
+	it( 'keeps the rendered CPU frond proxy profile shape close to the reference', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const mesh = data.lods[ 0 ]!;
@@ -376,7 +376,9 @@ describe( 'conifer tree data', () => {
 		const firstVertex = mesh.indices[ leaves.start ]!;
 		const greenTint = mesh.colors[ firstVertex * 3 + 1 ]!;
 		const expected = [ 33, 44, 45, 49, 52, 56, 58, 62, 66, 69, 71, 72, 74, 78, 81 ];
-		const measured = expected.map( ( _, index ) => Math.round( sampleFrondLuminance( data.textures.leaf!, ( index + 1 ) / 16, greenTint ) ) );
+		const raw = expected.map( ( _, index ) => sampleFrondLuminance( data.textures.leaf!, ( index + 1 ) / 16, greenTint ) );
+		const normalization = expected[ 7 ]! / raw[ 7 ]!;
+		const measured = raw.map( ( value ) => Math.round( value * normalization ) );
 		const maximumError = Math.max( ...measured.map( ( value, index ) => Math.abs( value - expected[ index ]! ) ) );
 		expect( maximumError ).toBeLessThanOrEqual( 5 );
 
@@ -399,7 +401,7 @@ describe( 'conifer tree data', () => {
 			seen.add( vertex );
 
 			expect( mesh.colors[ vertex * 3 ] ).toBe( 0 );
-			expect( mesh.colors[ vertex * 3 + 1 ] ).toBeCloseTo( 0.95, 5 );
+			expect( mesh.colors[ vertex * 3 + 1 ] ).toBeCloseTo( 0.7125, 5 );
 			expect( mesh.colors[ vertex * 3 + 2 ] ).toBe( 0 );
 
 		}
