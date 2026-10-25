@@ -8,6 +8,12 @@ function alphaAt( texture: { width: number; data: Uint8Array }, x: number, y: nu
 
 }
 
+function meanNeedleMidWidth( needles: ReturnType<typeof getFirSprigNeedleGeometry> ): number {
+
+	return needles.reduce( ( total, needle ) => total + needle.midWidth, 0 ) / needles.length;
+
+}
+
 function isBrownStemPixel( texture: { width: number; data: Uint8Array }, x: number, y: number ): boolean {
 
 	const offset = ( y * texture.width + x ) * 4;
@@ -528,6 +534,17 @@ describe( 'fir sprig texture', () => {
 
 		expect( coverage ).toBeGreaterThan( 0.26 );
 		expect( coverage ).toBeLessThan( 0.34 );
+
+	} );
+
+	it( 'widens the nominal mean needle mid-width by about 1.45x from the previous texture', () => {
+
+		const needles = getFirSprigNeedleGeometry( 1 );
+		const previousMeanWidth = 6.05;
+		const widthRatio = meanNeedleMidWidth( needles ) / previousMeanWidth;
+
+		expect( widthRatio ).toBeGreaterThanOrEqual( 1.4 );
+		expect( widthRatio ).toBeLessThanOrEqual( 1.55 );
 
 	} );
 

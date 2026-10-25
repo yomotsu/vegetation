@@ -360,7 +360,7 @@ function createSprigNeedleGeometry( size: number, seed: number ): SprigNeedleGeo
 	const stemPoints: [ number, number ][] = [];
 	const needles: SprigNeedleGeometry[] = [];
 	const pixelScale = size / 256;
-	const nodeSpacing = Math.max( 2.5, size / 30 );
+	const nodeSpacing = Math.max( 2.5, size / 26 );
 
 	for ( let y = size * 0.035; y <= size * 0.97; y += nodeSpacing ) {
 
@@ -381,7 +381,7 @@ function createSprigNeedleGeometry( size: number, seed: number ): SprigNeedleGeo
 
 		for ( const side of [ - 1, 1 ] ) {
 
-			const needleCount = random.next() < 0.18 ? 2 : 1;
+			const needleCount = random.next() < 0.12 ? 2 : 1;
 
 			for ( let needle = 0; needle < needleCount; needle ++ ) {
 
@@ -403,8 +403,8 @@ function createSprigNeedleGeometry( size: number, seed: number ): SprigNeedleGeo
 				const variation = random.range( 0.82, 1.18 );
 				const dark = getNeedleColor( random, false, variation );
 				const bright = getNeedleColor( random, true, variation );
-				const stemWidth = random.range( 7.7, 10.7 ) * pixelScale;
-				const tipWidth = random.range( 2.4, 3.4 ) * pixelScale;
+				const stemWidth = random.range( 7.7, 10.7 ) * pixelScale * 1.45;
+				const tipWidth = random.range( 2.4, 3.4 ) * pixelScale * 1.45;
 				const root: [ number, number ] = [ rootX, baseY ];
 				const control: [ number, number ] = [ controlX, controlY ];
 				const tip: [ number, number ] = [ endX, endY ];
@@ -434,7 +434,7 @@ function createSprigNeedleGeometry( size: number, seed: number ): SprigNeedleGeo
 
 }
 
-export function getFirSprigNeedleGeometry( seed: number, size = 256 ): Pick<SprigNeedleGeometry, 'v' | 'tipward' | 'angle' | 'startAngle' | 'endAngle'>[] {
+export function getFirSprigNeedleGeometry( seed: number, size = 256 ): ( Pick<SprigNeedleGeometry, 'v' | 'tipward' | 'angle' | 'startAngle' | 'endAngle'> & { midWidth: number } )[] {
 
 	return createSprigNeedleGeometry( size, seed ).map( ( needle ) => ( {
 		v: needle.v,
@@ -442,6 +442,7 @@ export function getFirSprigNeedleGeometry( seed: number, size = 256 ): Pick<Spri
 		angle: needle.angle,
 		startAngle: needle.startAngle,
 		endAngle: needle.endAngle,
+		midWidth: ( needle.stemWidth + needle.tipWidth ) * 0.5,
 	} ) );
 
 }
