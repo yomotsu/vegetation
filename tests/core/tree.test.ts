@@ -106,6 +106,162 @@ function leafGroup( mesh: MeshData ) {
 
 }
 
+function lodFrondRoot( mesh: MeshData, lod: number, frondIndex: number ): [ number, number, number ] {
+
+	const leaves = leafGroup( mesh );
+	const indicesPerFrond = lod === 0 ? 24 : lod === 1 ? 12 : 6;
+	const first = mesh.indices[ leaves.start + frondIndex * indicesPerFrond ]!;
+	const firstOffset = first * 3;
+
+	if ( lod === 2 ) {
+
+		const secondOffset = ( first + 1 ) * 3;
+
+		return [
+			( mesh.positions[ firstOffset ]! + mesh.positions[ secondOffset ]! ) * 0.5,
+			( mesh.positions[ firstOffset + 1 ]! + mesh.positions[ secondOffset + 1 ]! ) * 0.5,
+			( mesh.positions[ firstOffset + 2 ]! + mesh.positions[ secondOffset + 2 ]! ) * 0.5,
+		];
+
+	}
+
+	const centerOffset = ( first + 1 ) * 3;
+
+	return [ mesh.positions[ centerOffset ]!, mesh.positions[ centerOffset + 1 ]!, mesh.positions[ centerOffset + 2 ]! ];
+
+}
+
+function lodFrondTip( mesh: MeshData, lod: number, frondIndex: number ): [ number, number, number ] {
+
+	const leaves = leafGroup( mesh );
+	const indicesPerFrond = lod === 0 ? 24 : lod === 1 ? 12 : 6;
+	const first = mesh.indices[ leaves.start + frondIndex * indicesPerFrond ]!;
+	const firstTipVertex = first + ( lod === 0 ? 7 : lod === 1 ? 4 : 2 );
+
+	if ( lod === 2 ) {
+
+		const secondOffset = ( firstTipVertex + 1 ) * 3;
+		const firstOffset = firstTipVertex * 3;
+
+		return [
+			( mesh.positions[ firstOffset ]! + mesh.positions[ secondOffset ]! ) * 0.5,
+			( mesh.positions[ firstOffset + 1 ]! + mesh.positions[ secondOffset + 1 ]! ) * 0.5,
+			( mesh.positions[ firstOffset + 2 ]! + mesh.positions[ secondOffset + 2 ]! ) * 0.5,
+		];
+
+	}
+
+	const offset = firstTipVertex * 3;
+
+	return [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+
+}
+
+function bakeLod( data: ReturnType<typeof generateTreeData>, lod: number, topDown = false, solidLeafCoverage = false ) {
+
+	const source = data.lods[ lod ]!;
+	const mesh = topDown
+		? {
+			...source,
+			positions: Float32Array.from( source.positions, ( value, index ) => index % 3 === 1 ? source.positions[ index + 2 ]! + data.bounds.radius : index % 3 === 2 ? source.positions[ index - 1 ]! : value ),
+			normals: Float32Array.from( source.normals, ( value, index ) => index % 3 === 1 ? source.normals[ index + 2 ]! : index % 3 === 2 ? source.normals[ index - 1 ]! : value ),
+		}
+		: source;
+	const renderData = {
+		...data,
+		lods: [ mesh ],
+		textures: solidLeafCoverage ? {
+			...data.textures,
+			leaf: {
+				...data.textures.leaf!,
+				// 葉の穴を除いて、樹冠の面積を比較します。
+				data: Uint8Array.from( data.textures.leaf!.data, ( value, index ) => index % 4 === 3 ? 255 : value ),
+			},
+		} : data.textures,
+		bounds: topDown ? { radius: data.bounds.radius, height: data.bounds.radius * 2 } : data.bounds,
+	};
+
+	return bakeImpostor( renderData, defaultColors( data ), 128, topDown ? [ 0 ] : [ 0, Math.PI / 4, Math.PI / 2 ] );
+
+}
+
+function coverageIou( first: { width: number; data: Uint8Array }, second: { width: number; data: Uint8Array }, tile: number, tileSize: number, tolerance = 0 ): number {
+
+	let intersection = 0;
+	let union = 0;
+
+	for ( let y = 0; y < tileSize; y ++ ) {
+
+		for ( let x = 0; x < tileSize; x ++ ) {
+
+			let firstOpaque = false;
+			let secondOpaque = false;
+
+			for ( let dy = - tolerance; dy <= tolerance; dy ++ ) {
+
+				for ( let dx = - tolerance; dx <= tolerance; dx ++ ) {
+
+					const sampleX = x + dx;
+					const sampleY = y + dy;
+
+					if ( sampleX < 0 || sampleX >= tileSize || sampleY < 0 || sampleY >= tileSize ) continue;
+
+					const firstOffset = ( sampleY * first.width + tile * tileSize + sampleX ) * 4 + 3;
+					const secondOffset = ( sampleY * second.width + tile * tileSize + sampleX ) * 4 + 3;
+					if ( first.data[ firstOffset ] === 255 ) firstOpaque = true;
+					if ( second.data[ secondOffset ] === 255 ) secondOpaque = true;
+
+				}
+
+			}
+
+			if ( firstOpaque && secondOpaque ) intersection ++;
+			if ( firstOpaque || secondOpaque ) union ++;
+
+		}
+
+	}
+
+	return intersection / union;
+
+}
+
+function meanOpaqueColorDifference( first: { width: number; data: Uint8Array }, second: { width: number; data: Uint8Array }, firstTile: number, secondTile: number, tileSize: number ): [ number, number, number ] {
+
+	const firstTotals = [ 0, 0, 0 ];
+	const secondTotals = [ 0, 0, 0 ];
+	let firstCount = 0;
+	let secondCount = 0;
+
+	for ( let y = 0; y < tileSize; y ++ ) {
+
+		for ( let x = 0; x < tileSize; x ++ ) {
+
+			const firstOffset = ( y * first.width + firstTile * tileSize + x ) * 4;
+			const secondOffset = ( y * second.width + secondTile * tileSize + x ) * 4;
+
+			if ( first.data[ firstOffset + 3 ] === 255 ) {
+
+				for ( let channel = 0; channel < 3; channel ++ ) firstTotals[ channel ]! += first.data[ firstOffset + channel ]!;
+				firstCount ++;
+
+			}
+
+			if ( second.data[ secondOffset + 3 ] === 255 ) {
+
+				for ( let channel = 0; channel < 3; channel ++ ) secondTotals[ channel ]! += second.data[ secondOffset + channel ]!;
+				secondCount ++;
+
+			}
+
+		}
+
+	}
+
+	return firstTotals.map( ( total, channel ) => Math.abs( total / firstCount - secondTotals[ channel ]! / secondCount ) ) as [ number, number, number ];
+
+}
+
 function brownStemWidthAtRow( texture: { width: number; height: number; data: Uint8Array }, y: number ): number {
 
 	const center = texture.width / 6;
@@ -328,10 +484,10 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 0 ] ).toBe( 77 + 51 * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
-		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
+		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.55 );
 		expect( counts[ 2 ] ).toBeLessThan( counts[ 1 ]! );
 		expect( counts[ 2 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.2 );
-		expect( counts[ 2 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.35 );
+		expect( counts[ 2 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.3 );
 		expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 		expect( counts[ 3 ] ).toBe( 12 );
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
@@ -350,10 +506,9 @@ describe( 'conifer tree data', () => {
 
 			expect( counts[ 0 ] ).toBeLessThanOrEqual( 740 );
 			expect( counts[ 1 ] ).toBeLessThanOrEqual( 410 );
-			expect( counts[ 2 ] ).toBeLessThanOrEqual( 210 );
+			expect( counts[ 2 ] ).toBeLessThanOrEqual( 331 );
 			expect( counts[ 0 ] ).toBeLessThanOrEqual( 795 );
 			expect( counts[ 1 ] ).toBeLessThanOrEqual( 513 );
-			expect( counts[ 2 ] ).toBeLessThanOrEqual( 331 );
 			expect( counts[ 3 ] ).toBe( 24 );
 			expect( counts[ 4 ] ).toBe( 4 );
 			expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
@@ -384,9 +539,8 @@ describe( 'conifer tree data', () => {
 	it( 'keeps the frond vertex tint constant from base to tip', () => {
 
 		const settings = [
-			{ lod: 0, trianglesPerFrond: 8, indicesPerFrond: 24, rows: 3 },
-			{ lod: 1, trianglesPerFrond: 4, indicesPerFrond: 12, rows: 2 },
-			{ lod: 2, trianglesPerFrond: 4, indicesPerFrond: 12, rows: 2 },
+			{ lod: 0, trianglesPerFrond: 8, indicesPerFrond: 24, rows: 3, rowStride: 3 },
+			{ lod: 1, trianglesPerFrond: 4, indicesPerFrond: 12, rows: 2, rowStride: 3 },
 		];
 
 		for ( const setting of settings ) {
@@ -401,9 +555,25 @@ describe( 'conifer tree data', () => {
 
 				for ( let row = 1; row < setting.rows; row ++ ) {
 
-					expect( mesh.colors[ ( firstVertex + row * 3 ) * 3 + 1 ] ).toBeCloseTo( baseGreen, 5 );
+					expect( mesh.colors[ ( firstVertex + row * setting.rowStride ) * 3 + 1 ] ).toBeCloseTo( baseGreen, 5 );
 
 				}
+
+			}
+
+		}
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 2 ]!;
+		const leaves = leafGroup( mesh );
+
+		for ( let frond = 0; frond < frondCount( mesh, 2 ); frond ++ ) {
+
+			const firstVertex = mesh.indices[ leaves.start + frond * 6 ]!;
+			const firstGreen = mesh.colors[ firstVertex * 3 + 1 ]!;
+
+			for ( let vertex = 1; vertex < 4; vertex ++ ) {
+
+				expect( mesh.colors[ ( firstVertex + vertex ) * 3 + 1 ] ).toBeCloseTo( firstGreen, 5 );
 
 			}
 
@@ -565,7 +735,13 @@ describe( 'conifer tree data', () => {
 		const repeated = generateTreeData( { seed: 1 } );
 		const other = generateTreeData( { seed: 2 } );
 
-		expect( first.lods[ 0 ]!.positions ).toEqual( repeated.lods[ 0 ]!.positions );
+		for ( let lod = 0; lod < first.lods.length; lod ++ ) {
+
+			expect( first.lods[ lod ]!.positions ).toEqual( repeated.lods[ lod ]!.positions );
+			expect( first.lods[ lod ]!.indices ).toEqual( repeated.lods[ lod ]!.indices );
+
+		}
+
 		expect( first.lods[ 0 ]!.positions ).not.toEqual( other.lods[ 0 ]!.positions );
 		expect( first.textures.leaf!.data ).toEqual( repeated.textures.leaf!.data );
 		expect( first.textures.leaf!.data ).not.toEqual( other.textures.leaf!.data );
@@ -680,19 +856,18 @@ describe( 'conifer tree data', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const lodSettings = [
-			{ lod: 0, sides: 7, ringSegments: 6, trianglesPerFrond: 8, indicesPerFrond: 24 },
-			{ lod: 1, sides: 5, ringSegments: 7, trianglesPerFrond: 4, indicesPerFrond: 12 },
-			{ lod: 2, sides: 4, ringSegments: 4, trianglesPerFrond: 4, indicesPerFrond: 12 },
+			{ lod: 0, sides: 7, ringSegments: 6, trianglesPerFrond: 8 },
+			{ lod: 1, sides: 6, ringSegments: 5, trianglesPerFrond: 4 },
+			{ lod: 2, sides: 4, ringSegments: 4, trianglesPerFrond: 2 },
 		];
 
 		for ( const setting of lodSettings ) {
 
 			const mesh = data.lods[ setting.lod ]!;
-			const leaves = leafGroup( mesh );
 
 			for ( let frond = 0; frond < frondCount( mesh, setting.trianglesPerFrond ); frond ++ ) {
 
-				const root = frondPoint( mesh, leaves, frond, 0, 1, setting.indicesPerFrond );
+				const root = lodFrondRoot( mesh, setting.lod, frond );
 				const trunk = trunkAxisAndRadiusAt( mesh, setting.sides, setting.ringSegments, root[ 1 ] );
 				const distance = Math.hypot( root[ 0 ] - trunk.center[ 0 ], root[ 2 ] - trunk.center[ 1 ] );
 
@@ -808,16 +983,82 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'reduces frond counts and grid density across LOD0, LOD1, and LOD2', () => {
+	it( 'keeps every frond while reducing per-frond detail across LOD0, LOD1, and LOD2', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 
 		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 51 );
-		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 41 );
-		expect( frondCount( data.lods[ 2 ]!, 4 ) ).toBe( 21 );
+		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 51 );
+		expect( frondCount( data.lods[ 2 ]!, 2 ) ).toBe( 51 );
 		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 485 );
-		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 229 );
-		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 112 );
+		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 258 );
+		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 130 );
+
+		for ( let frond = 0; frond < 51; frond ++ ) {
+
+			const reference = lodFrondRoot( data.lods[ 0 ]!, 0, frond );
+
+			for ( const lod of [ 1, 2 ] ) {
+
+				const root = lodFrondRoot( data.lods[ lod ]!, lod, frond );
+				const tip = lodFrondTip( data.lods[ lod ]!, lod, frond );
+
+				expect( Math.hypot( root[ 0 ] - reference[ 0 ], root[ 2 ] - reference[ 2 ] ) ).toBeLessThan( 0.001 );
+				expect( Math.abs( root[ 1 ] - reference[ 1 ] ) ).toBeLessThan( 0.2 );
+				expect( distance3( tip, lodFrondTip( data.lods[ 0 ]!, 0, frond ) ) ).toBeLessThan( 0.2 );
+
+			}
+
+		}
+
+	} );
+
+	it( 'matches LOD0 coarse silhouette coverage with a 3 px tolerance and mean color', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const referenceCoverage = bakeLod( data, 0, false, true );
+		const referenceCoverageTop = bakeLod( data, 0, true, true );
+		const referenceColor = bakeLod( data, 0 );
+		const referenceColorTop = bakeLod( data, 0, true );
+		const tileSize = 128;
+		const coveragePixelTolerance = 3;
+		// 128px の輪郭差を 3px 幅で比較します。
+
+		for ( const lod of [ 1, 2 ] ) {
+
+			const measured = bakeLod( data, lod, false, true );
+			const measuredTop = bakeLod( data, lod, true, true );
+			const measuredColor = bakeLod( data, lod );
+			const measuredColorTop = bakeLod( data, lod, true );
+			const minimumIou = lod === 1 ? 0.88 : 0.8;
+
+			for ( let view = 0; view < 3; view ++ ) {
+
+				expect( coverageIou( referenceCoverage, measured, view, tileSize, coveragePixelTolerance ) ).toBeGreaterThanOrEqual( minimumIou );
+
+				for ( const difference of meanOpaqueColorDifference( referenceColor, measuredColor, view, view, tileSize ) ) {
+					expect( difference ).toBeLessThanOrEqual( 6 );
+				}
+
+			}
+
+			expect( coverageIou( referenceCoverageTop, measuredTop, 0, tileSize, coveragePixelTolerance ) ).toBeGreaterThanOrEqual( minimumIou );
+
+			for ( const difference of meanOpaqueColorDifference( referenceColorTop, measuredColorTop, 0, 0, tileSize ) ) {
+				expect( difference ).toBeLessThanOrEqual( 6 );
+			}
+
+		}
+
+	} );
+
+	it( 'generates the conifer LOD set within the 50 ms budget', () => {
+
+		generateTreeData( { seed: 21 } );
+		const start = performance.now();
+		generateTreeData( { seed: 22 } );
+
+		expect( performance.now() - start ).toBeLessThan( 50 );
 
 	} );
 
@@ -850,7 +1091,7 @@ describe( 'conifer tree data', () => {
 	it( 'closes each trunk apex with a pointed tip and leaves only the base ring open', () => {
 
 		const data = generateTreeData( { seed: 1 } );
-		const sideCounts = [ 7, 5, 4 ];
+		const sideCounts = [ 7, 6, 4 ];
 
 		for ( let lod = 0; lod < sideCounts.length; lod ++ ) {
 

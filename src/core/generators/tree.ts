@@ -42,6 +42,7 @@ const leafVertexColor: Color3 = [ 0.95 * leafBrightness, 0.95 * leafBrightness, 
 const referenceTreeHeight = 7.55;
 const trunkTopFraction = 6.6 / referenceTreeHeight;
 const frondsPerTier = 5;
+const lod2FrondWidthScale = 1.02;
 const trunkProfile = [
 	[ - 0.2, 0.36 ],
 	[ 0.1, 0.26 ],
@@ -347,27 +348,90 @@ function getFrondVertexColor( radius: number, lateral: number ): Color3 {
 
 }
 
-function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: number[] ): void {
+function getFrondMeanVertexColor( radius: number ): Color3 {
 
-	const lateralSamples = [ 0, 0.5, 1 ];
+	const edgeColor = getFrondVertexColor( radius, 0 );
+	const centerColor = getFrondVertexColor( radius, 0.5 );
+
+	return [
+		( edgeColor[ 0 ] + centerColor[ 0 ] ) * 0.5,
+		( edgeColor[ 1 ] + centerColor[ 1 ] ) * 0.5,
+		( edgeColor[ 2 ] + centerColor[ 2 ] ) * 0.5,
+	];
+
+}
+
+function getFrondPoint( frond: Frond, t: number ): Vec3 {
+
+	if ( t <= 0.4 ) return add( frond.base, multiply( subtract( frond.mid, frond.base ), t / 0.4 ) );
+
+	return add( frond.mid, multiply( subtract( frond.tip, frond.mid ), ( t - 0.4 ) / 0.6 ) );
+
+}
+
+function getFrondAverageLine( frond: Frond ): [ Vec3, Vec3 ] {
+
+	// 長さ方向の曲がりを一本の線へ最小二乗でまとめます。
+	const sampleTimes = [ 0, 0.4, 1 ];
+	const samplePoints = [ frond.base, frond.mid, frond.tip ];
+	const meanTime = sampleTimes.reduce( ( total, value ) => total + value, 0 ) / sampleTimes.length;
+	const meanPoint: Vec3 = [ 0, 0, 0 ];
+
+	for ( const point of samplePoints ) {
+
+		meanPoint[ 0 ] += point[ 0 ] / samplePoints.length;
+		meanPoint[ 1 ] += point[ 1 ] / samplePoints.length;
+		meanPoint[ 2 ] += point[ 2 ] / samplePoints.length;
+
+	}
+
+	let variance = 0;
+	const covariance: Vec3 = [ 0, 0, 0 ];
+
+	for ( let index = 0; index < sampleTimes.length; index ++ ) {
+
+		const timeOffset = sampleTimes[ index ]! - meanTime;
+		const point = samplePoints[ index ]!;
+
+		variance += timeOffset * timeOffset;
+		covariance[ 0 ] += timeOffset * ( point[ 0 ] - meanPoint[ 0 ] );
+		covariance[ 1 ] += timeOffset * ( point[ 1 ] - meanPoint[ 1 ] );
+		covariance[ 2 ] += timeOffset * ( point[ 2 ] - meanPoint[ 2 ] );
+
+	}
+
+	const slope = multiply( covariance, 1 / variance );
+	const tip = add( frond.base, slope );
+	tip[ 1 ] = Math.min( tip[ 1 ], frond.tip[ 1 ] );
+
+	return [ frond.base, tip ];
+
+}
+
+function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: number[], lateralSamples: number[] = [ 0, 0.5, 1 ], useAveragePlane = false, useAverageLine = false ): void {
+
 	const inset = 1 / 1536;
 	const grid: number[][] = [];
+	const meanColor = useAveragePlane ? getFrondMeanVertexColor( frond.radius ) : null;
+	const averageLine = useAverageLine ? getFrondAverageLine( frond ) : null;
+	// 平面化で失う幅をわずかに補います。
+	const width = frond.width * ( useAveragePlane ? lod2FrondWidthScale : 1 );
 
 	for ( let row = 0; row < longitudinalSamples.length; row ++ ) {
 
 		const t = longitudinalSamples[ row ]!;
-		const center = t <= 0.4 ? add( frond.base, multiply( subtract( frond.mid, frond.base ), t / 0.4 ) ) : add( frond.mid, multiply( subtract( frond.tip, frond.mid ), ( t - 0.4 ) / 0.6 ) );
+		const center = averageLine === null ? getFrondPoint( frond, t ) : averageLine[ row ]!;
 		const indices: number[] = [];
 
 		for ( let column = 0; column < lateralSamples.length; column ++ ) {
 
 			const u = lateralSamples[ column ]!;
-			const widthOffset = ( u - 0.5 ) * frond.width;
-			const foldOffset = Math.abs( u * 2 - 1 ) * frond.width * frond.fold;
+			const widthOffset = ( u - 0.5 ) * width;
+			const foldOffset = useAveragePlane ? frond.width * frond.fold * 0.5 : Math.abs( u * 2 - 1 ) * frond.width * frond.fold;
 			const point = add( add( center, multiply( frond.widthDirection, widthOffset ) ), [ 0, foldOffset, 0 ] );
 			const uv: [ number, number ] = [ inset + ( 1 / 3 - inset * 2 ) * u, t ];
 
-			indices.push( builder.addVertex( point, [ 0, 1, 0 ], uv, getFrondVertexColor( frond.radius, u ), getFrondWind( point, frond ) ) );
+			indices.push( builder.addVertex( point, [ 0, 1, 0 ], uv, meanColor ?? getFrondVertexColor( frond.radius, u ), getFrondWind( point, frond ) ) );
 
 		}
 
@@ -393,25 +457,17 @@ function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: numb
 
 }
 
-function addFronds( builder: MeshBuilder, layout: TreeLayout, frondsPerTierAtLod: number, longitudinalSamples: number[] ): void {
+function addFronds( builder: MeshBuilder, layout: TreeLayout, longitudinalSamples: number[], lateralSamples: number[] = [ 0, 0.5, 1 ], useAveragePlane = false, useAverageLine = false ): void {
 
 	builder.beginGroup( 1 );
 
 	for ( const tier of layout.tiers ) {
 
-		const leader = tier.fronds.find( ( frond ) => frond.leader );
-		const regularFronds = tier.fronds.filter( ( frond ) => ! frond.leader );
-		const count = Math.min( frondsPerTierAtLod, regularFronds.length );
+		for ( const frond of tier.fronds ) {
 
-		for ( let index = 0; index < count; index ++ ) {
-
-			const sourceIndex = Math.floor( index * regularFronds.length / count );
-
-			addFrond( builder, regularFronds[ sourceIndex ]!, longitudinalSamples );
+			addFrond( builder, frond, longitudinalSamples, lateralSamples, useAveragePlane, useAverageLine );
 
 		}
-
-		if ( leader !== undefined ) addFrond( builder, leader, longitudinalSamples );
 
 	}
 
@@ -516,7 +572,7 @@ function buildLod0( layout: TreeLayout ): MeshData {
 	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 7, 10, 12 ] );
 	builder.beginGroup( 0 );
 	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 7 );
-	addFronds( builder, layout, frondsPerTier, [ 0, 0.4, 1 ] );
+	addFronds( builder, layout, [ 0, 0.4, 1 ] );
 	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 7, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
@@ -528,11 +584,11 @@ function buildLod0( layout: TreeLayout ): MeshData {
 function buildLod1( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
-	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 7, 10, 11, 12 ] );
+	const trunk = selectTrunkRings( layout, [ 0, 1, 3, 7, 10, 12 ] );
 	builder.beginGroup( 0 );
-	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 5 );
-	addFronds( builder, layout, 4, [ 0, 1 ] );
-	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 5, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
+	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 6 );
+	addFronds( builder, layout, [ 0, 1 ], [ 0, 0.5, 1 ], false, true );
+	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 6, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
@@ -547,7 +603,7 @@ function buildLod2( layout: TreeLayout ): MeshData {
 
 	builder.beginGroup( 0 );
 	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 4 );
-	addFronds( builder, layout, 2, [ 0, 1 ] );
+	addFronds( builder, layout, [ 0, 1 ], [ 0, 1 ], true, true );
 	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 4, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
