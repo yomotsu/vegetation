@@ -126,10 +126,12 @@ function lodFrondRoot( mesh: MeshData, lod: number, frondIndex: number ): [ numb
 	const leaves = leafGroup( mesh );
 	const indicesPerFrond = lod === 0 ? 24 : lod === 1 ? 12 : 6;
 	const first = mesh.indices[ leaves.start + frondIndex * indicesPerFrond ]!;
-	const rootVertex = lod === 0 ? first + 1 : first;
-	const centerOffset = rootVertex * 3;
+	const rootOffset = ( first + 1 ) * 3;
+	const root = lod !== 0
+		? [ 0, 1, 2 ].map( ( axis ) => ( mesh.positions[ first * 3 + axis ]! + mesh.positions[ ( first + 1 ) * 3 + axis ]! ) * 0.5 )
+		: [ mesh.positions[ rootOffset ]!, mesh.positions[ rootOffset + 1 ]!, mesh.positions[ rootOffset + 2 ]! ];
 
-	return [ mesh.positions[ centerOffset ]!, mesh.positions[ centerOffset + 1 ]!, mesh.positions[ centerOffset + 2 ]! ];
+	return root as [ number, number, number ];
 
 }
 
@@ -138,11 +140,14 @@ function lodFrondTip( mesh: MeshData, lod: number, frondIndex: number ): [ numbe
 	const leaves = leafGroup( mesh );
 	const indicesPerFrond = lod === 0 ? 24 : lod === 1 ? 12 : 6;
 	const first = mesh.indices[ leaves.start + frondIndex * indicesPerFrond ]!;
-	const firstTipVertex = first + ( lod === 0 ? 7 : lod === 1 ? 4 : 1 );
+	const firstTipVertex = first + ( lod === 0 ? 7 : lod === 1 ? 4 : 2 );
 
 	const offset = firstTipVertex * 3;
+	const tip = lod !== 0
+		? [ 0, 1, 2 ].map( ( axis ) => ( mesh.positions[ offset + axis ]! + mesh.positions[ offset + 3 + axis ]! ) * 0.5 )
+		: [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
 
-	return [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+	return tip as [ number, number, number ];
 
 }
 
@@ -371,6 +376,52 @@ function bakeSideCoverage( data: ReturnType<typeof generateTreeData>, lod: numbe
 	};
 
 	return bakeImpostor( renderData, defaultColors( data ), 128, yawAngles );
+
+}
+
+function bakeElevatedLod( data: ReturnType<typeof generateTreeData>, lod: number, elevation: number ) {
+
+	const source = data.lods[ lod ]!;
+	const cosine = Math.cos( elevation );
+	const sine = Math.sin( elevation );
+	const viewHeight = data.bounds.height * cosine + data.bounds.radius * 2 * sine;
+	const mesh = {
+		...source,
+		positions: Float32Array.from( source.positions, ( value, index ) => {
+
+			if ( index % 3 === 1 ) return ( value - data.bounds.height * 0.5 ) * cosine - source.positions[ index + 1 ]! * sine + viewHeight * 0.5;
+			if ( index % 3 === 2 ) return ( source.positions[ index - 1 ]! - data.bounds.height * 0.5 ) * sine + value * cosine;
+
+			return value;
+
+		} ),
+	};
+	const renderData = {
+		...data,
+		lods: [ mesh ],
+		bounds: { radius: data.bounds.radius, height: viewHeight },
+	};
+
+	return bakeImpostor( renderData, defaultColors( data ), 128, [ 0 ] );
+
+}
+
+function geometricNormalY( mesh: MeshData, index: number ): number {
+
+	const first = mesh.indices[ index ]! * 3;
+	const second = mesh.indices[ index + 1 ]! * 3;
+	const third = mesh.indices[ index + 2 ]! * 3;
+	const firstX = mesh.positions[ first ]!;
+	const firstY = mesh.positions[ first + 1 ]!;
+	const firstZ = mesh.positions[ first + 2 ]!;
+	const secondX = mesh.positions[ second ]! - firstX;
+	const secondY = mesh.positions[ second + 1 ]! - firstY;
+	const secondZ = mesh.positions[ second + 2 ]! - firstZ;
+	const thirdX = mesh.positions[ third ]! - firstX;
+	const thirdY = mesh.positions[ third + 1 ]! - firstY;
+	const thirdZ = mesh.positions[ third + 2 ]! - firstZ;
+
+	return secondZ * thirdX - secondX * thirdZ;
 
 }
 
@@ -603,7 +654,7 @@ describe( 'conifer tree data', () => {
 
 		const settings = [
 			{ lod: 0, trianglesPerFrond: 8, indicesPerFrond: 24, centerOffsets: [ 1, 4, 7 ] },
-			{ lod: 1, trianglesPerFrond: 4, indicesPerFrond: 12, centerOffsets: [ 0, 1, 4 ] },
+			{ lod: 1, trianglesPerFrond: 4, indicesPerFrond: 12, centerOffsets: [ 0, 1, 2, 3, 4, 5 ] },
 		];
 
 		for ( const setting of settings ) {
@@ -1195,6 +1246,85 @@ describe( 'conifer tree data', () => {
 
 	} );
 
+	it( 'matches LOD0 frond winding, tint, UVs, and lit elevated/top-view color', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const reference = data.lods[ 0 ]!;
+		const referenceLeaves = leafGroup( reference );
+
+		for ( const lod of [ 1, 2 ] ) {
+
+			const candidate = data.lods[ lod ]!;
+			const candidateLeaves = leafGroup( candidate );
+			const indicesPerFrond = lod === 1 ? 12 : 6;
+			const vertexLateral = lod === 1 ? [ 0, 1, 0, 1, 0, 1 ] : [ 0, 1, 0, 1 ];
+			const vertexLongitudinal = lod === 1 ? [ 0, 0, 0.4, 0.4, 1, 1 ] : [ 0, 0, 1, 1 ];
+
+			for ( let frond = 0; frond < frondCount( reference, 8 ); frond ++ ) {
+
+				const referenceStart = referenceLeaves.start + frond * 24;
+				const candidateStart = candidateLeaves.start + frond * indicesPerFrond;
+				const referenceFirstVertex = reference.indices[ referenceStart ]!;
+				const candidateFirstVertex = candidate.indices[ candidateStart ]!;
+				const referenceWinding = Math.sign( geometricNormalY( reference, referenceStart ) );
+
+				expect( referenceWinding ).toBe( 1 );
+
+				for ( let triangle = 0; triangle < indicesPerFrond; triangle += 3 ) {
+
+					expect( Math.sign( geometricNormalY( candidate, candidateStart + triangle ) ), `LOD${ lod } frond ${ frond } triangle ${ triangle / 3 }` ).toBe( referenceWinding );
+
+				}
+
+				for ( let vertex = 0; vertex < vertexLateral.length; vertex ++ ) {
+
+					const vertexIndex = candidateFirstVertex + vertex;
+					const uvOffset = vertexIndex * 2;
+					const colorOffset = vertexIndex * 3;
+					const lateral = vertexLateral[ vertex ]!;
+					const referenceVertex = referenceFirstVertex + ( lateral === 0.5 ? 1 : lateral === 0 ? 0 : 2 );
+					const referenceColorOffset = referenceVertex * 3;
+
+					expect( candidate.normals[ colorOffset ] ).toBeCloseTo( 0, 5 );
+					expect( candidate.normals[ colorOffset + 1 ] ).toBeCloseTo( 1, 5 );
+					expect( candidate.normals[ colorOffset + 2 ] ).toBeCloseTo( 0, 5 );
+					expect( candidate.uvs[ uvOffset ]! * 3 ).toBeCloseTo( lateral, 2 );
+					expect( candidate.uvs[ uvOffset + 1 ] ).toBeCloseTo( vertexLongitudinal[ vertex ]!, 5 );
+
+					for ( let channel = 0; channel < 3; channel ++ ) {
+
+						const expectedColor = ( reference.colors[ ( referenceFirstVertex + 1 ) * 3 + channel ]! + reference.colors[ referenceColorOffset + channel ]! ) * 0.5;
+
+						expect( candidate.colors[ colorOffset + channel ] ).toBeCloseTo( expectedColor, 5 );
+
+					}
+
+				}
+
+			}
+
+		}
+
+		const referenceElevated = bakeElevatedLod( data, 0, 18 * Math.PI / 180 );
+		const referenceTop = bakeLod( data, 0, true );
+
+		for ( const lod of [ 1, 2 ] ) {
+
+			const elevated = bakeElevatedLod( data, lod, 18 * Math.PI / 180 );
+			const top = bakeLod( data, lod, true );
+
+			for ( const difference of meanOpaqueColorDifference( referenceElevated, elevated, 0, 0, 128 ) ) {
+				expect( difference, `LOD${ lod } elevated color` ).toBeLessThanOrEqual( 6 );
+			}
+
+			for ( const difference of meanOpaqueColorDifference( referenceTop, top, 0, 0, 128 ) ) {
+				expect( difference, `LOD${ lod } top color` ).toBeLessThanOrEqual( 6 );
+			}
+
+		}
+
+	} );
+
 	it( 'matches LOD0 coarse silhouette coverage with a 3 px tolerance and mean color', () => {
 
 		const data = generateTreeData( { seed: 1 } );
@@ -1224,8 +1354,9 @@ describe( 'conifer tree data', () => {
 
 			}
 
-			// 上面では中間だけに幅がある形を比較するため、IoU の下限を分けます。
-			expect( coverageIou( referenceCoverageTop, measuredTop, 0, tileSize, coveragePixelTolerance ), `LOD${ lod } top view` ).toBeGreaterThanOrEqual( 0.6 );
+			const minimumRawTopIou = lod === 1 ? 0.85 : 0.78;
+			expect( coverageIou( referenceCoverageTop, measuredTop, 0, tileSize ), `LOD${ lod } raw top view` ).toBeGreaterThanOrEqual( minimumRawTopIou );
+			expect( coverageIou( referenceCoverageTop, measuredTop, 0, tileSize, coveragePixelTolerance ), `LOD${ lod } top view` ).toBeGreaterThanOrEqual( minimumIou );
 
 			for ( const difference of meanOpaqueColorDifference( referenceColorTop, measuredColorTop, 0, 0, tileSize ) ) {
 				expect( difference ).toBeLessThanOrEqual( 6 );

@@ -45,7 +45,7 @@ const leafVertexColor: Color3 = [ 0.95 * leafBrightness, 0.95 * leafBrightness, 
 const referenceTreeHeight = 7.55;
 const trunkTopFraction = 6.6 / referenceTreeHeight;
 const frondsPerTier = 5;
-const lodFrondFoldRatio = 0.32;
+const lodFrondFoldRatio = 0.16;
 const trunkProfile = [
 	[ - 0.2, 0.36 ],
 	[ 0.1, 0.26 ],
@@ -373,6 +373,44 @@ function getFrondPoint( frond: Frond, t: number ): Vec3 {
 
 }
 
+function getFrondAverageLine( frond: Frond ): [ Vec3, Vec3 ] {
+
+	const sampleTimes = [ 0, 0.4, 1 ];
+	const samplePoints = [ frond.base, frond.mid, frond.tip ];
+	const meanTime = sampleTimes.reduce( ( total, value ) => total + value, 0 ) / sampleTimes.length;
+	const meanPoint: Vec3 = [ 0, 0, 0 ];
+
+	for ( const point of samplePoints ) {
+
+		meanPoint[ 0 ] += point[ 0 ] / samplePoints.length;
+		meanPoint[ 1 ] += point[ 1 ] / samplePoints.length;
+		meanPoint[ 2 ] += point[ 2 ] / samplePoints.length;
+
+	}
+
+	let variance = 0;
+	const covariance: Vec3 = [ 0, 0, 0 ];
+
+	for ( let index = 0; index < sampleTimes.length; index ++ ) {
+
+		const timeOffset = sampleTimes[ index ]! - meanTime;
+		const point = samplePoints[ index ]!;
+
+		variance += timeOffset * timeOffset;
+		covariance[ 0 ] += timeOffset * ( point[ 0 ] - meanPoint[ 0 ] );
+		covariance[ 1 ] += timeOffset * ( point[ 1 ] - meanPoint[ 1 ] );
+		covariance[ 2 ] += timeOffset * ( point[ 2 ] - meanPoint[ 2 ] );
+
+	}
+
+	const slope = multiply( covariance, 1 / variance );
+	const tip = add( frond.base, slope );
+	tip[ 1 ] = Math.min( tip[ 1 ], frond.tip[ 1 ] );
+
+	return [ frond.base, tip ];
+
+}
+
 function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: number[] ): void {
 
 	const inset = 1 / 1536;
@@ -451,21 +489,39 @@ function addFoldedFrondsLod1( builder: MeshBuilder, layout: TreeLayout ): void {
 
 		for ( const frond of tier.fronds ) {
 
-			const mid = getFrondPoint( frond, 0.6 );
 			const halfWidth = frond.width * 0.5;
 			const foldHeight = frond.width * lodFrondFoldRatio;
-			const midLeft = add( add( mid, multiply( frond.widthDirection, - halfWidth ) ), [ 0, foldHeight, 0 ] );
-			const midRight = add( add( mid, multiply( frond.widthDirection, halfWidth ) ), [ 0, foldHeight, 0 ] );
-			const base = builder.addVertex( frond.base, [ 0, 1, 0 ], getFrondUv( 0.5, 0 ), getFrondVertexColor( frond.radius, 0.5 ), getFrondWind( frond.base, frond ) );
-			const midCenter = builder.addVertex( mid, [ 0, 1, 0 ], getFrondUv( 0.5, 0.6 ), getFrondVertexColor( frond.radius, 0.5 ), getFrondWind( mid, frond ) );
-			const left = builder.addVertex( midLeft, [ 0, 1, 0 ], getFrondUv( 0, 0.6 ), getFrondVertexColor( frond.radius, 0 ), getFrondWind( midLeft, frond ) );
-			const right = builder.addVertex( midRight, [ 0, 1, 0 ], getFrondUv( 1, 0.6 ), getFrondVertexColor( frond.radius, 1 ), getFrondWind( midRight, frond ) );
-			const tip = builder.addVertex( frond.tip, [ 0, 1, 0 ], getFrondUv( 0.5, 1 ), getFrondVertexColor( frond.radius, 0.5 ), getFrondWind( frond.tip, frond ) );
+			const baseFoldHeight = Math.min( foldHeight, layout.height - frond.base[ 1 ] );
+			const tipFoldHeight = Math.min( foldHeight, layout.height - frond.tip[ 1 ] );
+			const meanColor = getFrondMeanVertexColor( frond.radius );
+			const rows: number[][] = [];
 
-			builder.addTriangle( base, left, midCenter );
-			builder.addTriangle( base, midCenter, right );
-			builder.addTriangle( left, tip, midCenter );
-			builder.addTriangle( midCenter, tip, right );
+			for ( const t of [ 0, 0.4, 1 ] ) {
+
+				const center = getFrondPoint( frond, t );
+				const rowFoldHeight = Math.min( foldHeight, layout.height - center[ 1 ] );
+				const leftFoldHeight = t === 0 ? baseFoldHeight : t === 1 ? tipFoldHeight : rowFoldHeight;
+				const rightFoldHeight = t === 0 ? baseFoldHeight : t === 1 ? tipFoldHeight : rowFoldHeight;
+				const leftPoint = add( add( center, multiply( frond.widthDirection, - halfWidth ) ), [ 0, leftFoldHeight, 0 ] );
+				const rightPoint = add( add( center, multiply( frond.widthDirection, halfWidth ) ), [ 0, - rightFoldHeight, 0 ] );
+				const left = builder.addVertex( leftPoint, [ 0, 1, 0 ], getFrondUv( 0, t ), meanColor, getFrondWind( leftPoint, frond ) );
+				const right = builder.addVertex( rightPoint, [ 0, 1, 0 ], getFrondUv( 1, t ), meanColor, getFrondWind( rightPoint, frond ) );
+
+				rows.push( [ left, right ] );
+
+			}
+
+			for ( let row = 0; row < rows.length - 1; row ++ ) {
+
+				const a = rows[ row ]![ 0 ]!;
+				const b = rows[ row ]![ 1 ]!;
+				const c = rows[ row + 1 ]![ 0 ]!;
+				const d = rows[ row + 1 ]![ 1 ]!;
+
+				builder.addTriangle( a, b, c );
+				builder.addTriangle( b, d, c );
+
+			}
 
 		}
 
@@ -481,19 +537,22 @@ function addFoldedFrondsLod2( builder: MeshBuilder, layout: TreeLayout ): void {
 
 		for ( const frond of tier.fronds ) {
 
-			const mid = getFrondPoint( frond, 0.6 );
+			const tip = getFrondAverageLine( frond )[ 1 ];
 			const halfWidth = frond.width * 0.5;
 			const foldHeight = frond.width * lodFrondFoldRatio;
-			const leftPoint = add( add( mid, multiply( frond.widthDirection, - halfWidth ) ), [ 0, foldHeight, 0 ] );
-			const rightPoint = add( add( mid, multiply( frond.widthDirection, halfWidth ) ), [ 0, foldHeight, 0 ] );
-			const meanColor = getFrondMeanVertexColor( frond.radius );
-			const base = builder.addVertex( frond.base, [ 0, 1, 0 ], getFrondUv( 0.5, 0 ), meanColor, getFrondWind( frond.base, frond ) );
-			const tip = builder.addVertex( frond.tip, [ 0, 1, 0 ], getFrondUv( 0.5, 1 ), meanColor, getFrondWind( frond.tip, frond ) );
-			const left = builder.addVertex( leftPoint, [ 0, 1, 0 ], getFrondUv( 0, 0.6 ), meanColor, getFrondWind( leftPoint, frond ) );
-			const right = builder.addVertex( rightPoint, [ 0, 1, 0 ], getFrondUv( 1, 0.6 ), meanColor, getFrondWind( rightPoint, frond ) );
+			const baseFoldHeight = Math.min( foldHeight, layout.height - frond.base[ 1 ] );
+			const tipFoldHeight = Math.min( foldHeight, layout.height - tip[ 1 ] );
+			const baseLeftPoint = add( add( frond.base, multiply( frond.widthDirection, - halfWidth ) ), [ 0, baseFoldHeight, 0 ] );
+			const baseRightPoint = add( add( frond.base, multiply( frond.widthDirection, halfWidth ) ), [ 0, - baseFoldHeight, 0 ] );
+			const tipLeftPoint = add( add( tip, multiply( frond.widthDirection, - halfWidth ) ), [ 0, tipFoldHeight, 0 ] );
+			const tipRightPoint = add( add( tip, multiply( frond.widthDirection, halfWidth ) ), [ 0, - tipFoldHeight, 0 ] );
+			const baseLeft = builder.addVertex( baseLeftPoint, [ 0, 1, 0 ], getFrondUv( 0, 0 ), getFrondMeanVertexColor( frond.radius ), getFrondWind( baseLeftPoint, frond ) );
+			const baseRight = builder.addVertex( baseRightPoint, [ 0, 1, 0 ], getFrondUv( 1, 0 ), getFrondMeanVertexColor( frond.radius ), getFrondWind( baseRightPoint, frond ) );
+			const tipLeft = builder.addVertex( tipLeftPoint, [ 0, 1, 0 ], getFrondUv( 0, 1 ), getFrondMeanVertexColor( frond.radius ), getFrondWind( tipLeftPoint, frond ) );
+			const tipRight = builder.addVertex( tipRightPoint, [ 0, 1, 0 ], getFrondUv( 1, 1 ), getFrondMeanVertexColor( frond.radius ), getFrondWind( tipRightPoint, frond ) );
 
-			builder.addTriangle( base, left, tip );
-			builder.addTriangle( base, tip, right );
+			builder.addTriangle( baseLeft, baseRight, tipLeft );
+			builder.addTriangle( baseRight, tipRight, tipLeft );
 
 		}
 
