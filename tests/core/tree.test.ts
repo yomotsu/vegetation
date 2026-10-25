@@ -250,6 +250,16 @@ function meanFrondLengthAtTier( mesh: MeshData, tierIndex: number ): number {
 
 describe( 'conifer tree data', () => {
 
+	it( 'defaults to ten branch whorls', () => {
+
+		const defaultTree = generateTreeData( { seed: 1 } );
+		const tenWhorls = generateTreeData( { seed: 1, branchCount: 10 } );
+
+		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBe( triangleCount( tenWhorls.lods[ 0 ]! ) );
+		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBe( 77 + 51 * 8 );
+
+	} );
+
 	it( 'builds five valid, strictly decreasing LOD meshes and reference-matched parts', () => {
 
 		const data = generateTreeData( { seed: 1 } );
@@ -288,9 +298,9 @@ describe( 'conifer tree data', () => {
 
 		for ( const lod of data.lods ) validateMeshData( lod );
 
-		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 600 );
+		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 400 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBe( 77 + 76 * 8 );
+		expect( counts[ 0 ] ).toBe( 77 + 51 * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.6 );
@@ -604,7 +614,7 @@ describe( 'conifer tree data', () => {
 
 	it( 'builds folded 3 by 3 frond grids with upward vertex normals and two-sided rendering', () => {
 
-		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const mesh = generateTreeData( { seed: 1, branchCount: 15 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 		const referencedVertices = new Set<number>();
 
@@ -726,7 +736,7 @@ describe( 'conifer tree data', () => {
 
 	it( 'follows Tree01 frond pitch as the attachment height rises', () => {
 
-		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const mesh = generateTreeData( { seed: 1, branchCount: 15 } ).lods[ 0 ]!;
 		const referenceBands = [
 			{ tier: 0, baseMid: - 17, midTip: 9 },
 			{ tier: 3, baseMid: - 13, midTip: 13 },
@@ -761,7 +771,7 @@ describe( 'conifer tree data', () => {
 
 	it( 'distributes fifteen regular frond bands below the near-vertical apex leader', () => {
 
-		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const mesh = generateTreeData( { seed: 1, branchCount: 15 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 		const bandHeights = Array.from( { length: 15 }, ( _, index ) => frondPoint( mesh, leaves, index * 5, 0, 1 )[ 1 ] );
 
@@ -780,7 +790,7 @@ describe( 'conifer tree data', () => {
 
 	it( 'reduces reference frond lengths toward the apex', () => {
 
-		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const mesh = generateTreeData( { seed: 1, branchCount: 15 } ).lods[ 0 ]!;
 		const tierLengths = Array.from( { length: 15 }, ( _, index ) => meanFrondLengthAtTier( mesh, index ) );
 		const referenceScale = 7.5 / 7.55;
 
@@ -800,12 +810,12 @@ describe( 'conifer tree data', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 
-		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 76 );
-		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 61 );
-		expect( frondCount( data.lods[ 2 ]!, 4 ) ).toBe( 31 );
-		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 685 );
-		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 309 );
-		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 152 );
+		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 51 );
+		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 41 );
+		expect( frondCount( data.lods[ 2 ]!, 4 ) ).toBe( 21 );
+		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 485 );
+		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 229 );
+		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 112 );
 
 	} );
 

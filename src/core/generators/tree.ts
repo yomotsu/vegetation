@@ -701,7 +701,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	const leafColor = options.leafColor ?? DEFAULT_LEAF_COLOR;
 	const height = options.height ?? 7.5;
 	const crownSizeInput = options.crownSize ?? 1;
-	const branchCount = options.branchCount ?? 15;
+	const branchCount = options.branchCount ?? 10;
 
 	if ( ! Number.isFinite( height ) || height <= 0 ) {
 		throw new RangeError( 'Tree height must be a positive finite number' );

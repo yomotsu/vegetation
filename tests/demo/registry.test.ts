@@ -23,7 +23,7 @@ describe( 'demo registry', () => {
 			seed: 1,
 			height: 7.5,
 			crownSize: 1,
-			branchCount: 15,
+			branchCount: 10,
 		} );
 
 	} );
