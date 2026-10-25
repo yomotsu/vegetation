@@ -23,6 +23,10 @@ export interface PartDef {
 	defaultColor: number; // sRGB hex（0x5a8f3a）
 	texture: string | null; // VegetationData.textures のキー（'impostor' は three 層で焼く）
 	roughness?: number;
+	/** 誘電体の鏡面反射強度。指定時は MeshPhysicalMaterial を使用する。 */
+	specularIntensity?: number;
+	/** 屈折率。指定時は MeshPhysicalMaterial を使用する。 */
+	ior?: number;
 	emissive?: number;
 	emissiveIntensity?: number;
 	alphaTest: number; // テクスチャなしは 0

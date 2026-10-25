@@ -8,6 +8,7 @@ import {
 	FrontSide,
 	LinearFilter,
 	LinearMipmapLinearFilter,
+	MeshPhysicalMaterial,
 	MeshStandardMaterial,
 	RGBAFormat,
 	RepeatWrapping,
@@ -103,7 +104,7 @@ export class VegetationAsset {
 			this.partIndices.set( part.name, index );
 
 			const texture = part.texture === 'impostor' ? this.impostorTexture : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]! );
-			const material = new MeshStandardMaterial( {
+			const materialParameters = {
 				color: partColors[ index ]!,
 				map: texture,
 				vertexColors: part.texture !== 'impostor',
@@ -116,7 +117,14 @@ export class VegetationAsset {
 				emissiveIntensity: part.emissiveIntensity ?? 1,
 				roughness: part.roughness ?? 1,
 				metalness: 0,
-			} );
+			};
+			const material = part.specularIntensity !== undefined || part.ior !== undefined
+				? new MeshPhysicalMaterial( {
+					...materialParameters,
+					...( part.specularIntensity !== undefined ? { specularIntensity: part.specularIntensity } : {} ),
+					...( part.ior !== undefined ? { ior: part.ior } : {} ),
+				} )
+				: new MeshStandardMaterial( materialParameters );
 
 			return material;
 

@@ -266,6 +266,8 @@ describe( 'conifer tree data', () => {
 			doubleSided: false,
 			flatShading: false,
 			roughness: 0.85,
+			specularIntensity: 0.014872,
+			ior: 1.05,
 		} );
 		expect( data.parts[ 1 ] ).toEqual( {
 			name: 'leaf',
@@ -277,6 +279,8 @@ describe( 'conifer tree data', () => {
 			roughness: 0.95,
 			emissive: 0x000000,
 			emissiveIntensity: 0,
+			specularIntensity: 0.014872,
+			ior: 1.05,
 		} );
 		expect( data.parts[ 2 ] ).toEqual( impostorPart() );
 		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf' ] );

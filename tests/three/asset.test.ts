@@ -5,6 +5,7 @@ import {
 	DoubleSide,
 	LinearFilter,
 	LinearMipmapLinearFilter,
+	MeshPhysicalMaterial,
 	MeshStandardMaterial,
 	RepeatWrapping,
 	SRGBColorSpace,
@@ -27,8 +28,32 @@ describe( 'VegetationAsset', () => {
 		expect( asset.geometries[ 0 ]!.groups.map( ( group ) => group.materialIndex ) ).toEqual( [ 0, 1 ] );
 		expect( asset.materials ).toHaveLength( 3 );
 		expect( asset.materials[ 0 ] ).toBeInstanceOf( MeshStandardMaterial );
+		expect( asset.materials[ 0 ] ).toBeInstanceOf( MeshPhysicalMaterial );
+		expect( asset.materials[ 1 ] ).toBeInstanceOf( MeshPhysicalMaterial );
+		expect( asset.materials[ 2 ] ).toBeInstanceOf( MeshStandardMaterial );
+		expect( asset.materials[ 0 ] ).toMatchObject( { specularIntensity: 0.014872, ior: 1.05 } );
+		expect( asset.materials[ 1 ] ).toMatchObject( { specularIntensity: 0.014872, ior: 1.05 } );
 		expect( asset.materials[ 1 ]!.side ).toBe( DoubleSide );
 		expect( asset.collider ).toBeInstanceOf( BufferGeometry );
+
+	} );
+
+	it( 'selects physical materials only for parts that define physical settings', () => {
+
+		const asset = generateTree( { seed: 1 } );
+		delete asset.data.parts[ 0 ]!.specularIntensity;
+		delete asset.data.parts[ 0 ]!.ior;
+		delete asset.data.parts[ 1 ]!.specularIntensity;
+
+		const genericAsset = new VegetationAsset( asset.data );
+
+		expect( genericAsset.materials[ 0 ] ).not.toBeInstanceOf( MeshPhysicalMaterial );
+		expect( genericAsset.materials[ 1 ] ).toBeInstanceOf( MeshPhysicalMaterial );
+		expect( genericAsset.materials[ 1 ] ).toMatchObject( { ior: 1.05, specularIntensity: 1 } );
+		expect( genericAsset.materials[ 2 ] ).not.toBeInstanceOf( MeshPhysicalMaterial );
+
+		genericAsset.dispose();
+		asset.dispose();
 
 	} );
 

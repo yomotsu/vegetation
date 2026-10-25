@@ -604,8 +604,11 @@ describe( 'fir sprig texture', () => {
 		expect( tip[ 1 ] ).toBeGreaterThan( tip[ 0 ] );
 		expect( tip[ 1 ] ).toBeGreaterThan( tip[ 2 ] );
 		expect( tip[ 0 ] ).toBeGreaterThan( middle[ 0 ] );
+		expect( tip[ 0 ] ).toBeGreaterThan( 70 );
 		expect( tip[ 0 ] / tip[ 1 ] ).toBeGreaterThan( middle[ 0 ] / middle[ 1 ] );
 		expect( tip[ 2 ] ).toBeGreaterThan( middle[ 2 ] );
+		expect( tip[ 2 ] ).toBeGreaterThan( 12 );
+		expect( tip[ 1 ] ).toBeCloseTo( 119, 0 );
 
 		for ( let index = 1; index < luminance.length; index ++ ) {
 
