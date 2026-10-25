@@ -21,9 +21,9 @@ describe( 'demo registry', () => {
 		expect( kinds[ 0 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
 		expect( kinds[ 0 ]!.options ).toEqual( {
 			seed: 1,
-			height: 6,
+			height: 7.5,
 			crownSize: 1,
-			branchCount: 6,
+			branchCount: 15,
 		} );
 
 	} );
