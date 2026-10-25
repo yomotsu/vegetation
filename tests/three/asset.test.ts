@@ -91,8 +91,8 @@ describe( 'VegetationAsset', () => {
 
 		expect( leafMaterial.alphaTest ).toBe( 0.5 );
 		expect( leafMaterial.roughness ).toBe( 0.95 );
-		expect( leafMaterial.emissive.getHex() ).toBe( 0x234b14 );
-		expect( leafMaterial.emissiveIntensity ).toBe( 0.45 );
+		expect( leafMaterial.emissive.getHex() ).toBe( 0x000000 );
+		expect( leafMaterial.emissiveIntensity ).toBe( 0 );
 		expect( barkMaterial.roughness ).toBe( 0.85 );
 		expect( leafMaterial.alphaToCoverage ).toBe( false );
 		expect( leafMaterial.transparent ).toBe( false );
@@ -121,8 +121,8 @@ describe( 'VegetationAsset', () => {
 
 		expect( genericAsset.materials[ 0 ]!.roughness ).toBe( 1 );
 		expect( genericAsset.materials[ 1 ]!.roughness ).toBe( 1 );
-		expect( genericAsset.materials[ 1 ]!.emissive.getHex() ).toBe( 0x234b14 );
-		expect( genericAsset.materials[ 1 ]!.emissiveIntensity ).toBe( 0.45 );
+		expect( genericAsset.materials[ 1 ]!.emissive.getHex() ).toBe( 0x000000 );
+		expect( genericAsset.materials[ 1 ]!.emissiveIntensity ).toBe( 0 );
 		expect( barkTexture.wrapS ).toBe( ClampToEdgeWrapping );
 		expect( barkTexture.wrapT ).toBe( ClampToEdgeWrapping );
 		expect( leafTexture.wrapS ).toBe( ClampToEdgeWrapping );

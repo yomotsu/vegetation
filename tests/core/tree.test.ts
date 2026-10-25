@@ -241,8 +241,8 @@ describe( 'conifer tree data', () => {
 			doubleSided: true,
 			flatShading: false,
 			roughness: 0.95,
-			emissive: 0x234b14,
-			emissiveIntensity: 0.45,
+			emissive: 0x000000,
+			emissiveIntensity: 0,
 		} );
 		expect( data.parts[ 2 ] ).toEqual( impostorPart() );
 		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf' ] );
@@ -294,13 +294,58 @@ describe( 'conifer tree data', () => {
 		const edgeOffset = firstVertex * 3;
 		const midribOffset = ( firstVertex + 4 ) * 3;
 
-		expect( mesh.colors[ edgeOffset ] ).toBeCloseTo( 0.8, 5 );
+		expect( mesh.colors[ edgeOffset ] ).toBe( 0 );
 		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 1.05, 2 );
-		expect( mesh.colors[ edgeOffset + 2 ] ).toBeCloseTo( 0.65, 5 );
+		expect( mesh.colors[ edgeOffset + 2 ] ).toBe( 0 );
 		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.065, 2 );
+
+	} );
+
+	it( 'uses pure-green leaf tints and removes color fill from the leaves', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const mesh = data.lods[ 3 ]!;
+		const leaves = leafGroup( mesh );
+		const seen = new Set<number>();
+
+		expect( data.parts[ 1 ]!.emissive ).toBe( 0x000000 );
+		expect( data.parts[ 1 ]!.emissiveIntensity ).toBe( 0 );
+
+		for ( let index = leaves.start; index < leaves.start + leaves.count; index ++ ) {
+
+			const vertex = mesh.indices[ index ]!;
+			if ( seen.has( vertex ) ) continue;
+			seen.add( vertex );
+
+			expect( mesh.colors[ vertex * 3 ] ).toBe( 0 );
+			expect( mesh.colors[ vertex * 3 + 1 ] ).toBe( 1 );
+			expect( mesh.colors[ vertex * 3 + 2 ] ).toBe( 0 );
+
+		}
+
+		const texture = data.textures.leaf!;
+		const tileSize = texture.height;
+
+		for ( const tile of [ 1, 2 ] ) {
+
+			for ( let y = 0; y < tileSize; y ++ ) {
+
+				for ( let x = 0; x < tileSize; x ++ ) {
+
+					const offset = ( y * texture.width + tile * tileSize + x ) * 4;
+					if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+					expect( texture.data[ offset ] ).toBe( 0 );
+					expect( texture.data[ offset + 2 ] ).toBe( 0 );
+
+				}
+
+			}
+
+		}
 
 	} );
 

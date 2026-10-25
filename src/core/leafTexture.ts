@@ -6,13 +6,13 @@ type Rgb = [ number, number, number ];
 const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
 const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 47 ], [ 59, 57 ], [ 85, 76 ], [ 91, 80 ] ];
 const leafBrightnessStops: [ number, Rgb ][] = [
-	[ 0.05, [ 15, 40, 4 ] ],
-	[ 0.15, [ 20, 56, 3 ] ],
-	[ 0.3, [ 24, 65, 5 ] ],
-	[ 0.45, [ 29, 73, 6 ] ],
-	[ 0.6, [ 34, 84, 8 ] ],
-	[ 0.75, [ 36, 91, 9 ] ],
-	[ 0.9, [ 41, 98, 11 ] ],
+	[ 0.05, [ 0, 40, 0 ] ],
+	[ 0.15, [ 0, 56, 0 ] ],
+	[ 0.3, [ 0, 65, 0 ] ],
+	[ 0.45, [ 0, 73, 0 ] ],
+	[ 0.6, [ 0, 84, 0 ] ],
+	[ 0.75, [ 0, 91, 0 ] ],
+	[ 0.9, [ 0, 98, 0 ] ],
 ];
 
 function clamp( value: number, minimum: number, maximum: number ): number {

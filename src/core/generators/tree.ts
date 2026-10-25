@@ -36,7 +36,7 @@ interface TreeLayout {
 }
 
 const barkColor: Color3 = [ 1, 1, 1 ];
-const leafColor: Color3 = [ 1, 1, 1 ];
+const leafColor: Color3 = [ 0, 1, 0 ];
 const referenceTreeHeight = 7.55;
 const trunkTopFraction = 6.6 / referenceTreeHeight;
 const frondsPerTier = 5;
@@ -341,7 +341,7 @@ function getFrondVertexColor( longitudinal: number, radius: number, lateral: num
 	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.03;
 	const green = 1.02 + tierLift + longitudinal * 0.015;
 
-	return [ 0.8, green, 0.65 ];
+	return [ 0, green, 0 ];
 
 }
 
@@ -593,9 +593,9 @@ function updateCrownAtlas( texture: TextureData, silhouette: TextureData ): void
 				const target = ( y * texture.width + ( view + 1 ) * tileSize + x ) * 4;
 				const alpha = silhouette.data[ source + 3 ]!;
 
-				texture.data[ target ] = 31;
+				texture.data[ target ] = 0;
 				texture.data[ target + 1 ] = 83;
-				texture.data[ target + 2 ] = 12;
+				texture.data[ target + 2 ] = 0;
 				texture.data[ target + 3 ] = alpha >= 128 ? 255 : 0;
 
 			}
@@ -720,8 +720,8 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 			defaultColor: 0xffffff,
 			texture: 'leaf',
 			roughness: 0.95,
-			emissive: 0x234b14,
-			emissiveIntensity: 0.45,
+			emissive: 0x000000,
+			emissiveIntensity: 0,
 			alphaTest: 0.5,
 			// 三角形数を抑え、両側から一枚の折れ面を見せる。
 			doubleSided: true,
