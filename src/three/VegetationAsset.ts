@@ -17,6 +17,7 @@ import {
 } from 'three';
 import type { ColorRepresentation, Texture } from 'three';
 import { bakeImpostor } from '../core/impostor';
+import { regenerateTreeLeafTexture } from '../core/generators/tree';
 import type { LodLevel, MeshData, TextureData, VegetationData } from '../core/types';
 
 function createTexture( data: TextureData ): DataTexture {
@@ -87,6 +88,7 @@ export class VegetationAsset {
 	readonly collider: BufferGeometry | null;
 	private readonly impostorTexture: DataTexture | null;
 	private readonly partIndices = new Map<string, number>();
+	private readonly partColors: Color[];
 	private readonly partsCache = new Map<LodLevel, { part: string; geometry: BufferGeometry; material: MeshStandardMaterial }[]>();
 	private disposed = false;
 
@@ -96,8 +98,9 @@ export class VegetationAsset {
 		this.geometries = data.lods.map( createGeometry );
 		this.collider = createCollider( data.collider );
 
-		const partColors = data.parts.map( ( part ) => new Color( colors[ part.name ] ?? part.defaultColor ) );
-		const impostor = bakeImpostor( data, toLinearColors( partColors ), impostorSize );
+		this.partColors = data.parts.map( ( part ) => new Color( colors[ part.name ] ?? part.defaultColor ) );
+		const materialColors = this.partColors.map( ( color, index ) => data.parts[ index ]!.colorizesTexture ? new Color( 0xffffff ) : color.clone() );
+		const impostor = bakeImpostor( data, toLinearColors( materialColors ), impostorSize );
 		this.impostorTexture = createTexture( impostor );
 		this.materials = data.parts.map( ( part, index ) => {
 
@@ -105,7 +108,7 @@ export class VegetationAsset {
 
 			const texture = part.texture === 'impostor' ? this.impostorTexture : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]! );
 			const materialParameters = {
-				color: partColors[ index ]!,
+				color: materialColors[ index ]!,
 				map: texture,
 				vertexColors: part.texture !== 'impostor',
 				side: part.doubleSided ? DoubleSide : FrontSide,
@@ -178,9 +181,31 @@ export class VegetationAsset {
 
 		}
 
-		this.materials[ index ]!.color.set( color );
+		const definition = this.data.parts[ index ]!;
+		const nextColor = new Color( color );
 
-		const pixels = bakeImpostor( this.data, toLinearColors( this.materials.map( ( material ) => material.color ) ), this.impostorTexture!.image.width / 2 );
+		if ( definition.colorizesTexture ) {
+
+			if ( definition.texture === null || definition.texture === 'impostor' || this.materials[ index ]!.map === null ) {
+				throw new Error( `Vegetation part cannot regenerate its texture: ${ part }` );
+			}
+
+			regenerateTreeLeafTexture( this.data, nextColor.getHex() );
+
+			const texture = this.materials[ index ]!.map as DataTexture;
+			texture.image.data = this.data.textures[ definition.texture ]!.data;
+			texture.needsUpdate = true;
+
+		} else {
+
+			this.materials[ index ]!.color.copy( nextColor );
+
+		}
+
+		this.partColors[ index ]!.copy( nextColor );
+
+		const materialColors = this.partColors.map( ( partColor, partIndex ) => this.data.parts[ partIndex ]!.colorizesTexture ? new Color( 0xffffff ) : partColor );
+		const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), this.impostorTexture!.image.width / 2 );
 		this.impostorTexture!.image.data = pixels.data;
 		this.impostorTexture!.needsUpdate = true;
 
@@ -196,7 +221,7 @@ export class VegetationAsset {
 
 		}
 
-		return this.materials[ index ]!.color;
+		return this.partColors[ index ]!;
 
 	}
 

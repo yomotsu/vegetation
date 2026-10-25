@@ -90,7 +90,8 @@ describe( 'VegetationAsset', () => {
 
 		expect( leafColors.array ).toEqual( sourceColors );
 		expect( leaf.material.vertexColors ).toBe( true );
-		expect( leaf.material.color.getHex() ).toBe( 0xd2d2d2 );
+		expect( leaf.material.color.getHex() ).toBe( 0xffffff );
+		expect( asset.getColor( 'leaf' ).getHex() ).toBe( 0x2f7d1f );
 
 	} );
 
@@ -171,17 +172,24 @@ describe( 'VegetationAsset', () => {
 
 	} );
 
-	it( 'updates an impostor texture when a part color changes and rejects unknown parts', () => {
+	it( 'regenerates a colorized texture and impostor without rebuilding geometry', () => {
 
 		const asset = generateTree( { seed: 1 } );
-		const texture = asset.materials[ 2 ]!.map as DataTexture;
-		const originalPixels = texture.image.data!.slice();
+		const leafTexture = asset.materials[ 1 ]!.map as DataTexture;
+		const impostorTexture = asset.materials[ 2 ]!.map as DataTexture;
+		const originalLeafPixels = leafTexture.image.data!.slice();
+		const originalImpostorPixels = impostorTexture.image.data!.slice();
+		const positions = asset.geometries[ 0 ]!.getAttribute( 'position' ).array;
+		const originalLeafData = leafTexture.image.data;
 
-		asset.setColor( 'leaf', 0xff0000 );
+		asset.setColor( 'leaf', '#c0392b' );
 
-		expect( asset.getColor( 'leaf' ).r ).toBeCloseTo( 1 );
-		expect( asset.getColor( 'leaf' ).g ).toBeCloseTo( 0 );
-		expect( texture.image.data ).not.toEqual( originalPixels );
+		expect( asset.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
+		expect( asset.materials[ 1 ]!.color.getHex() ).toBe( 0xffffff );
+		expect( leafTexture.image.data ).not.toBe( originalLeafData );
+		expect( leafTexture.image.data ).not.toEqual( originalLeafPixels );
+		expect( impostorTexture.image.data ).not.toEqual( originalImpostorPixels );
+		expect( asset.geometries[ 0 ]!.getAttribute( 'position' ).array ).toBe( positions );
 		expect( () => asset.setColor( 'nope', 0 ) ).toThrow();
 
 	} );

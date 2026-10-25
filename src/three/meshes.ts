@@ -1,11 +1,13 @@
 import { VegetationAsset } from './VegetationAsset';
 import { VegetationMesh } from './VegetationMesh';
+import { Color } from 'three';
 import type { ColorRepresentation } from 'three';
 import type { TreeOptions } from '../core/generators/tree';
 import { generateTreeData } from '../core/generators/tree';
+import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
 import type { LodLevel } from '../core/types';
 
-export type TreeMeshOptions = TreeOptions & {
+export type TreeMeshOptions = Omit<TreeOptions, 'leafColor'> & {
 	lod?: number;
 	leafColor?: ColorRepresentation;
 	barkColor?: ColorRepresentation;
@@ -28,8 +30,9 @@ function colorsFromOptions(
 
 export function generateTree( options: TreeMeshOptions = {} ): VegetationAsset {
 
-	const data = generateTreeData( options );
-	const colors = colorsFromOptions( { barkColor: options.barkColor, leafColor: options.leafColor }, { barkColor: 'bark', leafColor: 'leaf' } );
+	const leafColor = options.leafColor ?? DEFAULT_LEAF_COLOR;
+	const data = generateTreeData( { ...options, leafColor: new Color( leafColor ).getHex() } );
+	const colors = colorsFromOptions( { barkColor: options.barkColor, leafColor }, { barkColor: 'bark', leafColor: 'leaf' } );
 
 	return new VegetationAsset( data, colors );
 

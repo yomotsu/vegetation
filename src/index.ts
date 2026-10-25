@@ -13,6 +13,7 @@ export type {
 	MeshGroup,
 	PartDef,
 	TextureData,
+	TextureGeneratorDef,
 	VegetationData,
 } from './core/types';
 export type { TreeMeshOptions, TreeOptions } from './three/meshes';

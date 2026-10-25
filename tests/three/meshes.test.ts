@@ -4,6 +4,33 @@ import { TreeMesh, generateTree } from '../../src/three/meshes';
 import { VegetationMesh } from '../../src/three/VegetationMesh';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 
+function meanTextureColorAtV( texture: { width: number; height: number; data: Uint8Array }, v: number ): [ number, number, number ] {
+
+	const y = Math.round( v * ( texture.height - 1 ) );
+	const channels = [ 0, 0, 0 ];
+	let count = 0;
+
+	for ( let x = 16; x < texture.height - 16; x ++ ) {
+
+		const offset = ( y * texture.width + x ) * 4;
+
+		if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+		for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
+		count ++;
+
+	}
+
+	return channels.map( ( channel ) => channel / count ) as [ number, number, number ];
+
+}
+
+function textureLuminance( color: [ number, number, number ] ): number {
+
+	return color[ 0 ] * 0.2126 + color[ 1 ] * 0.7152 + color[ 2 ] * 0.0722;
+
+}
+
 describe( 'tree meshes', () => {
 
 	it( 'creates a mesh with a collider and wind weights', () => {
@@ -43,9 +70,8 @@ describe( 'tree meshes', () => {
 		const firstLeaf = first.parts.find( ( part ) => part.name === 'leaf' )!;
 		const secondLeaf = second.parts.find( ( part ) => part.name === 'leaf' )!;
 		expect( firstLeaf.material ).toBe( secondLeaf.material );
-		expect( ( firstLeaf.material as MeshStandardMaterial ).color.r ).toBeCloseTo( 1 );
-		expect( ( firstLeaf.material as MeshStandardMaterial ).color.g ).toBeCloseTo( 0 );
-		expect( ( secondLeaf.material as MeshStandardMaterial ).color.b ).toBeCloseTo( 0 );
+		expect( ( firstLeaf.material as MeshStandardMaterial ).color.getHex() ).toBe( 0xffffff );
+		expect( asset.getColor( 'leaf' ).getHex() ).toBe( 0xff0000 );
 		expect( impostorTexture.image.data ).not.toEqual( originalPixels );
 		expect( ( first.parts[ 0 ]!.material as MeshStandardMaterial ) ).toBe( asset.materials[ 0 ] );
 		expect( ( firstLeaf.material as MeshStandardMaterial ) ).toBe( asset.materials[ 1 ] );
@@ -88,12 +114,26 @@ describe( 'tree meshes', () => {
 
 	it( 'applies leafColor and exposes the leaf texture', () => {
 
-		const mesh = new TreeMesh( { seed: 1, leafColor: 0xff0000 } );
+		const mesh = new TreeMesh( { seed: 1, leafColor: '#c0392b' } );
+		const leafTexture = mesh.asset.data.textures.leaf!;
+		const base = meanTextureColorAtV( leafTexture, 0.05 );
+		const tip = meanTextureColorAtV( leafTexture, 0.9 );
 
 		expect( mesh.asset ).toBeInstanceOf( VegetationAsset );
-		expect( mesh.asset.getColor( 'leaf' ).r ).toBeCloseTo( 1 );
+		expect( mesh.asset.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
 		expect( mesh.parts.find( ( part ) => part.name === 'leaf' )!.material ).toBe( mesh.asset.materials[ 1 ] );
 		expect( ( mesh.parts.find( ( part ) => part.name === 'leaf' )!.material as MeshStandardMaterial ).map ).not.toBeNull();
+		expect( textureLuminance( base ) ).toBeLessThan( textureLuminance( tip ) );
+
+		for ( const v of [ 0.05, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1 ] ) {
+
+			const color = meanTextureColorAtV( leafTexture, v );
+			expect( color[ 0 ] ).toBeGreaterThan( color[ 1 ] );
+
+		}
+
+		const repeated = new TreeMesh( { seed: 1, leafColor: '#c0392b' } );
+		expect( repeated.asset.data.textures.leaf!.data ).toEqual( leafTexture.data );
 
 	} );
 

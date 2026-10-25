@@ -3,7 +3,7 @@ import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
 import { createBarkTexture } from '../barkTexture';
-import { createFirSprigTexture, padTextureEdges } from '../leafTexture';
+import { createFirSprigTexture, DEFAULT_LEAF_COLOR, getFirSprigLeafColor, padTextureEdges } from '../leafTexture';
 import type { Color3, ColliderData, MeshData, PartDef, TextureData, Vec3, VegetationData } from '../types';
 
 export interface TreeOptions {
@@ -11,6 +11,7 @@ export interface TreeOptions {
 	height?: number;
 	crownSize?: number;
 	branchCount?: number;
+	leafColor?: number;
 }
 
 interface Frond {
@@ -37,7 +38,7 @@ interface TreeLayout {
 
 const barkColor: Color3 = [ 1, 1, 1 ];
 const leafBrightness = 0.75;
-const leafColor: Color3 = [ 0, 0.95 * leafBrightness, 0 ];
+const leafVertexColor: Color3 = [ 0.95 * leafBrightness, 0.95 * leafBrightness, 0.95 * leafBrightness ];
 const referenceTreeHeight = 7.55;
 const trunkTopFraction = 6.6 / referenceTreeHeight;
 const frondsPerTier = 5;
@@ -342,7 +343,7 @@ function getFrondVertexColor( radius: number, lateral: number ): Color3 {
 	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.03;
 	const green = ( 0.96 + tierLift ) * leafBrightness;
 
-	return [ 0, green, 0 ];
+	return [ green, green, green ];
 
 }
 
@@ -577,10 +578,12 @@ function bakeLeafSilhouette( lod0: MeshData, texture: TextureData, parts: PartDe
 
 }
 
-function updateCrownAtlas( texture: TextureData, silhouette: TextureData ): void {
+function updateCrownAtlas( texture: TextureData, silhouette: TextureData | null, color: number, previousTexture?: TextureData ): void {
 
 	const tileSize = texture.height;
-	const sourceSize = silhouette.height;
+	const inputColor = [ ( color >>> 16 ) & 0xff, ( color >>> 8 ) & 0xff, color & 0xff ];
+	const defaultColor = [ ( DEFAULT_LEAF_COLOR >>> 16 ) & 0xff, ( DEFAULT_LEAF_COLOR >>> 8 ) & 0xff, DEFAULT_LEAF_COLOR & 0xff ];
+	const crownColor = [ 0, 83, 0 ].map( ( channel, index ) => Math.round( clamp( channel + ( inputColor[ index ]! - defaultColor[ index ]! ) * 0.58, 0, 255 ) ) );
 
 	for ( let view = 0; view < 2; view ++ ) {
 
@@ -588,15 +591,26 @@ function updateCrownAtlas( texture: TextureData, silhouette: TextureData ): void
 
 			for ( let x = 0; x < tileSize; x ++ ) {
 
-				const sourceX = Math.floor( x / tileSize * sourceSize );
-				const sourceY = Math.floor( y / tileSize * sourceSize );
-				const source = ( sourceY * silhouette.width + view * sourceSize + sourceX ) * 4;
 				const target = ( y * texture.width + ( view + 1 ) * tileSize + x ) * 4;
-				const alpha = silhouette.data[ source + 3 ]!;
+				let alpha: number;
 
-				texture.data[ target ] = 0;
-				texture.data[ target + 1 ] = 83;
-				texture.data[ target + 2 ] = 0;
+				if ( previousTexture !== undefined ) {
+
+					alpha = previousTexture.data[ target + 3 ]!;
+
+				} else {
+
+					const sourceSize = silhouette!.height;
+					const sourceX = Math.floor( x / tileSize * sourceSize );
+					const sourceY = Math.floor( y / tileSize * sourceSize );
+					const source = ( sourceY * silhouette!.width + view * sourceSize + sourceX ) * 4;
+					alpha = silhouette!.data[ source + 3 ]!;
+
+				}
+
+				texture.data[ target ] = crownColor[ 0 ]!;
+				texture.data[ target + 1 ] = crownColor[ 1 ]!;
+				texture.data[ target + 2 ] = crownColor[ 2 ]!;
 				texture.data[ target + 3 ] = alpha >= 128 ? 255 : 0;
 
 			}
@@ -622,7 +636,7 @@ function addSilhouetteCard( builder: MeshBuilder, centerX: number, centerZ: numb
 	const tileStart = tileIndex / 3;
 	const tileEnd = ( tileIndex + 1 ) / 3;
 	const uvs: [ number, number ][] = [ [ tileStart + inset, 0 ], [ tileEnd - inset, 0 ], [ tileEnd - inset, 1 ], [ tileStart + inset, 1 ] ];
-	const indices = corners.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], uvs[ index ]!, leafColor, 0.5 + clamp( point[ 1 ] / ( topY || 1 ), 0, 1 ) * 0.5 ) );
+	const indices = corners.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], uvs[ index ]!, leafVertexColor, 0.5 + clamp( point[ 1 ] / ( topY || 1 ), 0, 1 ) * 0.5 ) );
 
 	builder.addTriangle( indices[ 0 ]!, indices[ 1 ]!, indices[ 2 ]! );
 	builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 3 ]! );
@@ -685,6 +699,7 @@ function getBoundsRadius( mesh: MeshData ): number {
 export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 
 	const seed = options.seed ?? 1;
+	const leafColor = options.leafColor ?? DEFAULT_LEAF_COLOR;
 	const height = options.height ?? 7.5;
 	const crownSizeInput = options.crownSize ?? 1;
 	const branchCount = options.branchCount ?? 15;
@@ -720,8 +735,9 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 		},
 		{
 			name: 'leaf',
-			defaultColor: 0xd2d2d2,
+			defaultColor: leafColor,
 			texture: 'leaf',
+			colorizesTexture: true,
 			roughness: 0.95,
 			specularIntensity: 0.014872,
 			ior: 1.05,
@@ -736,12 +752,12 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	];
 	const textures = {
 		bark: { ...createBarkTexture( seed ), wrap: 'repeat' as const },
-		leaf: createFirSprigTexture( seed, 256, false ),
+		leaf: createFirSprigTexture( seed, 256, false, leafColor ),
 	};
 	const lod0Bounds = { radius: getBoundsRadius( lod0 ), height };
 	const silhouette = bakeLeafSilhouette( lod0, textures.leaf, parts, lod0Bounds );
 
-	updateCrownAtlas( textures.leaf, silhouette );
+	updateCrownAtlas( textures.leaf, silhouette, leafColor );
 	padTextureEdges( textures.leaf );
 
 	const lod3 = buildLod3( layout, lod0Bounds.radius );
@@ -752,9 +768,51 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 		lods: [ lod0, lod1, lod2, lod3, buildBillboard( bounds, parts.length - 1 ) ],
 		collider: buildCollider( layout ),
 		textures,
+		textureGenerators: { leaf: { type: 'tree-leaf', seed, size: 256 } },
 		bounds,
 	};
 
 	return data;
+
+}
+
+export function regenerateTreeLeafTexture( data: VegetationData, color: number ): void {
+
+	const generator = data.textureGenerators?.leaf;
+	const existing = data.textures.leaf;
+
+	if ( generator?.type !== 'tree-leaf' || existing?.colorFactors === undefined || existing.colorPixelIndices === undefined ) {
+		throw new Error( 'Tree leaf texture cannot be regenerated' );
+	}
+
+	const nextPixels = existing.data.slice();
+	const factors = existing.colorFactors;
+	const rowColors = new Float32Array( existing.height * 3 );
+
+	for ( let y = 0; y < existing.height; y ++ ) {
+
+		const target = getFirSprigLeafColor( y / ( existing.height - 1 ), color );
+		rowColors[ y * 3 ] = target[ 0 ];
+		rowColors[ y * 3 + 1 ] = target[ 1 ];
+		rowColors[ y * 3 + 2 ] = target[ 2 ];
+
+	}
+
+	for ( const pixel of existing.colorPixelIndices ) {
+
+		const y = Math.floor( pixel / existing.width );
+		const factor = factors[ pixel ]!;
+		const offset = pixel * 4;
+		const row = y * 3;
+
+		nextPixels[ offset ] = Math.round( clamp( rowColors[ row ]! * factor, 0, 255 ) );
+		nextPixels[ offset + 1 ] = Math.round( clamp( rowColors[ row + 1 ]! * factor, 0, 255 ) );
+		nextPixels[ offset + 2 ] = Math.round( clamp( rowColors[ row + 2 ]! * factor, 0, 255 ) );
+
+	}
+
+	const texture = { ...existing, data: nextPixels };
+	updateCrownAtlas( texture, null, color, existing );
+	existing.data = nextPixels;
 
 }

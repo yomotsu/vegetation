@@ -22,6 +22,7 @@ export interface PartDef {
 	name: string; // 'bark' | 'leaf' | 'rock' | 'impostor' など
 	defaultColor: number; // sRGB hex（0x5a8f3a）
 	texture: string | null; // VegetationData.textures のキー（'impostor' は three 層で焼く）
+	colorizesTexture?: boolean;
 	roughness?: number;
 	/** 誘電体の鏡面反射強度。指定時は MeshPhysicalMaterial を使用する。 */
 	specularIntensity?: number;
@@ -34,10 +35,18 @@ export interface PartDef {
 	flatShading: boolean;
 }
 
+export interface TextureGeneratorDef {
+	type: 'tree-leaf';
+	seed: number;
+	size: number;
+}
+
 export interface TextureData {
 	width: number;
 	height: number;
 	data: Uint8Array;
+	colorFactors?: Float32Array;
+	colorPixelIndices?: Uint32Array;
 	wrap?: 'repeat' | 'clamp';
 } // RGBA8, sRGB。row 0 は v=0（画像下端）。three.js DataTexture は flipY=false で使う。
 
@@ -52,5 +61,6 @@ export interface VegetationData {
 	lods: MeshData[]; // 長さ 5。lods[ 4 ] はビルボード
 	collider: ColliderData | null;
 	textures: Record<string, TextureData>; // impostor 以外の生成テクスチャ
+	textureGenerators?: Record<string, TextureGeneratorDef>;
 	bounds: { radius: number; height: number }; // XZ 半径、高さ
 }

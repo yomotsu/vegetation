@@ -3,6 +3,9 @@ import type { TextureData } from './types';
 
 type Rgb = [ number, number, number ];
 
+export const DEFAULT_LEAF_COLOR = 0x2f7d1f;
+const defaultLeafTint = 210 / 255;
+
 const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
 const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 47 ], [ 59, 57 ], [ 85, 76 ], [ 91, 80 ] ];
 const leafBrightnessStops: [ number, Rgb ][] = [
@@ -81,6 +84,7 @@ function drawStroke(
 	endWidth: number,
 	startColor: Rgb,
 	endColor: Rgb,
+	colorFactors?: Float32Array,
 ): void {
 
 	const dx = to[ 0 ] - from[ 0 ];
@@ -113,6 +117,7 @@ function drawStroke(
 				Math.round( lerp( startColor[ 1 ], endColor[ 1 ], amount ) ),
 				Math.round( lerp( startColor[ 2 ], endColor[ 2 ], amount ) ),
 			], Math.round( coverage * 255 ) );
+			if ( colorFactors !== undefined ) colorFactors[ y * width + x ] = 0;
 
 		}
 
@@ -207,11 +212,37 @@ function getLeafBrightness( v: number ): Rgb {
 
 }
 
-function matchLeafBrightnessRamp( data: Uint8Array, width: number, size: number ): void {
+function getSrgbBytes( color: number ): Rgb {
+
+	return [ ( color >>> 16 ) & 0xff, ( color >>> 8 ) & 0xff, color & 0xff ];
+
+}
+
+export function getFirSprigLeafColor( v: number, color = DEFAULT_LEAF_COLOR ): Rgb {
+
+	const defaultColor = getSrgbBytes( DEFAULT_LEAF_COLOR );
+	const selectedColor = getSrgbBytes( color );
+	const calibrated = getLeafBrightness( clamp( v, 0, 1 ) ).map( ( channel ) => channel * defaultLeafTint ) as Rgb;
+	const defaultLuminance = defaultColor[ 0 ] * 0.2126 + defaultColor[ 1 ] * 0.7152 + defaultColor[ 2 ] * 0.0722;
+	const calibratedLuminance = calibrated[ 0 ] * 0.2126 + calibrated[ 1 ] * 0.7152 + calibrated[ 2 ] * 0.0722;
+	const brightness = calibratedLuminance / defaultLuminance;
+
+	return [
+		clamp( selectedColor[ 0 ] * brightness + calibrated[ 0 ] - defaultColor[ 0 ] * brightness, 0, 255 ),
+		clamp( selectedColor[ 1 ] * brightness + calibrated[ 1 ] - defaultColor[ 1 ] * brightness, 0, 255 ),
+		clamp( selectedColor[ 2 ] * brightness + calibrated[ 2 ] - defaultColor[ 2 ] * brightness, 0, 255 ),
+	];
+
+}
+
+function matchLeafBrightnessRamp( data: Uint8Array, width: number, size: number, color: number ): Float32Array {
+
+	const leafMask = new Uint8Array( width * size );
+	const colorFactors = new Float32Array( width * size );
 
 	for ( let y = 0; y < size; y ++ ) {
 
-		const totals = [ 0, 0, 0 ];
+		let totalLuminance = 0;
 		let count = 0;
 
 		for ( let x = 0; x < size; x ++ ) {
@@ -221,17 +252,18 @@ function matchLeafBrightnessRamp( data: Uint8Array, width: number, size: number 
 			const green = data[ offset + 1 ]!;
 			const blue = data[ offset + 2 ]!;
 
+			if ( data[ offset + 3 ]! > 0 && green > red && green > blue ) leafMask[ y * width + x ] = 1;
 			if ( data[ offset + 3 ]! < 128 || green <= red || green <= blue ) continue;
 
-			for ( let channel = 0; channel < 3; channel ++ ) totals[ channel ]! += data[ offset + channel ]!;
+			totalLuminance += red * 0.2126 + green * 0.7152 + blue * 0.0722;
 			count ++;
 
 		}
 
 		if ( count === 0 ) continue;
 
-		const target = getLeafBrightness( 1 - y / ( size - 1 ) );
-		const scale = target.map( ( channel, index ) => channel / ( totals[ index ]! / count ) );
+		const target = getFirSprigLeafColor( 1 - y / ( size - 1 ), color );
+		const averageLuminance = totalLuminance / count;
 
 		for ( let x = 0; x < size; x ++ ) {
 
@@ -240,11 +272,14 @@ function matchLeafBrightnessRamp( data: Uint8Array, width: number, size: number 
 			const green = data[ offset + 1 ]!;
 			const blue = data[ offset + 2 ]!;
 
-			if ( data[ offset + 3 ] === 0 || green <= red || green <= blue ) continue;
+			if ( leafMask[ y * width + x ] === 0 ) continue;
+			const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+			const scale = luminance / averageLuminance;
+			colorFactors[ y * width + x ] = scale;
 
 			for ( let channel = 0; channel < 3; channel ++ ) {
 
-				data[ offset + channel ] = Math.round( clamp( data[ offset + channel ]! * scale[ channel ]!, 0, 255 ) );
+				data[ offset + channel ] = Math.round( clamp( target[ channel ]! * scale, 0, 255 ) );
 
 			}
 
@@ -252,9 +287,11 @@ function matchLeafBrightnessRamp( data: Uint8Array, width: number, size: number 
 
 	}
 
+	return colorFactors;
+
 }
 
-function softenSprigCenterline( data: Uint8Array, width: number, size: number, seed: number ): void {
+function softenSprigCenterline( data: Uint8Array, width: number, size: number, seed: number, colorFactors: Float32Array ): void {
 
 	const sideOffsets = [ - 10, - 9, - 8, - 7, - 6, - 5, - 4, 4, 5, 6, 7, 8, 9, 10 ];
 
@@ -263,6 +300,7 @@ function softenSprigCenterline( data: Uint8Array, width: number, size: number, s
 		const center = size * 0.5 + Math.sin( y / size * Math.PI * 1.3 + seed * 0.37 ) * size * 0.009;
 		const centerX = Math.round( center );
 		const sideColor = [ 0, 0, 0 ];
+		let sideFactor = 0;
 		let sideCount = 0;
 
 		for ( const sideOffset of sideOffsets ) {
@@ -276,6 +314,7 @@ function softenSprigCenterline( data: Uint8Array, width: number, size: number, s
 			if ( data[ offset + 3 ]! < 128 ) continue;
 
 			for ( let channel = 0; channel < 3; channel ++ ) sideColor[ channel ]! += data[ offset + channel ]!;
+			sideFactor += colorFactors[ y * width + x ]!;
 			sideCount ++;
 
 		}
@@ -295,6 +334,7 @@ function softenSprigCenterline( data: Uint8Array, width: number, size: number, s
 				data[ offset + channel ] = Math.round( lerp( data[ offset + channel ]!, sideColor[ channel ]! / sideCount, 0.95 ) );
 
 			}
+			colorFactors[ y * width + x ] = lerp( colorFactors[ y * width + x ]!, sideFactor / sideCount, 0.95 );
 
 		}
 
@@ -302,7 +342,7 @@ function softenSprigCenterline( data: Uint8Array, width: number, size: number, s
 
 }
 
-function drawStem( data: Uint8Array, width: number, size: number, seed: number ): void {
+function drawStem( data: Uint8Array, width: number, size: number, seed: number, colorFactors: Float32Array ): void {
 
 	const pixelScale = size / 256;
 	const baseStemWidth = Math.max( 4, pixelScale * 9.6 );
@@ -324,7 +364,7 @@ function drawStem( data: Uint8Array, width: number, size: number, seed: number )
 		const point: [ number, number ] = [ center, y ];
 		const strokeWidth = lerp( baseStemWidth, tipStemWidth, Math.pow( amount, 0.72 ) );
 
-		if ( previous !== null ) drawStroke( data, width, size, previous, point, previousWidth, strokeWidth, stemColor, stemColor );
+		if ( previous !== null ) drawStroke( data, width, size, previous, point, previousWidth, strokeWidth, stemColor, stemColor, colorFactors );
 
 		previous = point;
 		previousWidth = strokeWidth;
@@ -485,6 +525,7 @@ export function padTextureEdges( texture: TextureData ): void {
 
 	const tileSize = texture.height;
 	const tileCount = Math.floor( texture.width / tileSize );
+	const colorPixelIndices = texture.colorFactors === undefined ? null : [] as number[];
 
 	for ( let tile = 0; tile < tileCount; tile ++ ) {
 
@@ -504,6 +545,7 @@ export function padTextureEdges( texture: TextureData ): void {
 
 					assigned[ localIndex ] = 1;
 					queue[ queueEnd ++ ] = localIndex;
+					if ( texture.colorFactors?.[ textureIndex / 4 ]! > 0 ) colorPixelIndices!.push( textureIndex / 4 );
 
 				}
 
@@ -542,11 +584,20 @@ export function padTextureEdges( texture: TextureData ): void {
 				texture.data[ textureIndex + 1 ] = texture.data[ sourceTextureIndex + 1 ]!;
 				texture.data[ textureIndex + 2 ] = texture.data[ sourceTextureIndex + 2 ]!;
 
+				if ( texture.colorFactors !== undefined ) {
+
+					texture.colorFactors[ textureIndex / 4 ] = texture.colorFactors[ sourceTextureIndex / 4 ]!;
+					if ( texture.colorFactors[ sourceTextureIndex / 4 ]! > 0 ) colorPixelIndices!.push( textureIndex / 4 );
+
+				}
+
 			}
 
 		}
 
 	}
+
+	if ( colorPixelIndices !== null ) texture.colorPixelIndices = Uint32Array.from( colorPixelIndices );
 
 }
 
@@ -568,7 +619,24 @@ function flipTextureVertically( data: Uint8Array, width: number, height: number 
 
 }
 
-export function createFirSprigTexture( seed: number, size = 256, padEdges = true ): TextureData {
+function flipColorFactorsVertically( factors: Float32Array, width: number, height: number ): void {
+
+	const temporaryRow = new Float32Array( width );
+
+	for ( let y = 0; y < Math.floor( height / 2 ); y ++ ) {
+
+		const top = y * width;
+		const bottom = ( height - y - 1 ) * width;
+
+		temporaryRow.set( factors.subarray( top, top + width ) );
+		factors.copyWithin( top, bottom, bottom + width );
+		factors.set( temporaryRow, bottom );
+
+	}
+
+}
+
+export function createFirSprigTexture( seed: number, size = 256, padEdges = true, color = DEFAULT_LEAF_COLOR ): TextureData {
 
 	if ( ! Number.isInteger( size ) || size < 1 ) {
 		throw new RangeError( 'Texture size must be a positive integer' );
@@ -585,16 +653,18 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 
 	drawSprig( data, width, size, seed );
 	matchLeafColorDistribution( data, width, size );
-	matchLeafBrightnessRamp( data, width, size );
-	softenSprigCenterline( data, width, size, seed );
-	drawStem( data, width, size, seed );
+	const colorFactors = matchLeafBrightnessRamp( data, width, size, color );
+	softenSprigCenterline( data, width, size, seed, colorFactors );
+	drawStem( data, width, size, seed, colorFactors );
 	flipTextureVertically( data, width, size );
+	flipColorFactorsVertically( colorFactors, width, size );
+	const texture: TextureData = { width, height: size, data, colorFactors };
 	if ( padEdges ) {
 
-		padTextureEdges( { width, height: size, data } );
+		padTextureEdges( texture );
 
 	}
 
-	return { width, height: size, data };
+	return texture;
 
 }

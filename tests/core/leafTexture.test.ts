@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createBarkTexture, createFirSprigTexture } from '../../src/core';
+import { generateTreeData } from '../../src/core/generators/tree';
 import { getFirSprigNeedleGeometry } from '../../src/core/leafTexture';
+import { regenerateTreeLeafTexture } from '../../src/core/generators/tree';
+
+const enableLeafTexturePerformanceTest = ( globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } } ).process?.env?.VEGETATION_PERF === '1';
 
 function alphaAt( texture: { width: number; data: Uint8Array }, x: number, y: number ): number {
 
@@ -77,6 +81,28 @@ function meanBarkColor( texture: { width: number; height: number; data: Uint8Arr
 	}
 
 	return channels.map( ( channel ) => channel / pixelCount ) as [ number, number, number ];
+
+}
+
+function meanLeafColorAtV( texture: { width: number; height: number; data: Uint8Array }, v: number ): [ number, number, number ] {
+
+	const y = Math.round( v * ( texture.height - 1 ) );
+	const channels = [ 0, 0, 0 ];
+	let count = 0;
+
+	for ( let x = 0; x < texture.height; x ++ ) {
+
+		const offset = ( y * texture.width + x ) * 4;
+
+		if ( texture.data[ offset + 3 ]! < 128 ) continue;
+		if ( isBrownStemPixel( texture, x, y ) ) continue;
+
+		for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
+		count ++;
+
+	}
+
+	return channels.map( ( channel ) => channel / count ) as [ number, number, number ];
 
 }
 
@@ -282,6 +308,48 @@ function percentile( values: number[], fraction: number ): number {
 }
 
 describe( 'fir sprig texture', () => {
+
+	it( 'keeps the calibrated default ramp after the former leaf material tint is baked into the texture', () => {
+
+		const texture = generateTreeData( { seed: 1 } ).textures.leaf!;
+		const tint = 210 / 255;
+		const stops: [ number, [ number, number, number ] ][] = [
+			[ 0.05, [ 0, 35, 0 ] ],
+			[ 0.15, [ 0, 46, 0 ] ],
+			[ 0.3, [ 0, 62, 0 ] ],
+			[ 0.45, [ 0, 80, 0 ] ],
+			[ 0.6, [ 6, 98, 0 ] ],
+			[ 0.75, [ 28, 113, 2 ] ],
+			[ 0.9, [ 57, 120, 10 ] ],
+			[ 1, [ 80, 124, 16 ] ],
+		];
+
+		for ( const [ v, color ] of stops ) {
+
+			const actual = meanLeafColorAtV( texture, v );
+
+			for ( let channel = 0; channel < 3; channel ++ ) {
+
+				expect( Math.abs( actual[ channel ]! - color[ channel ]! * tint ) ).toBeLessThanOrEqual( 3 );
+
+			}
+
+		}
+
+	} );
+
+	it.skipIf( ! enableLeafTexturePerformanceTest )( 'regenerates the current-size conifer leaf texture in under 15 milliseconds', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const start = performance.now();
+
+		regenerateTreeLeafTexture( data, 0xc0392b );
+
+		const elapsed = performance.now() - start;
+
+		expect( elapsed ).toBeLessThan( 15 );
+
+	} );
 
 	it( 'creates a deterministic atlas with a fir sprig, needles, and a green midrib', () => {
 
@@ -604,11 +672,11 @@ describe( 'fir sprig texture', () => {
 		expect( tip[ 1 ] ).toBeGreaterThan( tip[ 0 ] );
 		expect( tip[ 1 ] ).toBeGreaterThan( tip[ 2 ] );
 		expect( tip[ 0 ] ).toBeGreaterThan( middle[ 0 ] );
-		expect( tip[ 0 ] ).toBeGreaterThan( 70 );
+		expect( tip[ 0 ] ).toBeGreaterThan( 55 );
 		expect( tip[ 0 ] / tip[ 1 ] ).toBeGreaterThan( middle[ 0 ] / middle[ 1 ] );
 		expect( tip[ 2 ] ).toBeGreaterThan( middle[ 2 ] );
-		expect( tip[ 2 ] ).toBeGreaterThan( 12 );
-		expect( tip[ 1 ] ).toBeCloseTo( 119, 0 );
+		expect( tip[ 2 ] ).toBeGreaterThan( 8 );
+		expect( tip[ 1 ] ).toBeCloseTo( 98, 0 );
 
 		for ( let index = 1; index < luminance.length; index ++ ) {
 

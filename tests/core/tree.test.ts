@@ -271,8 +271,9 @@ describe( 'conifer tree data', () => {
 		} );
 		expect( data.parts[ 1 ] ).toEqual( {
 			name: 'leaf',
-			defaultColor: 0xd2d2d2,
+			defaultColor: 0x2f7d1f,
 			texture: 'leaf',
+			colorizesTexture: true,
 			alphaTest: 0.5,
 			doubleSided: true,
 			flatShading: false,
@@ -324,7 +325,7 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps a soft green ramp without a fold color stripe', () => {
+	it( 'uses neutral leaf vertex colors for the texture-driven ramp', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
@@ -332,9 +333,9 @@ describe( 'conifer tree data', () => {
 		const edgeOffset = firstVertex * 3;
 		const midribOffset = ( firstVertex + 4 ) * 3;
 
-		expect( mesh.colors[ edgeOffset ] ).toBe( 0 );
+		expect( mesh.colors[ edgeOffset ] ).toBeCloseTo( 0.74244, 5 );
 		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 0.74244, 5 );
-		expect( mesh.colors[ edgeOffset + 2 ] ).toBe( 0 );
+		expect( mesh.colors[ edgeOffset + 2 ] ).toBeCloseTo( 0.74244, 5 );
 		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 1, 5 );
@@ -392,7 +393,7 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'uses pure-green leaf tints and removes color fill from the leaves', () => {
+	it( 'uses luminance-only leaf vertex colors and removes color fill from the leaves', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const mesh = data.lods[ 3 ]!;
@@ -408,9 +409,9 @@ describe( 'conifer tree data', () => {
 			if ( seen.has( vertex ) ) continue;
 			seen.add( vertex );
 
-			expect( mesh.colors[ vertex * 3 ] ).toBe( 0 );
+			expect( mesh.colors[ vertex * 3 ] ).toBeCloseTo( 0.7125, 5 );
 			expect( mesh.colors[ vertex * 3 + 1 ] ).toBeCloseTo( 0.7125, 5 );
-			expect( mesh.colors[ vertex * 3 + 2 ] ).toBe( 0 );
+			expect( mesh.colors[ vertex * 3 + 2 ] ).toBeCloseTo( 0.7125, 5 );
 
 		}
 
