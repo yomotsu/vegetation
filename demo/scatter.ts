@@ -8,7 +8,7 @@ import {
 	StaticDrawUsage,
 	Vector3,
 } from 'three';
-import { createRandom } from '../src/index';
+import { createRandom, orientBillboardInstances } from '../src/index';
 import type { VegetationAsset } from '../src/index';
 import { setPreviewShadowFlags } from './rendering';
 
@@ -106,7 +106,18 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 
 	function update( camera: Camera, time: number ): number {
 
-		if ( time - lastUpdate < 500 ) return triangles;
+		if ( time - lastUpdate < 500 ) {
+
+			for ( const batch of batches ) {
+
+				if ( batch.lod === 4 && batch.mesh.visible && batch.mesh.count > 0 ) orientBillboardInstances( batch.mesh, camera );
+
+			}
+
+			return triangles;
+
+		}
+
 		lastUpdate = time;
 
 		for ( const batch of batches ) {
@@ -142,6 +153,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 
 			batch.mesh.visible = batch.mesh.count > 0;
 			if ( batch.mesh.count > 0 ) batch.mesh.instanceMatrix.needsUpdate = true;
+			if ( batch.lod === 4 && batch.mesh.count > 0 ) orientBillboardInstances( batch.mesh, camera );
 			triangles += batch.mesh.count * ( batch.mesh.geometry.getIndex()?.count ?? 0 ) / 3;
 
 		}

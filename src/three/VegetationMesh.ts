@@ -1,7 +1,47 @@
-import { LOD, Mesh } from 'three';
-import type { BufferGeometry, ColorRepresentation, MeshStandardMaterial } from 'three';
+import { BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
+import type { Camera, ColorRepresentation, MeshStandardMaterial } from 'three';
 import type { LodLevel } from '../core/types';
 import { VegetationAsset } from './VegetationAsset';
+
+const up = new Vector3( 0, 1, 0 );
+
+function createEmptyGeometry( source: BufferGeometry ): BufferGeometry {
+
+	const geometry = new BufferGeometry();
+	geometry.setAttribute( 'position', source.getAttribute( 'position' ) );
+	geometry.setIndex( [] );
+	geometry.setDrawRange( 0, 0 );
+	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
+
+	return geometry;
+
+}
+
+/** InstancedMesh の各 LOD4 行列をカメラへ向け、位置とスケールを保ちます。 */
+export function orientBillboardInstances( mesh: InstancedMesh, camera: Camera ): void {
+
+	mesh.updateWorldMatrix( true, false );
+	camera.updateWorldMatrix( true, false );
+	const cameraPosition = camera.getWorldPosition( new Vector3() );
+	const localCameraPosition = mesh.worldToLocal( cameraPosition );
+	const matrix = new Matrix4();
+	const position = new Vector3();
+	const scale = new Vector3();
+	const rotation = new Quaternion();
+
+	for ( let index = 0; index < mesh.count; index ++ ) {
+
+		mesh.getMatrixAt( index, matrix );
+		matrix.decompose( position, rotation, scale );
+		rotation.setFromAxisAngle( up, Math.atan2( localCameraPosition.x - position.x, localCameraPosition.z - position.z ) );
+		matrix.compose( position, rotation, scale );
+		mesh.setMatrixAt( index, matrix );
+
+	}
+
+	mesh.instanceMatrix.needsUpdate = true;
+
+}
 
 /** LOD の各パーツを単一マテリアルの Mesh として構成します。 */
 export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
@@ -26,7 +66,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 			throw new Error( `Vegetation LOD ${ level } has no parts` );
 		}
 
-		super( first.geometry, first.material );
+		super( level === 4 ? createEmptyGeometry( first.geometry ) : first.geometry, first.material );
 		this.asset = asset;
 		this.lod = level;
 		this.name = first.part;
@@ -60,16 +100,41 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 		this.castShadow = castShadow;
 		this.receiveShadow = receiveShadow;
-		this.partMeshes.push( this );
+		if ( level === 4 ) {
 
-		for ( const part of parts.slice( 1 ) ) {
+			const part = parts[ 0 ]!;
+			const billboard = new Mesh( part.geometry, part.material );
+			const cameraPosition = new Vector3();
+			billboard.name = part.part;
+			billboard.castShadow = this.shadowCast;
+			billboard.receiveShadow = this.shadowReceive;
+			billboard.onBeforeRender = ( renderer, scene, camera ) => {
 
-			const mesh = new Mesh( part.geometry, part.material );
-			mesh.name = part.part;
-			mesh.castShadow = this.shadowCast;
-			mesh.receiveShadow = this.shadowReceive;
-			this.add( mesh );
-			this.partMeshes.push( mesh );
+				camera.updateWorldMatrix( true, false );
+				this.updateWorldMatrix( true, false );
+				camera.getWorldPosition( cameraPosition );
+				this.worldToLocal( cameraPosition );
+				billboard.rotation.set( 0, Math.atan2( cameraPosition.x, cameraPosition.z ), 0 );
+				billboard.updateMatrixWorld( true );
+
+			};
+			this.add( billboard );
+			this.partMeshes.push( billboard );
+
+		} else {
+
+			this.partMeshes.push( this );
+
+			for ( const part of parts.slice( 1 ) ) {
+
+				const mesh = new Mesh( part.geometry, part.material );
+				mesh.name = part.part;
+				mesh.castShadow = this.shadowCast;
+				mesh.receiveShadow = this.shadowReceive;
+				this.add( mesh );
+				this.partMeshes.push( mesh );
+
+			}
 
 		}
 

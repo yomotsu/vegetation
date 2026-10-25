@@ -35,28 +35,24 @@ export function buildBillboard( bounds: { radius: number; height: number }, impo
 	builder.beginGroup( impostorPartIndex );
 
 	const a0 = builder.addVertex( [ - radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 0 ], color, 0 );
-	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 0.5, 0 ], color, 0 );
-	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0.5, 1 ], color, 1 );
+	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 1, 0 ], color, 0 );
+	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 1, 1 ], color, 1 );
 	const a3 = builder.addVertex( [ - radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 1 ], color, 1 );
 
 	builder.addTriangle( a0, a1, a2 );
 	builder.addTriangle( a0, a2, a3 );
 
-	const b0 = builder.addVertex( [ 0, 0, radius ], [ normalWeight, normalWeight, 0 ], [ 0.5, 0 ], color, 0 );
-	const b1 = builder.addVertex( [ 0, 0, - radius ], [ normalWeight, normalWeight, 0 ], [ 1, 0 ], color, 0 );
-	const b2 = builder.addVertex( [ 0, height, - radius ], [ normalWeight, normalWeight, 0 ], [ 1, 1 ], color, 1 );
-	const b3 = builder.addVertex( [ 0, height, radius ], [ normalWeight, normalWeight, 0 ], [ 0.5, 1 ], color, 1 );
-
-	builder.addTriangle( b0, b1, b2 );
-	builder.addTriangle( b0, b2, b3 );
-
 	return builder.build();
 
 }
 
-export function bakeImpostor( data: VegetationData, colors: Color3[], size: number ): TextureData {
+export function bakeImpostor( data: VegetationData, colors: Color3[], size: number, viewYawAngles: number[] = [ 0, Math.PI / 2 ] ): TextureData {
 
-	const width = size * 2;
+	if ( viewYawAngles.length === 0 || viewYawAngles.some( ( angle ) => ! Number.isFinite( angle ) ) ) {
+		throw new RangeError( 'Impostor views must contain finite yaw angles' );
+	}
+
+	const width = size * viewYawAngles.length;
 	const height = size;
 	const image = new Uint8Array( width * height * 4 );
 	const depthBuffer = new Float32Array( width * height );
@@ -67,7 +63,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	depthBuffer.fill( - Infinity );
 
-	for ( let view = 0; view < 2; view ++ ) {
+	for ( let view = 0; view < viewYawAngles.length; view ++ ) {
 
 		for ( const group of mesh.groups ) {
 
@@ -78,7 +74,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 			for ( let i = group.start; i < group.start + group.count; i += 3 ) {
 
-				rasterizeTriangle( data, mesh, i, size, view, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
+				rasterizeTriangle( data, mesh, i, size, width, view, viewYawAngles[ view ]!, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
 
 			}
 
@@ -86,7 +82,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	}
 
-	dilateEdges( image, width, size, height );
+	dilateEdges( image, width, size, height, viewYawAngles.length );
 
 	return { width, height, data: image };
 
@@ -97,7 +93,9 @@ function rasterizeTriangle(
 	mesh: MeshData,
 	triangleStart: number,
 	size: number,
+	imageWidth: number,
 	view: number,
+	yaw: number,
 	image: Uint8Array,
 	depthBuffer: Float32Array,
 	materialColor: Color3,
@@ -124,10 +122,11 @@ function rasterizeTriangle(
 	const yWorld2 = mesh.positions[ position2 + 1 ]!;
 	const zWorld2 = mesh.positions[ position2 + 2 ]!;
 	const centerOffset = data.bounds.radius;
-	// +Z 視点は +X を右へ、+X 視点は -Z を右へ投影する。
-	const x0 = ( ( view === 0 ? xWorld0 : - zWorld0 ) + centerOffset ) / ( centerOffset * 2 ) * size;
-	const x1 = ( ( view === 0 ? xWorld1 : - zWorld1 ) + centerOffset ) / ( centerOffset * 2 ) * size;
-	const x2 = ( ( view === 0 ? xWorld2 : - zWorld2 ) + centerOffset ) / ( centerOffset * 2 ) * size;
+	const sine = Math.sin( yaw );
+	const cosine = Math.cos( yaw );
+	const x0 = ( ( xWorld0 * cosine - zWorld0 * sine ) + centerOffset ) / ( centerOffset * 2 ) * size;
+	const x1 = ( ( xWorld1 * cosine - zWorld1 * sine ) + centerOffset ) / ( centerOffset * 2 ) * size;
+	const x2 = ( ( xWorld2 * cosine - zWorld2 * sine ) + centerOffset ) / ( centerOffset * 2 ) * size;
 	// 行 0 が地面なので、ワールドの高さをそのまま下から上へ写す。
 	const y0 = yWorld0 / data.bounds.height * size;
 	const y1 = yWorld1 / data.bounds.height * size;
@@ -157,11 +156,10 @@ function rasterizeTriangle(
 	const uv0 = index0 * 2;
 	const uv1 = index1 * 2;
 	const uv2 = index2 * 2;
-	const depth0 = view === 0 ? zWorld0 : xWorld0;
-	const depth1 = view === 0 ? zWorld1 : xWorld1;
-	const depth2 = view === 0 ? zWorld2 : xWorld2;
+	const depth0 = xWorld0 * sine + zWorld0 * cosine;
+	const depth1 = xWorld1 * sine + zWorld1 * cosine;
+	const depth2 = xWorld2 * sine + zWorld2 * cosine;
 	const inverseDenominator = 1 / denominator;
-	const imageWidth = size * 2;
 	const viewOffset = view * size;
 
 	for ( let y = minY; y <= maxY; y ++ ) {
@@ -238,9 +236,9 @@ function rasterizeTriangle(
 
 }
 
-function dilateEdges( image: Uint8Array, width: number, size: number, height: number ): void {
+function dilateEdges( image: Uint8Array, width: number, size: number, height: number, viewCount: number ): void {
 
-	for ( let view = 0; view < 2; view ++ ) {
+	for ( let view = 0; view < viewCount; view ++ ) {
 
 		for ( let y = 0; y < height; y ++ ) {
 

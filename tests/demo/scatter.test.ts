@@ -1,4 +1,4 @@
-import { BufferGeometry, MeshStandardMaterial, PerspectiveCamera, InstancedMesh } from 'three';
+import { BufferGeometry, InstancedMesh, Matrix4, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { generateTree } from '../../src/index';
 import { createScatter } from '../../demo/scatter';
@@ -52,6 +52,41 @@ describe( 'scatter preview', () => {
 
 		expect( meshes ).toHaveLength( asset.data.parts.length * 5 * 4 );
 		expect( new Set( meshes.map( ( mesh ) => mesh.userData.variant ) ).size ).toBe( 4 );
+
+		scatter.dispose();
+		asset.dispose();
+
+	} );
+
+	it( 'turns active LOD4 instances toward a moved camera every update', () => {
+
+		const asset = generateTree( { seed: 7, branchCount: 1 } );
+		const scatter = createScatter( asset, 1, 21 );
+		const camera = new PerspectiveCamera();
+		const matrix = new Matrix4();
+		const position = new Vector3();
+		const firstRotation = new Quaternion();
+		const scale = new Vector3();
+
+		camera.position.set( 1000, 0, 0 );
+		camera.updateMatrixWorld( true );
+		scatter.update( camera, 0 );
+		const batch = scatter.group.children.find( ( child ) => child.userData.lod === 4 && child instanceof InstancedMesh && child.count > 0 ) as InstancedMesh;
+		batch.getMatrixAt( 0, matrix );
+		matrix.decompose( position, firstRotation, scale );
+		const savedPosition = position.clone();
+
+		camera.position.set( - 1000, 0, 0 );
+		camera.updateMatrixWorld( true );
+		scatter.update( camera, 16 );
+		batch.getMatrixAt( 0, matrix );
+		matrix.decompose( position, firstRotation, scale );
+		const facing = new Vector3( 0, 0, 1 ).applyQuaternion( firstRotation );
+		const expected = camera.position.clone().sub( position ).setY( 0 ).normalize();
+
+		expect( position.distanceTo( savedPosition ) ).toBeCloseTo( 0 );
+		expect( facing.x ).toBeCloseTo( expected.x );
+		expect( facing.z ).toBeCloseTo( expected.z );
 
 		scatter.dispose();
 		asset.dispose();

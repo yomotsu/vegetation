@@ -100,7 +100,7 @@ export class VegetationAsset {
 
 		this.partColors = data.parts.map( ( part ) => new Color( colors[ part.name ] ?? part.defaultColor ) );
 		const materialColors = this.partColors.map( ( color, index ) => data.parts[ index ]!.colorizesTexture ? new Color( 0xffffff ) : color.clone() );
-		const impostor = bakeImpostor( data, toLinearColors( materialColors ), impostorSize );
+		const impostor = bakeImpostor( data, toLinearColors( materialColors ), impostorSize, [ 0 ] );
 		this.impostorTexture = createTexture( impostor );
 		this.materials = data.parts.map( ( part, index ) => {
 
@@ -205,7 +205,7 @@ export class VegetationAsset {
 		this.partColors[ index ]!.copy( nextColor );
 
 		const materialColors = this.partColors.map( ( partColor, partIndex ) => this.data.parts[ partIndex ]!.colorizesTexture ? new Color( 0xffffff ) : partColor );
-		const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), this.impostorTexture!.image.width / 2 );
+		const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), this.impostorTexture!.image.width, [ 0 ] );
 		this.impostorTexture!.image.data = pixels.data;
 		this.impostorTexture!.needsUpdate = true;
 

@@ -1019,15 +1019,15 @@ describe( 'conifer tree data', () => {
 		for ( const seed of [ 1, 2, 3 ] ) {
 
 			const data = generateTreeData( { seed } );
-			const reference = bakeImpostor( data, defaultColors( data ), 128 );
+			const reference = bakeImpostor( data, defaultColors( data ), 128, [ 0 ] );
 			const billboardData = {
 				...data,
 				lods: [ data.lods[ 4 ]!, ...data.lods.slice( 1 ) ],
 				textures: { ...data.textures, impostor: reference },
 			};
-			const candidate = bakeImpostor( billboardData, defaultColors( data ), 128 );
+			const candidate = bakeImpostor( billboardData, defaultColors( data ), 128, [ 0 ] );
 
-			for ( let view = 0; view < 2; view ++ ) {
+			for ( let view = 0; view < 1; view ++ ) {
 
 				let intersection = 0;
 				let union = 0;

@@ -1,7 +1,7 @@
-import { BufferGeometry, LOD, Mesh, MeshStandardMaterial } from 'three';
+import { BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { TreeMesh, generateTree } from '../../src/three/meshes';
-import { VegetationMesh } from '../../src/three/VegetationMesh';
+import { orientBillboardInstances, VegetationMesh } from '../../src/three/VegetationMesh';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 
 function meanTextureColorAtV( texture: { width: number; height: number; data: Uint8Array }, v: number ): [ number, number, number ] {
@@ -54,6 +54,61 @@ describe( 'tree meshes', () => {
 		expect( new TreeMesh( { seed: 1, lod: 9 } ).lod ).toBe( 4 );
 		expect( new TreeMesh( { seed: 1, lod: - 1 } ).lod ).toBe( 0 );
 		expect( new TreeMesh( { seed: 1, lod: 2.5 } ).lod ).toBe( 2 );
+
+	} );
+
+	it( 'turns the LOD4 quad toward the camera without changing the tree transform', () => {
+
+		const asset = generateTree( { seed: 1 } );
+		const mesh = new VegetationMesh( asset, 4 );
+		const camera = new PerspectiveCamera();
+		mesh.position.set( 3, 1, - 2 );
+		mesh.rotation.y = 0.4;
+		mesh.updateMatrixWorld( true );
+		camera.position.copy( mesh.localToWorld( new Vector3( 10, 2, 0 ) ) );
+		camera.updateMatrixWorld( true );
+		const part = mesh.parts[ 0 ]!;
+
+		part.onBeforeRender( undefined as never, undefined as never, camera, part.geometry, part.material, undefined as never );
+
+		expect( mesh.rotation.y ).toBeCloseTo( 0.4 );
+		expect( part.rotation.y ).toBeCloseTo( Math.PI / 2 );
+
+		asset.dispose();
+
+	} );
+
+	it( 'orients instanced billboards while preserving position and scale', () => {
+
+		const geometry = new BufferGeometry();
+		const material = new MeshStandardMaterial();
+		const mesh = new InstancedMesh( geometry, material, 1 );
+		const matrix = new Matrix4();
+		const position = new Vector3( 2, 0, - 1 );
+		const scale = new Vector3( 1.5, 1.5, 1.5 );
+		const rotation = new Quaternion().setFromAxisAngle( new Vector3( 0, 1, 0 ), 0.7 );
+		const camera = new PerspectiveCamera();
+
+		matrix.compose( position, rotation, scale );
+		mesh.setMatrixAt( 0, matrix );
+		camera.position.set( 10, 0, 4 );
+		camera.updateMatrixWorld( true );
+		orientBillboardInstances( mesh, camera );
+		mesh.getMatrixAt( 0, matrix );
+		matrix.decompose( position, rotation, scale );
+		const facing = new Vector3( 0, 0, 1 ).applyQuaternion( rotation );
+		const expected = new Vector3( 10, 0, 4 ).sub( position ).setY( 0 ).normalize();
+
+		expect( position.toArray() ).toEqual( [ 2, 0, - 1 ] );
+		expect( scale.x ).toBeCloseTo( 1.5 );
+		expect( scale.y ).toBeCloseTo( 1.5 );
+		expect( scale.z ).toBeCloseTo( 1.5 );
+		expect( facing.x ).toBeCloseTo( expected.x );
+		expect( facing.z ).toBeCloseTo( expected.z );
+
+		geometry.dispose();
+		material.dispose();
+		mesh.dispose();
 
 	} );
 

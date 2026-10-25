@@ -161,11 +161,13 @@ function createVegetationData( mesh: MeshData ): VegetationData {
 
 describe( 'impostor generation', () => {
 
-	it( 'builds two crossed billboard planes with four triangles and valid attributes', () => {
+	it( 'builds one camera-facing billboard plane with two triangles and valid attributes', () => {
 
 		const mesh = buildBillboard( { radius: 0.5, height: 1 }, 2 );
 
-		expect( mesh.indices.length / 3 ).toBe( 4 );
+		expect( mesh.indices.length / 3 ).toBe( 2 );
+		expect( mesh.positions.length / 3 ).toBe( 4 );
+		expect( mesh.uvs ).toEqual( new Float32Array( [ 0, 0, 1, 0, 1, 1, 0, 1 ] ) );
 		validateMeshData( mesh );
 
 		for ( let i = 1; i < mesh.positions.length; i += 3 ) {
@@ -177,20 +179,18 @@ describe( 'impostor generation', () => {
 
 	} );
 
-	it( 'bakes a +Z view into the left atlas half and uses the supplied part color', () => {
+	it( 'bakes a +Z view into one atlas tile and uses the supplied part color', () => {
 
 		const data = createVegetationData( createBoxMesh() );
-		const red = bakeImpostor( data, [ [ 1, 0, 0 ] ], 32 );
+		const red = bakeImpostor( data, [ [ 1, 0, 0 ] ], 32, [ 0 ] );
 		const centerPixel = ( 16 * red.width + 16 ) * 4;
 
-		expect( red.width ).toBe( 64 );
+		expect( red.width ).toBe( 32 );
 		expect( red.height ).toBe( 32 );
 		expect( red.data[ centerPixel + 3 ] ).toBe( 255 );
 		expect( red.data[ centerPixel ] ).toBeGreaterThan( red.data[ centerPixel + 1 ]! );
 		expect( red.data[ centerPixel ] ).toBeGreaterThan( red.data[ centerPixel + 2 ]! );
 		expect( red.data[ 3 ] ).toBe( 0 );
-		expect( red.data[ ( 16 * red.width + 48 ) * 4 + 3 ] ).toBe( 255 );
-
 		const blue = bakeImpostor( data, [ [ 0, 0, 1 ] ], 32 );
 		const bluePixel = ( 16 * blue.width + 16 ) * 4;
 

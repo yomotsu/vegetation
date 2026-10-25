@@ -3,7 +3,7 @@ export { createNoise3D } from './core/noise';
 export { createRandom } from './core/random';
 export type { Random } from './core/random';
 export { VegetationAsset } from './three/VegetationAsset';
-export { VegetationMesh } from './three/VegetationMesh';
+export { orientBillboardInstances, VegetationMesh } from './three/VegetationMesh';
 export { TreeMesh, generateTree } from './three/meshes';
 export type {
 	ColliderData,

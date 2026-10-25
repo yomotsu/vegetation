@@ -131,6 +131,8 @@ describe( 'VegetationAsset', () => {
 		expect( barkTexture ).toBeInstanceOf( DataTexture );
 		expect( leafTexture ).toBeInstanceOf( DataTexture );
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
+		expect( impostorTexture.image.width ).toBe( 128 );
+		expect( impostorTexture.image.height ).toBe( 128 );
 		expect( asset.data.parts[ 0 ]!.texture ).toBe( 'bark' );
 		expect( asset.data.textures.bark ).toBeDefined();
 
