@@ -17,7 +17,8 @@ function isBrownStemPixel( texture: { width: number; data: Uint8Array }, x: numb
 
 function brownStemWidthAt( texture: { width: number; height: number; data: Uint8Array }, seed: number, y: number ): number {
 
-	const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+	const sourceY = texture.height - y - 1;
+	const center = Math.round( texture.height * 0.5 + Math.sin( sourceY / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
 	let width = 0;
 
 	for ( let x = center - 6; x <= center + 6; x ++ ) {
@@ -272,11 +273,11 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'stores the sprig base at v=1 and narrows toward its tip', () => {
+	it( 'stores the sprig base at v=0 and narrows toward its tip', () => {
 
 		const texture = createFirSprigTexture( 7 );
 		const tileWidth = texture.width / 3;
-		const baseRow = rowWidth( texture, 0, texture.height - 13, tileWidth );
+		const baseRow = rowWidth( texture, 0, 13, tileWidth );
 		const middleRow = rowWidth( texture, 0, 128, tileWidth );
 		const tipRow = rowWidth( texture, 0, 3, tileWidth );
 		expect( baseRow ).toBeGreaterThan( 0 );
@@ -312,14 +313,15 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'keeps the stem opaque at the v=1 base edge', () => {
+	it( 'keeps the stem opaque at the v=0 base edge', () => {
 
 		const seed = 1;
 		const texture = createFirSprigTexture( seed );
 
-		for ( let y = texture.height - 5; y < texture.height; y ++ ) {
+		for ( let y = 0; y < 5; y ++ ) {
 
-			const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+			const sourceY = texture.height - y - 1;
+			const center = Math.round( texture.height * 0.5 + Math.sin( sourceY / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
 			expect( alphaAt( texture, center, y ) ).toBeGreaterThanOrEqual( 128 );
 
 		}
@@ -330,7 +332,7 @@ describe( 'fir sprig texture', () => {
 
 		const seed = 1;
 		const texture = createFirSprigTexture( seed );
-		const baseWidth = brownStemWidthAt( texture, seed, texture.height - 8 );
+		const baseWidth = brownStemWidthAt( texture, seed, 8 );
 		const upperWidth = brownStemWidthAt( texture, seed, 128 );
 
 		expect( baseWidth ).toBeGreaterThan( upperWidth );
@@ -346,9 +348,10 @@ describe( 'fir sprig texture', () => {
 		let brownTipPixels = 0;
 		let needleTipPixels = 0;
 
-		for ( let y = 0; y < tipEnd; y ++ ) {
+		for ( let y = texture.height - tipEnd; y < texture.height; y ++ ) {
 
-			const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+			const sourceY = texture.height - y - 1;
+			const center = Math.round( texture.height * 0.5 + Math.sin( sourceY / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
 
 			for ( let x = center - 8; x <= center + 8; x ++ ) {
 
@@ -361,15 +364,15 @@ describe( 'fir sprig texture', () => {
 
 		expect( brownTipPixels ).toBe( 0 );
 		expect( needleTipPixels ).toBeGreaterThan( 0 );
-		expect( rowWidth( texture, 0, tipEnd - 4, texture.width / 3 ) ).toBeGreaterThan( 0 );
+		expect( rowWidth( texture, 0, texture.height - tipEnd + 4, texture.width / 3 ) ).toBeGreaterThan( 0 );
 
 	} );
 
 	it( 'turns needle directions toward the tip from base to tip', () => {
 
 		const texture = createFirSprigTexture( 1 );
-		const baseAngle = meanNeedleDirectionAngle( texture, 176, 222 );
-		const tipAngle = meanNeedleDirectionAngle( texture, 34, 80 );
+		const baseAngle = meanNeedleDirectionAngle( texture, 34, 80 );
+		const tipAngle = meanNeedleDirectionAngle( texture, 176, 222 );
 
 		expect( tipAngle ).toBeLessThan( baseAngle - 8 );
 

@@ -83,6 +83,26 @@ function leafGroup( mesh: MeshData ) {
 
 }
 
+function brownStemWidthAtRow( texture: { width: number; height: number; data: Uint8Array }, y: number ): number {
+
+	const center = texture.width / 6;
+	let width = 0;
+
+	for ( let x = Math.floor( center ) - 8; x <= Math.ceil( center ) + 8; x ++ ) {
+
+		const offset = ( y * texture.width + x ) * 4;
+		const red = texture.data[ offset ]!;
+		const green = texture.data[ offset + 1 ]!;
+		const blue = texture.data[ offset + 2 ]!;
+
+		if ( texture.data[ offset + 3 ]! >= 128 && red > green + 2 && green > blue * 1.5 ) width ++;
+
+	}
+
+	return width;
+
+}
+
 function frondPoint( mesh: MeshData, group: ReturnType<typeof leafGroup>, frondIndex: number, row: number, column: number, indicesPerFrond = 24 ): [ number, number, number ] {
 
 	const firstIndex = group.start + frondIndex * indicesPerFrond;
@@ -277,6 +297,30 @@ describe( 'conifer tree data', () => {
 				expect( mesh.colors[ offset + 2 ] ).toBeCloseTo( 1, 5 );
 
 			}
+
+		}
+
+	} );
+
+	it( 'maps each LOD0 frond root to the wide end of the leaf texture stem', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const mesh = data.lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const texture = data.textures.leaf!;
+
+		for ( let frond = 0; frond < frondCount( mesh, 8 ); frond ++ ) {
+
+			const firstVertex = mesh.indices[ leaves.start + frond * 24 ]!;
+			const rootVertex = firstVertex + 1;
+			const rootV = mesh.uvs[ rootVertex * 2 + 1 ]!;
+			const rootRow = Math.round( rootV * ( texture.height - 1 ) );
+			const middleRow = Math.round( ( rootV + 0.5 ) * 0.5 * ( texture.height - 1 ) );
+			const oppositeRow = Math.round( ( 1 - rootV ) * ( texture.height - 1 ) );
+
+			expect( rootV ).toBeCloseTo( 0, 5 );
+			expect( brownStemWidthAtRow( texture, rootRow ) ).toBeGreaterThan( brownStemWidthAtRow( texture, middleRow ) );
+			expect( brownStemWidthAtRow( texture, oppositeRow ) ).toBe( 0 );
 
 		}
 

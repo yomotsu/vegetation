@@ -384,6 +384,24 @@ export function padTextureEdges( texture: TextureData ): void {
 
 }
 
+function flipTextureVertically( data: Uint8Array, width: number, height: number ): void {
+
+	const rowLength = width * 4;
+	const temporaryRow = new Uint8Array( rowLength );
+
+	for ( let y = 0; y < Math.floor( height / 2 ); y ++ ) {
+
+		const top = y * rowLength;
+		const bottom = ( height - y - 1 ) * rowLength;
+
+		temporaryRow.set( data.subarray( top, top + rowLength ) );
+		data.copyWithin( top, bottom, bottom + rowLength );
+		data.set( temporaryRow, bottom );
+
+	}
+
+}
+
 export function createFirSprigTexture( seed: number, size = 256, padEdges = true ): TextureData {
 
 	if ( ! Number.isInteger( size ) || size < 1 ) {
@@ -403,6 +421,7 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 	matchLeafColorDistribution( data, width, size );
 	softenSprigCenterline( data, width, size, seed );
 	drawStem( data, width, size, seed );
+	flipTextureVertically( data, width, size );
 	if ( padEdges ) {
 
 		padTextureEdges( { width, height: size, data } );
