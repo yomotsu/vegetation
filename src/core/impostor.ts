@@ -2,6 +2,8 @@ import { linearToSrgbByte } from './color';
 import { MeshBuilder } from './meshBuilder';
 import type { Color3, MeshData, PartDef, TextureData, VegetationData } from './types';
 
+export const LOD3_IMPOSTOR_YAW_ANGLES = [ 0, Math.PI / 6, Math.PI / 3, Math.PI / 2, Math.PI * 2 / 3, Math.PI * 5 / 6 ] as const;
+
 const linearSrgb = new Float32Array( 256 );
 
 for ( let i = 0; i < 256; i ++ ) {
@@ -17,6 +19,19 @@ export function impostorPart(): PartDef {
 		name: 'impostor',
 		defaultColor: 0xffffff,
 		texture: 'impostor',
+		alphaTest: 0.5,
+		doubleSided: true,
+		flatShading: false,
+	};
+
+}
+
+export function impostorLod3Part(): PartDef {
+
+	return {
+		name: 'impostor-lod3',
+		defaultColor: 0xffffff,
+		texture: 'impostor-lod3',
 		alphaTest: 0.5,
 		doubleSided: true,
 		flatShading: false,
@@ -46,7 +61,8 @@ export function buildBillboard( bounds: { radius: number; height: number }, impo
 
 }
 
-export function bakeImpostor( data: VegetationData, colors: Color3[], size: number, viewYawAngles: number[] = [ 0, Math.PI / 2 ] ): TextureData {
+/** 指定した yaw ごとの画像を横に並べたアトラスを作ります。 */
+export function bakeImpostor( data: VegetationData, colors: Color3[], size: number, viewYawAngles: readonly number[] = [ 0, Math.PI / 2 ] ): TextureData {
 
 	if ( viewYawAngles.length === 0 || viewYawAngles.some( ( angle ) => ! Number.isFinite( angle ) ) ) {
 		throw new RangeError( 'Impostor views must contain finite yaw angles' );

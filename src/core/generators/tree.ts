@@ -1,4 +1,4 @@
-import { bakeImpostor, buildBillboard, impostorPart } from '../impostor';
+import { bakeImpostor, buildBillboard, impostorLod3Part, impostorPart, LOD3_IMPOSTOR_YAW_ANGLES } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
@@ -620,48 +620,33 @@ function updateCrownAtlas( texture: TextureData, silhouette: TextureData | null,
 
 }
 
-function addSilhouetteCard( builder: MeshBuilder, centerX: number, centerZ: number, bottomY: number, topY: number, radius: number, angle: number, tileIndex: number ): void {
-
-	const right: Vec3 = [ Math.cos( angle ) * radius, 0, Math.sin( angle ) * radius ];
-	const center: Vec3 = [ centerX, ( bottomY + topY ) * 0.5, centerZ ];
-	const up: Vec3 = [ 0, ( topY - bottomY ) * 0.5, 0 ];
-	const corners = [
-		add( subtract( center, right ), multiply( up, - 1 ) ),
-		add( add( center, right ), multiply( up, - 1 ) ),
-		add( add( center, right ), up ),
-		add( subtract( center, right ), up ),
-	];
-	const inset = 1 / 1536;
-	const tileStart = tileIndex / 3;
-	const tileEnd = ( tileIndex + 1 ) / 3;
-	const uvs: [ number, number ][] = [ [ tileStart + inset, 0 ], [ tileEnd - inset, 0 ], [ tileEnd - inset, 1 ], [ tileStart + inset, 1 ] ];
-	const indices = corners.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], uvs[ index ]!, leafVertexColor, 0.5 + clamp( point[ 1 ] / ( topY || 1 ), 0, 1 ) * 0.5 ) );
-
-	builder.addTriangle( indices[ 0 ]!, indices[ 1 ]!, indices[ 2 ]! );
-	builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 3 ]! );
-	builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 1 ]! );
-	builder.addTriangle( indices[ 0 ]!, indices[ 3 ]!, indices[ 2 ]! );
-
-}
-
-function buildLod3( layout: TreeLayout, radius: number ): MeshData {
+function buildLod3( height: number, radius: number, partIndex: number ): MeshData {
 
 	const builder = new MeshBuilder();
-	const trunkFractions = [ 0, 0.17, 0.34, 0.51, 0.68, trunkTopFraction ];
-	const trunkSpine = trunkFractions.map( ( fraction ) => getTrunkPoint( layout.trunkSpine, layout.height, fraction ) );
-	const trunkRadii = trunkFractions.map( ( fraction ) => getTrunkRadius( fraction, layout.height ) );
+	const normalWeight = Math.SQRT1_2;
+	const color: Color3 = [ 1, 1, 1 ];
+	const planeRadius = radius * 0.995;
+	builder.beginGroup( partIndex );
 
-	builder.beginGroup( 0 );
-	const trunkVertexCount = addPointedTrunk( builder, trunkSpine, trunkRadii, 3 );
-	builder.beginGroup( 1 );
-	addSilhouetteCard( builder, 0, 0, 0, layout.height, radius, 0, 1 );
-	addSilhouetteCard( builder, 0, 0, 0, layout.height, radius, Math.PI * 1.5, 2 );
+	for ( let view = 0; view < LOD3_IMPOSTOR_YAW_ANGLES.length; view ++ ) {
 
-	const mesh = closeTrunkTip( builder.build(), trunkSpine.length, 3, normalize( subtract( trunkSpine[ trunkSpine.length - 1 ]!, trunkSpine[ trunkSpine.length - 2 ]! ) ) );
+		const yaw = LOD3_IMPOSTOR_YAW_ANGLES[ view ]!;
+		const rightX = Math.cos( yaw );
+		const rightZ = - Math.sin( yaw );
+		const normal: Vec3 = [ Math.sin( yaw ) * normalWeight, normalWeight, Math.cos( yaw ) * normalWeight ];
+		const tileStart = view / LOD3_IMPOSTOR_YAW_ANGLES.length;
+		const tileEnd = ( view + 1 ) / LOD3_IMPOSTOR_YAW_ANGLES.length;
+		const a0 = builder.addVertex( [ - rightX * planeRadius, 0, - rightZ * planeRadius ], normal, [ tileStart, 0 ], color, 0 );
+		const a1 = builder.addVertex( [ rightX * planeRadius, 0, rightZ * planeRadius ], normal, [ tileEnd, 0 ], color, 0 );
+		const a2 = builder.addVertex( [ rightX * planeRadius, height, rightZ * planeRadius ], normal, [ tileEnd, 1 ], color, 1 );
+		const a3 = builder.addVertex( [ - rightX * planeRadius, height, - rightZ * planeRadius ], normal, [ tileStart, 1 ], color, 1 );
 
-	scaleTrunkV( mesh, trunkVertexCount );
+		builder.addTriangle( a0, a1, a2 );
+		builder.addTriangle( a0, a2, a3 );
 
-	return mesh;
+	}
+
+	return builder.build();
 
 }
 
@@ -747,6 +732,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 			doubleSided: true,
 			flatShading: false,
 		},
+		impostorLod3Part(),
 		impostorPart(),
 	];
 	const textures = {
@@ -759,7 +745,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	updateCrownAtlas( textures.leaf, silhouette, leafColor );
 	padTextureEdges( textures.leaf );
 
-	const lod3 = buildLod3( layout, lod0Bounds.radius );
+	const lod3 = buildLod3( height, lod0Bounds.radius, parts.length - 2 );
 	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ), getBoundsRadius( lod3 ) ), height };
 	const data: VegetationData = {
 		kind: 'tree',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte } from '../../src/core';
+import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES } from '../../src/core';
 import { generateTreeData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -13,6 +13,23 @@ function triangleCount( mesh: { indices: Uint32Array } ): number {
 function vertexCount( mesh: { positions: Float32Array } ): number {
 
 	return mesh.positions.length / 3;
+
+}
+
+function billboardPlane( mesh: MeshData, planeIndex: number, partIndex: number ): MeshData {
+
+	const vertexStart = planeIndex * 4;
+	const indexStart = planeIndex * 6;
+
+	return {
+		positions: mesh.positions.slice( vertexStart * 3, ( vertexStart + 4 ) * 3 ),
+		normals: mesh.normals.slice( vertexStart * 3, ( vertexStart + 4 ) * 3 ),
+		uvs: mesh.uvs.slice( vertexStart * 2, ( vertexStart + 4 ) * 2 ),
+		colors: mesh.colors.slice( vertexStart * 3, ( vertexStart + 4 ) * 3 ),
+		windWeight: mesh.windWeight.slice( vertexStart, vertexStart + 4 ),
+		indices: Uint32Array.from( mesh.indices.slice( indexStart, indexStart + 6 ), ( index ) => index - vertexStart ),
+		groups: [ { start: 0, count: 6, partIndex } ],
+	};
 
 }
 
@@ -267,7 +284,7 @@ describe( 'conifer tree data', () => {
 
 		expect( data.bounds.height ).toBe( 7.5 );
 		expect( data.lods ).toHaveLength( 5 );
-		expect( data.parts ).toHaveLength( 3 );
+		expect( data.parts ).toHaveLength( 4 );
 		expect( data.parts[ 0 ] ).toEqual( {
 			name: 'bark',
 			defaultColor: 0xffffff,
@@ -293,7 +310,15 @@ describe( 'conifer tree data', () => {
 			specularIntensity: 0.014872,
 			ior: 1.05,
 		} );
-		expect( data.parts[ 2 ] ).toEqual( impostorPart() );
+		expect( data.parts[ 2 ] ).toEqual( {
+			name: 'impostor-lod3',
+			defaultColor: 0xffffff,
+			texture: 'impostor-lod3',
+			alphaTest: 0.5,
+			doubleSided: true,
+			flatShading: false,
+		} );
+		expect( data.parts[ 3 ] ).toEqual( impostorPart() );
 		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf' ] );
 
 		for ( const lod of data.lods ) validateMeshData( lod );
@@ -308,10 +333,11 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 2 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.2 );
 		expect( counts[ 2 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.35 );
 		expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
-		expect( counts[ 3 ] ).toBeLessThanOrEqual( 40 );
+		expect( counts[ 3 ] ).toBe( 12 );
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
-		expect( counts[ 4 ] ).toBeLessThanOrEqual( 12 );
-		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, 2 ) );
+		expect( counts[ 4 ] ).toBe( 2 );
+		expect( data.lods[ 3 ]!.groups ).toEqual( [ { start: 0, count: 36, partIndex: 2 } ] );
+		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, 3 ) );
 
 	} );
 
@@ -328,6 +354,8 @@ describe( 'conifer tree data', () => {
 			expect( counts[ 0 ] ).toBeLessThanOrEqual( 795 );
 			expect( counts[ 1 ] ).toBeLessThanOrEqual( 513 );
 			expect( counts[ 2 ] ).toBeLessThanOrEqual( 331 );
+			expect( counts[ 3 ] ).toBe( 24 );
+			expect( counts[ 4 ] ).toBe( 4 );
 			expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 			expect( counts[ 4 ] ).toBeLessThan( counts[ 2 ]! );
 
@@ -403,46 +431,20 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'uses luminance-only leaf vertex colors and removes color fill from the leaves', () => {
+	it( 'uses neutral vertex colors and blended normals for the LOD3 atlas planes', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const mesh = data.lods[ 3 ]!;
-		const leaves = leafGroup( mesh );
-		const seen = new Set<number>();
+		const part = mesh.groups[ 0 ]!.partIndex;
 
-		expect( data.parts[ 1 ]!.emissive ).toBe( 0x000000 );
-		expect( data.parts[ 1 ]!.emissiveIntensity ).toBe( 0 );
+		expect( data.parts[ part ]!.texture ).toBe( 'impostor-lod3' );
 
-		for ( let index = leaves.start; index < leaves.start + leaves.count; index ++ ) {
+		for ( let index = 0; index < mesh.positions.length / 3; index ++ ) {
 
-			const vertex = mesh.indices[ index ]!;
-			if ( seen.has( vertex ) ) continue;
-			seen.add( vertex );
-
-			expect( mesh.colors[ vertex * 3 ] ).toBeCloseTo( 0.7125, 5 );
-			expect( mesh.colors[ vertex * 3 + 1 ] ).toBeCloseTo( 0.7125, 5 );
-			expect( mesh.colors[ vertex * 3 + 2 ] ).toBeCloseTo( 0.7125, 5 );
-
-		}
-
-		const texture = data.textures.leaf!;
-		const tileSize = texture.height;
-
-		for ( const tile of [ 1, 2 ] ) {
-
-			for ( let y = 0; y < tileSize; y ++ ) {
-
-				for ( let x = 0; x < tileSize; x ++ ) {
-
-					const offset = ( y * texture.width + tile * tileSize + x ) * 4;
-					if ( texture.data[ offset + 3 ]! < 128 ) continue;
-
-					expect( texture.data[ offset ] ).toBe( 0 );
-					expect( texture.data[ offset + 2 ] ).toBe( 0 );
-
-				}
-
-			}
+			expect( mesh.colors[ index * 3 ] ).toBe( 1 );
+			expect( mesh.colors[ index * 3 + 1 ] ).toBe( 1 );
+			expect( mesh.colors[ index * 3 + 2 ] ).toBe( 1 );
+			expect( Math.hypot( mesh.normals[ index * 3 ]!, mesh.normals[ index * 3 + 1 ]!, mesh.normals[ index * 3 + 2 ]! ) ).toBeCloseTo( 1 );
 
 		}
 
@@ -819,13 +821,13 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'uses smooth radial trunk normals in LOD0 through LOD3', () => {
+	it( 'uses smooth radial trunk normals in LOD0 through LOD2', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 
 		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
 
-		for ( let lod = 0; lod < 4; lod ++ ) {
+		for ( let lod = 0; lod < 3; lod ++ ) {
 
 			const mesh = data.lods[ lod ]!;
 			const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
@@ -848,7 +850,7 @@ describe( 'conifer tree data', () => {
 	it( 'closes each trunk apex with a pointed tip and leaves only the base ring open', () => {
 
 		const data = generateTreeData( { seed: 1 } );
-		const sideCounts = [ 7, 5, 4, 3 ];
+		const sideCounts = [ 7, 5, 4 ];
 
 		for ( let lod = 0; lod < sideCounts.length; lod ++ ) {
 
@@ -978,17 +980,23 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'matches the crossed-card conical LOD3 silhouette to LOD0 in both impostor views', () => {
+	it( 'matches LOD0 silhouette on each LOD3 plane at front, 30, and 60 degrees', () => {
 
 		for ( const seed of [ 1, 2, 3 ] ) {
 
 			const data = generateTreeData( { seed } );
-			const reference = bakeImpostor( data, defaultColors( data ), 128 );
-			const lod3Data = { ...data, lods: [ data.lods[ 3 ]!, ...data.lods.slice( 1 ) ] };
-			const candidate = bakeImpostor( lod3Data, defaultColors( data ), 128 );
+			const colors = defaultColors( data );
+			const lod3Texture = bakeImpostor( data, colors, 128, LOD3_IMPOSTOR_YAW_ANGLES );
+			for ( const yaw of [ 0, Math.PI / 6, Math.PI / 3 ] ) {
 
-			for ( let view = 0; view < 2; view ++ ) {
-
+				const planeIndex = Math.round( yaw / ( Math.PI / 6 ) );
+				const lod3PlaneData = {
+					...data,
+					lods: [ billboardPlane( data.lods[ 3 ]!, planeIndex, 2 ), ...data.lods.slice( 1 ) ],
+					textures: { ...data.textures, 'impostor-lod3': lod3Texture },
+				};
+				const reference = bakeImpostor( data, colors, 128, [ yaw ] );
+				const candidate = bakeImpostor( lod3PlaneData, colors, 128, [ yaw ] );
 				let intersection = 0;
 				let union = 0;
 
@@ -996,7 +1004,7 @@ describe( 'conifer tree data', () => {
 
 					for ( let x = 0; x < 128; x ++ ) {
 
-						const offset = ( y * reference.width + view * 128 + x ) * 4 + 3;
+						const offset = ( y * reference.width + x ) * 4 + 3;
 						const referenceOpaque = reference.data[ offset ]! >= 128;
 						const candidateOpaque = candidate.data[ offset ]! >= 128;
 
@@ -1014,7 +1022,50 @@ describe( 'conifer tree data', () => {
 		}
 	} );
 
-	it( 'matches the textured LOD4 billboard silhouette to LOD0 in both impostor views', () => {
+	it( 'keeps the LOD3 six-plane composite close to LOD0 coverage', () => {
+
+		for ( const seed of [ 1, 2, 3 ] ) {
+
+			const data = generateTreeData( { seed } );
+			const colors = defaultColors( data );
+			const lod3Texture = bakeImpostor( data, colors, 128, LOD3_IMPOSTOR_YAW_ANGLES );
+			const lod3Data = {
+				...data,
+				lods: [ data.lods[ 3 ]!, ...data.lods.slice( 1 ) ],
+				textures: { ...data.textures, 'impostor-lod3': lod3Texture },
+			};
+
+			for ( const yaw of [ 0, Math.PI / 6, Math.PI / 3 ] ) {
+
+				const reference = bakeImpostor( data, colors, 128, [ yaw ] );
+				const candidate = bakeImpostor( lod3Data, colors, 128, [ yaw ] );
+				let intersection = 0;
+				let union = 0;
+
+				for ( let y = 0; y < 128; y ++ ) {
+
+					for ( let x = 0; x < 128; x ++ ) {
+
+						const offset = ( y * reference.width + x ) * 4 + 3;
+						const referenceOpaque = reference.data[ offset ]! >= 128;
+						const candidateOpaque = candidate.data[ offset ]! >= 128;
+
+						if ( referenceOpaque && candidateOpaque ) intersection ++;
+						if ( referenceOpaque || candidateOpaque ) union ++;
+
+					}
+
+				}
+
+				expect( intersection / union ).toBeGreaterThanOrEqual( 0.74 );
+
+			}
+
+		}
+
+	} );
+
+	it( 'matches the textured LOD4 billboard silhouette to LOD0 in its front view', () => {
 
 		for ( const seed of [ 1, 2, 3 ] ) {
 
@@ -1121,7 +1172,9 @@ describe( 'conifer tree data', () => {
 		const generateAndBake = (): void => {
 
 			const data = generateTreeData( { seed: 1 } );
-			bakeImpostor( data, defaultColors( data ), 128 );
+			const colors = defaultColors( data );
+			bakeImpostor( data, colors, 128, LOD3_IMPOSTOR_YAW_ANGLES );
+			bakeImpostor( data, colors, 128, [ 0 ] );
 
 		};
 

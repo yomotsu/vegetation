@@ -117,7 +117,7 @@ describe( 'tree meshes', () => {
 		const asset = generateTree( { seed: 1 } );
 		const first = new VegetationMesh( asset );
 		const second = new VegetationMesh( asset, 1 );
-		const impostorTexture = asset.materials[ 2 ]!.map as { image: { data: Uint8Array } };
+		const impostorTexture = asset.materials[ 3 ]!.map as { image: { data: Uint8Array } };
 		const originalPixels = impostorTexture.image.data.slice();
 
 		first.setColor( 'leaf', 0xff0000 );
@@ -143,7 +143,7 @@ describe( 'tree meshes', () => {
 		expect( levels ).toHaveLength( 5 );
 		expect( levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 30, 60, 120, 240 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => part.material === asset.materials[ asset.data.parts.findIndex( ( definition ) => definition.name === part.name ) ] ) ) ).toBe( true );
-		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 2, 2, 2, 1 ] );
+		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 2, 2, 1, 1 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => Array.isArray( part.material ) === false ) ) ).toBe( true );
 		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).lod ) ).toEqual( [ 0, 1, 2, 3, 4 ] );
 

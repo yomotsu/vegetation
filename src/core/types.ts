@@ -21,7 +21,7 @@ export interface MeshData {
 export interface PartDef {
 	name: string; // 'bark' | 'leaf' | 'rock' | 'impostor' など
 	defaultColor: number; // sRGB hex（0x5a8f3a）
-	texture: string | null; // VegetationData.textures のキー（'impostor' は three 層で焼く）
+	texture: string | null; // VegetationData.textures のキー（impostor は three 層で焼く）
 	colorizesTexture?: boolean;
 	roughness?: number;
 	/** 誘電体の鏡面反射強度。指定時は MeshPhysicalMaterial を使用する。 */

@@ -16,7 +16,7 @@ import {
 	UnsignedByteType,
 } from 'three';
 import type { ColorRepresentation, Texture } from 'three';
-import { bakeImpostor } from '../core/impostor';
+import { bakeImpostor, LOD3_IMPOSTOR_YAW_ANGLES } from '../core/impostor';
 import { regenerateTreeLeafTexture } from '../core/generators/tree';
 import type { LodLevel, MeshData, TextureData, VegetationData } from '../core/types';
 
@@ -86,7 +86,7 @@ export class VegetationAsset {
 	/** @remarks WebGPURenderer のシャドウ描画では geometries[ lod ] と組み合わせないでください。getParts( lod ) の各パーツに対応するマテリアルを使ってください。 */
 	readonly materials: MeshStandardMaterial[];
 	readonly collider: BufferGeometry | null;
-	private readonly impostorTexture: DataTexture | null;
+	private readonly impostorTextures = new Map<string, DataTexture>();
 	private readonly partIndices = new Map<string, number>();
 	private readonly partColors: Color[];
 	private readonly partsCache = new Map<LodLevel, { part: string; geometry: BufferGeometry; material: MeshStandardMaterial }[]>();
@@ -100,17 +100,18 @@ export class VegetationAsset {
 
 		this.partColors = data.parts.map( ( part ) => new Color( colors[ part.name ] ?? part.defaultColor ) );
 		const materialColors = this.partColors.map( ( color, index ) => data.parts[ index ]!.colorizesTexture ? new Color( 0xffffff ) : color.clone() );
-		const impostor = bakeImpostor( data, toLinearColors( materialColors ), impostorSize, [ 0 ] );
-		this.impostorTexture = createTexture( impostor );
+		this.impostorTextures.set( 'impostor', createTexture( bakeImpostor( data, toLinearColors( materialColors ), impostorSize, [ 0 ] ) ) );
+		this.impostorTextures.set( 'impostor-lod3', createTexture( bakeImpostor( data, toLinearColors( materialColors ), impostorSize, LOD3_IMPOSTOR_YAW_ANGLES ) ) );
 		this.materials = data.parts.map( ( part, index ) => {
 
 			this.partIndices.set( part.name, index );
 
-			const texture = part.texture === 'impostor' ? this.impostorTexture : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]! );
+			const isImpostor = part.texture === 'impostor' || part.texture === 'impostor-lod3';
+			const texture = isImpostor ? this.impostorTextures.get( part.texture! )! : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]! );
 			const materialParameters = {
 				color: materialColors[ index ]!,
 				map: texture,
-				vertexColors: part.texture !== 'impostor',
+				vertexColors: ! isImpostor,
 				side: part.doubleSided ? DoubleSide : FrontSide,
 				flatShading: part.flatShading,
 				alphaTest: part.alphaTest,
@@ -205,9 +206,16 @@ export class VegetationAsset {
 		this.partColors[ index ]!.copy( nextColor );
 
 		const materialColors = this.partColors.map( ( partColor, partIndex ) => this.data.parts[ partIndex ]!.colorizesTexture ? new Color( 0xffffff ) : partColor );
-		const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), this.impostorTexture!.image.width, [ 0 ] );
-		this.impostorTexture!.image.data = pixels.data;
-		this.impostorTexture!.needsUpdate = true;
+		const viewSets: [ string, readonly number[] ][] = [ [ 'impostor', [ 0 ] ], [ 'impostor-lod3', LOD3_IMPOSTOR_YAW_ANGLES ] ];
+
+		for ( const [ textureName, viewYawAngles ] of viewSets ) {
+
+			const texture = this.impostorTextures.get( textureName )!;
+			const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), texture.image.height, viewYawAngles );
+			texture.image.data = pixels.data;
+			texture.needsUpdate = true;
+
+		}
 
 	}
 
@@ -240,6 +248,7 @@ export class VegetationAsset {
 		this.collider?.dispose();
 
 		const textures = new Set<Texture>();
+		for ( const texture of this.impostorTextures.values() ) textures.add( texture );
 
 		for ( const material of this.materials ) {
 

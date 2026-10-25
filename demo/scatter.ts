@@ -1,6 +1,7 @@
 import {
 	Camera,
 	BufferGeometry,
+	DynamicDrawUsage,
 	Group,
 	InstancedMesh,
 	Matrix4,
@@ -88,7 +89,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 				mesh.visible = false;
 				mesh.frustumCulled = false;
 				setPreviewShadowFlags( mesh );
-				mesh.instanceMatrix.setUsage( StaticDrawUsage );
+				mesh.instanceMatrix.setUsage( lod === 4 ? DynamicDrawUsage : StaticDrawUsage );
 				mesh.userData.lod = lod;
 				mesh.userData.part = definition.name;
 				mesh.userData.variant = variant;
