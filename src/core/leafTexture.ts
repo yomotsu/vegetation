@@ -50,13 +50,23 @@ function getSprigWidthProfile( v: number ): number {
 function setPixel( data: Uint8Array, width: number, x: number, y: number, color: Rgb, alpha = 255 ): void {
 
 	if ( x < 0 || y < 0 || x >= width ) return;
+	if ( alpha <= 0 ) return;
 
 	const offset = ( y * width + x ) * 4;
+	const sourceAlpha = alpha / 255;
+	const destinationAlpha = data[ offset + 3 ]! / 255;
+	const outputAlpha = sourceAlpha + destinationAlpha * ( 1 - sourceAlpha );
 
-	data[ offset ] = color[ 0 ];
-	data[ offset + 1 ] = color[ 1 ];
-	data[ offset + 2 ] = color[ 2 ];
-	data[ offset + 3 ] = alpha;
+	for ( let channel = 0; channel < 3; channel ++ ) {
+
+		const destination = data[ offset + channel ]!;
+		const output = color[ channel ]! * sourceAlpha + destination * destinationAlpha * ( 1 - sourceAlpha );
+
+		data[ offset + channel ] = Math.round( output / outputAlpha );
+
+	}
+
+	data[ offset + 3 ] = Math.round( outputAlpha * 255 );
 
 }
 
@@ -92,14 +102,16 @@ function drawStroke(
 
 			const distanceX = x - closestX;
 			const distanceY = y - closestY;
+			const distance = Math.sqrt( distanceX * distanceX + distanceY * distanceY );
+			const coverage = clamp( lineWidth * 0.5 + 0.5 - distance, 0, 1 );
 
-			if ( distanceX * distanceX + distanceY * distanceY > lineWidth * lineWidth * 0.25 ) continue;
+			if ( coverage === 0 ) continue;
 
 			setPixel( data, width, x, y, [
 				Math.round( lerp( startColor[ 0 ], endColor[ 0 ], amount ) ),
 				Math.round( lerp( startColor[ 1 ], endColor[ 1 ], amount ) ),
 				Math.round( lerp( startColor[ 2 ], endColor[ 2 ], amount ) ),
-			], 255 );
+			], Math.round( coverage * 255 ) );
 
 		}
 

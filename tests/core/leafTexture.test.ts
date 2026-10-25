@@ -329,7 +329,7 @@ describe( 'fir sprig texture', () => {
 
 		}
 
-		expect( invalidAlphaPixels ).toBe( 0 );
+		expect( invalidAlphaPixels ).toBeGreaterThan( 0 );
 		expect( opaquePixels ).toBe( sprigOpaquePixels );
 		expect( sprigOpaquePixels / ( tileWidth * first.height ) ).toBeGreaterThan( 0.2 );
 		expect( greenPixels ).toBeGreaterThan( 1000 );
@@ -677,7 +677,7 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'pads transparent RGB with colors from its own opaque atlas region', () => {
+	it( 'pads transparent RGB with colors from covered texels in its own atlas region', () => {
 
 		const texture = createFirSprigTexture( 31 );
 		const tileWidth = texture.width / 3;
@@ -693,7 +693,7 @@ describe( 'fir sprig texture', () => {
 					const offset = ( y * texture.width + x ) * 4;
 					const color = `${ texture.data[ offset ] },${ texture.data[ offset + 1 ] },${ texture.data[ offset + 2 ] }`;
 
-					if ( texture.data[ offset + 3 ] === 255 ) {
+					if ( texture.data[ offset + 3 ]! > 0 ) {
 
 						colors.add( color );
 
@@ -723,6 +723,46 @@ describe( 'fir sprig texture', () => {
 			}
 
 		}
+
+	} );
+
+	it( 'keeps intermediate alpha coverage on needle and stem edges', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const tileWidth = texture.width / 3;
+		const values = new Set<number>();
+		let partialPixels = 0;
+		let partialNeedlePixels = 0;
+		let partialStemPixels = 0;
+		let invalidPartialRgb = 0;
+
+		for ( let y = 0; y < texture.height; y ++ ) {
+
+			for ( let x = 0; x < tileWidth; x ++ ) {
+
+				const offset = ( y * texture.width + x ) * 4;
+				const red = texture.data[ offset ]!;
+				const green = texture.data[ offset + 1 ]!;
+				const blue = texture.data[ offset + 2 ]!;
+				const alpha = texture.data[ offset + 3 ]!;
+
+				if ( alpha === 0 || alpha === 255 ) continue;
+
+				partialPixels ++;
+				values.add( alpha );
+				if ( green > red && green > blue ) partialNeedlePixels ++;
+				if ( red > green + 2 && green > blue * 1.5 ) partialStemPixels ++;
+				if ( red >= 120 || green >= 120 || blue >= 40 ) invalidPartialRgb ++;
+
+			}
+
+		}
+
+		expect( partialPixels ).toBeGreaterThan( 100 );
+		expect( values.size ).toBeGreaterThan( 8 );
+		expect( partialNeedlePixels ).toBeGreaterThan( 50 );
+		expect( partialStemPixels ).toBeGreaterThan( 0 );
+		expect( invalidPartialRgb ).toBe( 0 );
 
 	} );
 
