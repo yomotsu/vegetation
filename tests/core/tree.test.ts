@@ -295,12 +295,12 @@ describe( 'conifer tree data', () => {
 		const midribOffset = ( firstVertex + 4 ) * 3;
 
 		expect( mesh.colors[ edgeOffset ] ).toBe( 0 );
-		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 1.05, 2 );
+		expect( mesh.colors[ edgeOffset + 1 ] ).toBeCloseTo( 0.99, 2 );
 		expect( mesh.colors[ edgeOffset + 2 ] ).toBe( 0 );
 		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 1, 5 );
-		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.065, 2 );
+		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.005, 2 );
 
 	} );
 
@@ -321,7 +321,7 @@ describe( 'conifer tree data', () => {
 			seen.add( vertex );
 
 			expect( mesh.colors[ vertex * 3 ] ).toBe( 0 );
-			expect( mesh.colors[ vertex * 3 + 1 ] ).toBe( 1 );
+			expect( mesh.colors[ vertex * 3 + 1 ] ).toBeCloseTo( 0.95, 5 );
 			expect( mesh.colors[ vertex * 3 + 2 ] ).toBe( 0 );
 
 		}

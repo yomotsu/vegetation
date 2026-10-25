@@ -541,8 +541,8 @@ describe( 'fir sprig texture', () => {
 		const mean = ( values: number[] ): number => values.reduce( ( total, value ) => total + value, 0 ) / values.length;
 
 		expect( mean( red ) ).toBeLessThanOrEqual( 5 );
-		expect( mean( green ) ).toBeGreaterThanOrEqual( 69 );
-		expect( mean( green ) ).toBeLessThanOrEqual( 78 );
+		expect( mean( green ) ).toBeGreaterThanOrEqual( 64 );
+		expect( mean( green ) ).toBeLessThanOrEqual( 71 );
 		expect( mean( blue ) ).toBeLessThanOrEqual( 3 );
 		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 28 );
 		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 42 );
@@ -578,13 +578,13 @@ describe( 'fir sprig texture', () => {
 
 		const texture = createFirSprigTexture( 1 );
 		const samples: [ number, [ number, number, number ] ][] = [
-			[ 0.05, [ 0, 40, 0 ] ],
-			[ 0.15, [ 0, 56, 0 ] ],
-			[ 0.3, [ 0, 65, 0 ] ],
-			[ 0.45, [ 0, 73, 0 ] ],
-			[ 0.6, [ 0, 84, 0 ] ],
-			[ 0.75, [ 0, 91, 0 ] ],
-			[ 0.9, [ 0, 98, 0 ] ],
+			[ 0.05, [ 0, 34, 0 ] ],
+			[ 0.15, [ 0, 47, 0 ] ],
+			[ 0.3, [ 0, 56, 0 ] ],
+			[ 0.45, [ 0, 64, 0 ] ],
+			[ 0.6, [ 0, 74, 0 ] ],
+			[ 0.75, [ 0, 81, 0 ] ],
+			[ 0.9, [ 0, 89, 0 ] ],
 		];
 		const measured = samples.map( ( [ v ] ) => meanGreenRowColor( texture, v ) );
 
@@ -611,6 +611,39 @@ describe( 'fir sprig texture', () => {
 
 		expect( ratio ).toBeGreaterThanOrEqual( 2.205 );
 		expect( ratio ).toBeLessThanOrEqual( 2.695 );
+
+	} );
+
+	it( 'keeps antialiased tip texels at the needle color', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const tipStart = Math.floor( texture.height * 0.8 );
+		let partialAlphaPixels = 0;
+		let brightestGreen = 0;
+
+		for ( let y = tipStart; y < texture.height; y ++ ) {
+
+			for ( let x = 0; x < texture.width / 3; x ++ ) {
+
+				const offset = ( y * texture.width + x ) * 4;
+				const red = texture.data[ offset ]!;
+				const green = texture.data[ offset + 1 ]!;
+				const blue = texture.data[ offset + 2 ]!;
+				const alpha = texture.data[ offset + 3 ]!;
+
+				if ( alpha === 0 || alpha >= 128 || green <= red || green <= blue ) continue;
+
+				partialAlphaPixels ++;
+				brightestGreen = Math.max( brightestGreen, green );
+				expect( red ).toBeLessThanOrEqual( 4 );
+				expect( blue ).toBeLessThanOrEqual( 4 );
+
+			}
+
+		}
+
+		expect( partialAlphaPixels ).toBeGreaterThan( 0 );
+		expect( brightestGreen ).toBeLessThanOrEqual( 102 );
 
 	} );
 

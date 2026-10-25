@@ -36,7 +36,7 @@ interface TreeLayout {
 }
 
 const barkColor: Color3 = [ 1, 1, 1 ];
-const leafColor: Color3 = [ 0, 1, 0 ];
+const leafColor: Color3 = [ 0, 0.95, 0 ];
 const referenceTreeHeight = 7.55;
 const trunkTopFraction = 6.6 / referenceTreeHeight;
 const frondsPerTier = 5;
@@ -339,7 +339,7 @@ function getFrondVertexColor( longitudinal: number, radius: number, lateral: num
 	if ( lateral === 0.5 ) return [ 1, 1, 1 ];
 
 	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.03;
-	const green = 1.02 + tierLift + longitudinal * 0.015;
+	const green = 0.96 + tierLift + longitudinal * 0.015;
 
 	return [ 0, green, 0 ];
 
