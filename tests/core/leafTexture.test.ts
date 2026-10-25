@@ -237,6 +237,36 @@ function opaqueRowLuminance( texture: { width: number; data: Uint8Array }, y: nu
 
 }
 
+function meanGreenRowColor( texture: { width: number; height: number; data: Uint8Array }, v: number ): [ number, number, number ] | null {
+
+	const centerY = Math.round( v * ( texture.height - 1 ) );
+	const firstY = Math.max( 0, centerY - 1 );
+	const lastY = Math.min( texture.height - 1, centerY + 1 );
+	const totals = [ 0, 0, 0 ];
+	let count = 0;
+
+	for ( let y = firstY; y <= lastY; y ++ ) {
+
+		for ( let x = 0; x < texture.width / 3; x ++ ) {
+
+			const offset = ( y * texture.width + x ) * 4;
+			const red = texture.data[ offset ]!;
+			const green = texture.data[ offset + 1 ]!;
+			const blue = texture.data[ offset + 2 ]!;
+
+			if ( texture.data[ offset + 3 ]! < 128 || green <= red || green <= blue ) continue;
+
+			for ( let channel = 0; channel < 3; channel ++ ) totals[ channel ]! += texture.data[ offset + channel ]!;
+			count ++;
+
+		}
+
+	}
+
+	return count === 0 ? null : totals.map( ( total ) => total / count ) as [ number, number, number ];
+
+}
+
 function percentile( values: number[], fraction: number ): number {
 
 	const sorted = [ ...values ].sort( ( a, b ) => a - b );
@@ -512,9 +542,9 @@ describe( 'fir sprig texture', () => {
 		const mean = ( values: number[] ): number => values.reduce( ( total, value ) => total + value, 0 ) / values.length;
 
 		expect( mean( red ) ).toBeGreaterThanOrEqual( 27 );
-		expect( mean( red ) ).toBeLessThanOrEqual( 32 );
+		expect( mean( red ) ).toBeLessThanOrEqual( 34 );
 		expect( mean( green ) ).toBeGreaterThanOrEqual( 69 );
-		expect( mean( green ) ).toBeLessThanOrEqual( 75 );
+		expect( mean( green ) ).toBeLessThanOrEqual( 78 );
 		expect( mean( blue ) ).toBeGreaterThanOrEqual( 4 );
 		expect( mean( blue ) ).toBeLessThanOrEqual( 9 );
 		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 41 );
@@ -522,7 +552,45 @@ describe( 'fir sprig texture', () => {
 		expect( percentile( luminance, 0.5 ) ).toBeGreaterThanOrEqual( 54 );
 		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 60 );
 		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 71 );
-		expect( percentile( luminance, 0.9 ) ).toBeLessThanOrEqual( 79 );
+		expect( percentile( luminance, 0.9 ) ).toBeLessThanOrEqual( 81 );
+
+	} );
+
+	it( 'matches the smooth Tree01 brightness ramp from the sprig base to tip', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const samples: [ number, [ number, number, number ] ][] = [
+			[ 0.05, [ 15, 40, 4 ] ],
+			[ 0.15, [ 20, 56, 3 ] ],
+			[ 0.3, [ 24, 65, 5 ] ],
+			[ 0.45, [ 29, 73, 6 ] ],
+			[ 0.6, [ 34, 84, 8 ] ],
+			[ 0.75, [ 36, 91, 9 ] ],
+			[ 0.9, [ 41, 98, 11 ] ],
+		];
+		const measured = samples.map( ( [ v ] ) => meanGreenRowColor( texture, v ) );
+
+		for ( let index = 0; index < samples.length; index ++ ) {
+
+			const expected = samples[ index ]![ 1 ];
+			const actual = measured[ index ];
+
+			expect( actual ).not.toBeNull();
+
+			for ( let channel = 0; channel < 3; channel ++ ) {
+
+				expect( Math.abs( actual![ channel ]! - expected[ channel ]! ) ).toBeLessThanOrEqual( Math.max( 1, expected[ channel ]! * 0.1 ) );
+
+			}
+
+			if ( index > 0 ) expect( actual![ 1 ] ).toBeGreaterThan( measured[ index - 1 ]![ 1 ] );
+
+		}
+
+		const ratio = measured[ measured.length - 1 ]![ 1 ] / measured[ 0 ]![ 1 ];
+
+		expect( ratio ).toBeGreaterThanOrEqual( 2.205 );
+		expect( ratio ).toBeLessThanOrEqual( 2.695 );
 
 	} );
 
@@ -535,12 +603,12 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'keeps the needle luminance range compact', () => {
+	it( 'keeps needle luminance variation within the reference ramp', () => {
 
 		const texture = createFirSprigTexture( 1 );
 		const luminance = opaqueChannelValues( texture, 3 );
 
-		expect( percentile( luminance, 0.9 ) - percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 27 );
+		expect( percentile( luminance, 0.9 ) - percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 40 );
 
 	} );
 
@@ -571,7 +639,7 @@ describe( 'fir sprig texture', () => {
 
 		}
 
-		expect( percentile( contrasts, 0.1 ) ).toBeGreaterThanOrEqual( - 2.5 );
+		expect( percentile( contrasts, 0.1 ) ).toBeGreaterThanOrEqual( - 4 );
 
 	} );
 

@@ -5,6 +5,15 @@ type Rgb = [ number, number, number ];
 
 const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
 const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 47 ], [ 59, 57 ], [ 85, 76 ], [ 91, 80 ] ];
+const leafBrightnessStops: [ number, Rgb ][] = [
+	[ 0.05, [ 15, 40, 4 ] ],
+	[ 0.15, [ 20, 56, 3 ] ],
+	[ 0.3, [ 24, 65, 5 ] ],
+	[ 0.45, [ 29, 73, 6 ] ],
+	[ 0.6, [ 34, 84, 8 ] ],
+	[ 0.75, [ 36, 91, 9 ] ],
+	[ 0.9, [ 41, 98, 11 ] ],
+];
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -150,6 +159,81 @@ function matchLeafColorDistribution( data: Uint8Array, width: number, size: numb
 			data[ offset ] = Math.round( clamp( red * scale, 0, 255 ) );
 			data[ offset + 1 ] = Math.round( clamp( green * scale, 0, 255 ) );
 			data[ offset + 2 ] = Math.round( clamp( blue * scale - 2, 0, 255 ) );
+
+		}
+
+	}
+
+}
+
+function getLeafBrightness( v: number ): Rgb {
+
+	let lowerIndex = 0;
+
+	for ( let index = 1; index < leafBrightnessStops.length; index ++ ) {
+
+		if ( v <= leafBrightnessStops[ index ]![ 0 ] ) {
+			lowerIndex = index - 1;
+			break;
+
+		}
+
+		lowerIndex = index - 1;
+
+	}
+
+	const lower = leafBrightnessStops[ lowerIndex ]!;
+	const upper = leafBrightnessStops[ lowerIndex + 1 ]!;
+	const amount = ( v - lower[ 0 ] ) / ( upper[ 0 ] - lower[ 0 ] );
+
+	return [
+		lerp( lower[ 1 ][ 0 ], upper[ 1 ][ 0 ], amount ),
+		lerp( lower[ 1 ][ 1 ], upper[ 1 ][ 1 ], amount ),
+		lerp( lower[ 1 ][ 2 ], upper[ 1 ][ 2 ], amount ),
+	];
+
+}
+
+function matchLeafBrightnessRamp( data: Uint8Array, width: number, size: number ): void {
+
+	for ( let y = 0; y < size; y ++ ) {
+
+		const totals = [ 0, 0, 0 ];
+		let count = 0;
+
+		for ( let x = 0; x < size; x ++ ) {
+
+			const offset = ( y * width + x ) * 4;
+			const red = data[ offset ]!;
+			const green = data[ offset + 1 ]!;
+			const blue = data[ offset + 2 ]!;
+
+			if ( data[ offset + 3 ]! < 128 || green <= red || green <= blue ) continue;
+
+			for ( let channel = 0; channel < 3; channel ++ ) totals[ channel ]! += data[ offset + channel ]!;
+			count ++;
+
+		}
+
+		if ( count === 0 ) continue;
+
+		const target = getLeafBrightness( 1 - y / ( size - 1 ) );
+		const scale = target.map( ( channel, index ) => channel / ( totals[ index ]! / count ) );
+
+		for ( let x = 0; x < size; x ++ ) {
+
+			const offset = ( y * width + x ) * 4;
+			const red = data[ offset ]!;
+			const green = data[ offset + 1 ]!;
+			const blue = data[ offset + 2 ]!;
+
+			if ( data[ offset + 3 ] === 0 || green <= red || green <= blue ) continue;
+
+			for ( let channel = 0; channel < 3; channel ++ ) {
+
+				data[ offset + channel ] = Math.round( clamp( data[ offset + channel ]! * scale[ channel ]!, 0, 255 ) );
+
+			}
 
 		}
 
@@ -487,6 +571,7 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 
 	drawSprig( data, width, size, seed );
 	matchLeafColorDistribution( data, width, size );
+	matchLeafBrightnessRamp( data, width, size );
 	softenSprigCenterline( data, width, size, seed );
 	drawStem( data, width, size, seed );
 	flipTextureVertically( data, width, size );
