@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFirSprigTexture } from '../../src/core';
+import { getFirSprigNeedleGeometry } from '../../src/core/leafTexture';
 
 function alphaAt( texture: { width: number; data: Uint8Array }, x: number, y: number ): number {
 
@@ -365,6 +366,56 @@ describe( 'fir sprig texture', () => {
 		expect( brownTipPixels ).toBe( 0 );
 		expect( needleTipPixels ).toBeGreaterThan( 0 );
 		expect( rowWidth( texture, 0, texture.height - tipEnd + 4, texture.width / 3 ) ).toBeGreaterThan( 0 );
+
+	} );
+
+	it( 'sweeps every needle toward the tip and aligns them progressively', () => {
+
+		const needles = getFirSprigNeedleGeometry( 1 );
+		const meanAngle = ( start: number, end: number ): number => {
+
+			const samples = needles.filter( needle => needle.v >= start && needle.v < end );
+
+			return samples.reduce( ( total, needle ) => total + needle.angle, 0 ) / samples.length;
+
+		};
+		const bands = [ [ 0.05, 0.2 ], [ 0.2, 0.4 ], [ 0.4, 0.6 ], [ 0.6, 0.8 ], [ 0.8, 0.95 ] ];
+		const bandAngles = bands.map( band => meanAngle( band[ 0 ]!, band[ 1 ]! ) );
+
+		expect( needles.length ).toBeGreaterThan( 50 );
+		expect( needles.every( needle => needle.tipward >= 0 ) ).toBe( true );
+		expect( needles.every( needle => needle.endAngle < needle.startAngle ) ).toBe( true );
+		expect( bandAngles[ 0 ] ).toBeGreaterThanOrEqual( 65 );
+		expect( bandAngles[ 0 ] ).toBeLessThanOrEqual( 75 );
+		expect( bandAngles[ 4 ] ).toBeGreaterThanOrEqual( 10 );
+		expect( bandAngles[ 4 ] ).toBeLessThanOrEqual( 20 );
+		for ( let index = 1; index < bandAngles.length; index ++ ) {
+
+			expect( bandAngles[ index ] ).toBeLessThan( bandAngles[ index - 1 ]! );
+
+		}
+
+	} );
+
+	it( 'ends the stem between 75% and 85% of the base-to-tip length', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		let lastStemRow = - 1;
+
+		for ( let y = 0; y < texture.height; y ++ ) {
+
+			const center = Math.round( texture.height * 0.5 + Math.sin( ( texture.height - y - 1 ) / texture.height * Math.PI * 1.3 + 0.37 ) * texture.height * 0.009 );
+
+			for ( let x = center - 6; x <= center + 6; x ++ ) {
+
+				if ( isBrownStemPixel( texture, x, y ) ) lastStemRow = y;
+
+			}
+
+		}
+
+		expect( lastStemRow / texture.height ).toBeGreaterThanOrEqual( 0.75 );
+		expect( lastStemRow / texture.height ).toBeLessThanOrEqual( 0.85 );
 
 	} );
 

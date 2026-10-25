@@ -4,7 +4,7 @@ import type { TextureData } from './types';
 type Rgb = [ number, number, number ];
 
 const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
-const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 48 ], [ 59, 57 ], [ 85, 76 ], [ 91, 80 ] ];
+const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 47 ], [ 59, 57 ], [ 85, 76 ], [ 91, 80 ] ];
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -236,11 +236,33 @@ function drawStem( data: Uint8Array, width: number, size: number, seed: number )
 
 }
 
-function drawSprig( data: Uint8Array, width: number, size: number, seed: number ): void {
+type SprigNeedleGeometry = {
+	v: number;
+	tipward: number;
+	angle: number;
+	startAngle: number;
+	endAngle: number;
+	root: [ number, number ];
+	control: [ number, number ];
+	tip: [ number, number ];
+	dark: Rgb;
+	bright: Rgb;
+	stemWidth: number;
+	tipWidth: number;
+};
+
+function getNeedleAngle( from: [ number, number ], to: [ number, number ] ): number {
+
+	return Math.atan2( Math.abs( to[ 0 ] - from[ 0 ] ), Math.max( 0, from[ 1 ] - to[ 1 ] ) ) * 180 / Math.PI;
+
+}
+
+function createSprigNeedleGeometry( size: number, seed: number ): SprigNeedleGeometry[] {
 
 	const random = createRandom( seed );
 	const center = size * 0.5;
 	const stemPoints: [ number, number ][] = [];
+	const needles: SprigNeedleGeometry[] = [];
 	const pixelScale = size / 256;
 	const nodeSpacing = Math.max( 2.5, size / 30 );
 
@@ -257,7 +279,7 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 	for ( const [ stemX, y ] of stemPoints ) {
 
 		const v = y / size;
-		const tipProgress = 1 - v;
+		const tipProgress = clamp( ( 0.97 - v ) / 0.935, 0, 1 );
 		const widthProfile = getSprigWidthProfile( v );
 		const envelope = size * 0.375 * widthProfile;
 
@@ -270,44 +292,90 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 				const baseY = y + random.range( - 1.2, 1.2 ) * pixelScale;
 				const rootX = stemX + random.range( - 0.8, 0.8 ) * pixelScale;
 				const tipTaper = v >= 0.4 ? 1 : 1 - 0.45 * Math.pow( clamp( ( 0.4 - v ) / 0.4, 0, 1 ), 0.8 );
-				const length = envelope * tipTaper * random.range( needle === 0 ? 0.68 : 0.48, needle === 0 ? 1.02 : 0.82 );
-				const lean = Math.pow( tipProgress, 1.35 );
-				const horizontalReach = length * lerp( 1, 0.38, lean );
-				const riseRatio = lerp( 0.2, 1.9, Math.pow( tipProgress, 1.45 ) ) * random.range( 0.92, 1.08 );
-				const rise = length * riseRatio;
+				const requestedLength = envelope * tipTaper * random.range( needle === 0 ? 0.68 : 0.48, needle === 0 ? 1.02 : 0.82 );
+				const sweep = clamp( ( tipProgress - 0.1 ) / 0.8, 0, 1 );
+				const smoothSweep = sweep * sweep * ( 3 - 2 * sweep );
+				const angle = lerp( 70, 15, smoothSweep ) + random.range( - 1.5, 1.5 );
+				const radians = angle * Math.PI / 180;
+				const length = Math.min( requestedLength, Math.max( 0, baseY - 1 ) / Math.cos( radians ) );
+				const horizontalReach = length * Math.sin( radians );
+				const rise = length * Math.cos( radians );
 				const endX = rootX + side * horizontalReach;
 				const endY = Math.max( 0, baseY - rise );
-				const controlX = rootX + side * horizontalReach * lerp( 0.86, 0.7, tipProgress ) * random.range( 0.96, 1.04 );
-				const controlY = baseY - rise * lerp( 0.34, 0.46, tipProgress ) * random.range( 0.96, 1.04 );
+				const controlX = rootX + side * horizontalReach * 0.64 * random.range( 0.96, 1.04 );
+				const controlY = Math.max( endY, baseY - rise * 0.28 * random.range( 0.96, 1.04 ) );
 				const variation = random.range( 0.82, 1.18 );
 				const dark = getNeedleColor( random, false, variation );
 				const bright = getNeedleColor( random, true, variation );
 				const stemWidth = random.range( 7.7, 10.7 ) * pixelScale;
 				const tipWidth = random.range( 2.4, 3.4 ) * pixelScale;
-				const curveSegments = 8;
-				let previous: [ number, number ] = [ rootX, baseY ];
-				let previousWidth = stemWidth;
+				const root: [ number, number ] = [ rootX, baseY ];
+				const control: [ number, number ] = [ controlX, controlY ];
+				const tip: [ number, number ] = [ endX, endY ];
 
-				for ( let segment = 1; segment <= curveSegments; segment ++ ) {
-
-					const amount = segment / curveSegments;
-					const inverse = 1 - amount;
-					const point: [ number, number ] = [
-						inverse * inverse * rootX + 2 * inverse * amount * controlX + amount * amount * endX,
-						inverse * inverse * baseY + 2 * inverse * amount * controlY + amount * amount * endY,
-					];
-					const lineWidth = lerp( stemWidth, tipWidth, amount );
-					const startColor = mixRgb( dark, bright, ( segment - 1 ) / ( curveSegments * 0.5 ) );
-					const endColor = mixRgb( dark, bright, amount / 0.5 );
-
-					drawStroke( data, width, size, previous, point, previousWidth, lineWidth, startColor, endColor );
-
-					previous = point;
-					previousWidth = lineWidth;
-
-				}
+				needles.push( {
+					v: 1 - baseY / size,
+					tipward: baseY - endY,
+					angle: getNeedleAngle( root, tip ),
+					startAngle: getNeedleAngle( root, control ),
+					endAngle: getNeedleAngle( control, tip ),
+					root,
+					control,
+					tip,
+					dark,
+					bright,
+					stemWidth,
+					tipWidth,
+				} );
 
 			}
+
+		}
+
+	}
+
+	return needles;
+
+}
+
+export function getFirSprigNeedleGeometry( seed: number, size = 256 ): Pick<SprigNeedleGeometry, 'v' | 'tipward' | 'angle' | 'startAngle' | 'endAngle'>[] {
+
+	return createSprigNeedleGeometry( size, seed ).map( ( needle ) => ( {
+		v: needle.v,
+		tipward: needle.tipward,
+		angle: needle.angle,
+		startAngle: needle.startAngle,
+		endAngle: needle.endAngle,
+	} ) );
+
+}
+
+function drawSprig( data: Uint8Array, width: number, size: number, seed: number ): void {
+
+	const needles = createSprigNeedleGeometry( size, seed );
+	const curveSegments = 8;
+
+	for ( const needle of needles ) {
+
+		let previous = needle.root;
+		let previousWidth = needle.stemWidth;
+
+		for ( let segment = 1; segment <= curveSegments; segment ++ ) {
+
+			const amount = segment / curveSegments;
+			const inverse = 1 - amount;
+			const point: [ number, number ] = [
+				inverse * inverse * needle.root[ 0 ] + 2 * inverse * amount * needle.control[ 0 ] + amount * amount * needle.tip[ 0 ],
+				inverse * inverse * needle.root[ 1 ] + 2 * inverse * amount * needle.control[ 1 ] + amount * amount * needle.tip[ 1 ],
+			];
+			const lineWidth = lerp( needle.stemWidth, needle.tipWidth, amount );
+			const startColor = mixRgb( needle.dark, needle.bright, ( segment - 1 ) / ( curveSegments * 0.5 ) );
+			const endColor = mixRgb( needle.dark, needle.bright, amount / 0.5 );
+
+			drawStroke( data, width, size, previous, point, previousWidth, lineWidth, startColor, endColor );
+
+			previous = point;
+			previousWidth = lineWidth;
 
 		}
 
