@@ -582,8 +582,7 @@ function updateCrownAtlas( texture: TextureData, silhouette: TextureData | null,
 
 	const tileSize = texture.height;
 	const inputColor = [ ( color >>> 16 ) & 0xff, ( color >>> 8 ) & 0xff, color & 0xff ];
-	const defaultColor = [ ( DEFAULT_LEAF_COLOR >>> 16 ) & 0xff, ( DEFAULT_LEAF_COLOR >>> 8 ) & 0xff, DEFAULT_LEAF_COLOR & 0xff ];
-	const crownColor = [ 0, 83, 0 ].map( ( channel, index ) => Math.round( clamp( channel + ( inputColor[ index ]! - defaultColor[ index ]! ) * 0.58, 0, 255 ) ) );
+	const crownColor = color === DEFAULT_LEAF_COLOR ? [ 0, 83, 0 ] : inputColor;
 
 	for ( let view = 0; view < 2; view ++ ) {
 

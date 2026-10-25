@@ -10,7 +10,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { VegetationMesh } from 'vegetation';
 import type { VegetationAsset } from 'vegetation';
-import { kinds } from './registry';
+import { kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
 import { createScatter } from './scatter';
 import type { ScatterController } from './scatter';
@@ -28,6 +28,7 @@ interface DemoState {
 	collider: boolean;
 	scatterCount: number;
 	seedVariants: number;
+	leafPreset: string;
 	options: Record<string, number>;
 	colors: Record<string, string>;
 }
@@ -58,6 +59,7 @@ const state: DemoState = {
 	collider: false,
 	scatterCount: 2000,
 	seedVariants: 4,
+	leafPreset: 'green',
 	options: { ...kinds[ 0 ]!.options },
 	colors: {},
 };
@@ -77,6 +79,20 @@ for ( const part of activeKind.colorParts ) {
 	state.colors[ part ] = `#${ asset.getColor( part ).getHexString() }`;
 
 }
+
+function getLeafPreset( color: string ): string {
+
+	for ( const [ preset, presetColor ] of Object.entries( leafColorPresets ) ) {
+
+		if ( presetColor.toLowerCase() === color.toLowerCase() ) return preset;
+
+	}
+
+	return 'custom';
+
+}
+
+state.leafPreset = getLeafPreset( state.colors.leaf ?? '' );
 
 async function createPreviewRenderer(): Promise<{ renderer: PreviewRenderer; label: string }> {
 
@@ -104,10 +120,11 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 
 function makeAsset( kind: VegetationKind, options: Record<string, number>, colors: Record<string, string> ): VegetationAsset {
 
-	const next = kind.create( { ...options } );
+	const next = kind.create( { ...options, ...( colors.leaf !== undefined ? { leafColor: colors.leaf } : {} ) } );
 
 	for ( const part of kind.colorParts ) {
 
+		if ( part === 'leaf' ) continue;
 		if ( colors[ part ] !== undefined ) next.setColor( part, colors[ part ]! );
 
 	}
@@ -267,12 +284,46 @@ function rebuildOptionFolders( gui: GUI ): void {
 	}
 
 	colorFolder = gui.addFolder( 'Part colors' );
+	let updateLeafColorDisplay = () => {};
+	let updateLeafPresetDisplay = () => {};
+
+	if ( activeKind.colorParts.includes( 'leaf' ) ) {
+
+		const presetController = colorFolder.add( state, 'leafPreset', [ ...Object.keys( leafColorPresets ), 'custom' ] ).name( 'leaf preset' );
+		updateLeafPresetDisplay = () => presetController.updateDisplay();
+		presetController.onChange( ( preset: string ) => {
+
+			const color = leafColorPresets[ preset as keyof typeof leafColorPresets ];
+			if ( color === undefined ) return;
+
+			state.colors.leaf = color;
+			updateLeafColorDisplay();
+			setPartColor( 'leaf', color );
+
+		} );
+
+	}
 
 	for ( const part of activeKind.colorParts ) {
 
-		colorFolder.addColor( state.colors, part )
-			.name( part )
-			.onChange( ( color: string ) => setPartColor( part, color ) );
+		const colorController = colorFolder.addColor( state.colors, part ).name( part );
+
+		if ( part === 'leaf' ) {
+
+			updateLeafColorDisplay = () => colorController.updateDisplay();
+			colorController.onChange( ( color: string ) => {
+
+				state.leafPreset = 'custom';
+				updateLeafPresetDisplay();
+				setPartColor( part, color );
+
+			} );
+
+		} else {
+
+			colorController.onChange( ( color: string ) => setPartColor( part, color ) );
+
+		}
 
 	}
 
@@ -288,6 +339,7 @@ function createGui(): void {
 		state.options = { ...activeKind.options };
 		const next = activeKind.create( { ...state.options } );
 		state.colors = Object.fromEntries( activeKind.colorParts.map( ( part ) => [ part, `#${ next.getColor( part ).getHexString() }` ] ) );
+		state.leafPreset = getLeafPreset( state.colors.leaf ?? '' );
 		asset = next;
 		rebuildOptionFolders( gui );
 		rebuildPreview();

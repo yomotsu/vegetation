@@ -14,6 +14,29 @@ import { describe, expect, it } from 'vitest';
 import { generateTree } from '../../src/three/meshes';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 
+function meanTextureColorInTile( texture: { width: number; height: number; data: Uint8Array }, tile: number ): [ number, number, number ] {
+
+	const channels = [ 0, 0, 0 ];
+	let count = 0;
+
+	for ( let y = 0; y < texture.height; y ++ ) {
+
+		for ( let x = tile * texture.height; x < ( tile + 1 ) * texture.height; x ++ ) {
+
+			const offset = ( y * texture.width + x ) * 4;
+			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+			for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
+			count ++;
+
+		}
+
+	}
+
+	return channels.map( ( channel ) => channel / count ) as [ number, number, number ];
+
+}
+
 describe( 'VegetationAsset', () => {
 
 	it( 'builds all LOD geometries, per-part materials, and a collider', () => {
@@ -181,6 +204,8 @@ describe( 'VegetationAsset', () => {
 		const originalImpostorPixels = impostorTexture.image.data!.slice();
 		const positions = asset.geometries[ 0 ]!.getAttribute( 'position' ).array;
 		const originalLeafData = leafTexture.image.data;
+		const lod3Leaf = asset.getParts( 3 ).find( ( part ) => part.part === 'leaf' )!;
+		const lod4Impostor = asset.getParts( 4 )[ 0 ]!;
 
 		asset.setColor( 'leaf', '#c0392b' );
 
@@ -188,7 +213,10 @@ describe( 'VegetationAsset', () => {
 		expect( asset.materials[ 1 ]!.color.getHex() ).toBe( 0xffffff );
 		expect( leafTexture.image.data ).not.toBe( originalLeafData );
 		expect( leafTexture.image.data ).not.toEqual( originalLeafPixels );
+		expect( meanTextureColorInTile( asset.data.textures.leaf!, 1 )[ 0 ] ).toBeGreaterThan( meanTextureColorInTile( asset.data.textures.leaf!, 1 )[ 1 ] );
+		expect( lod3Leaf.material.map ).toBe( leafTexture );
 		expect( impostorTexture.image.data ).not.toEqual( originalImpostorPixels );
+		expect( lod4Impostor.material.map ).toBe( impostorTexture );
 		expect( asset.geometries[ 0 ]!.getAttribute( 'position' ).array ).toBe( positions );
 		expect( () => asset.setColor( 'nope', 0 ) ).toThrow();
 

@@ -8,6 +8,13 @@ export interface VegetationKind {
 	options: Record<string, number>;
 }
 
+export const leafColorPresets = {
+	green: '#2f7d1f',
+	'autumn red': '#b5361c',
+	orange: '#d9781e',
+	yellow: '#d8b62a',
+};
+
 export const kinds: VegetationKind[] = [
 	{
 		name: 'Tree',
