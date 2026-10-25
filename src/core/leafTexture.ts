@@ -11,8 +11,9 @@ const leafBrightnessStops: [ number, Rgb ][] = [
 	[ 0.3, [ 0, 70, 0 ] ],
 	[ 0.45, [ 0, 80, 0 ] ],
 	[ 0.6, [ 0, 93, 0 ] ],
-	[ 0.75, [ 0, 101, 0 ] ],
-	[ 0.9, [ 0, 111, 0 ] ],
+	[ 0.75, [ 8, 99, 0 ] ],
+	[ 0.9, [ 28, 102, 8 ] ],
+	[ 1, [ 45, 105, 15 ] ],
 ];
 
 function clamp( value: number, minimum: number, maximum: number ): number {
