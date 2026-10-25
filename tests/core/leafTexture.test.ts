@@ -558,15 +558,15 @@ describe( 'fir sprig texture', () => {
 		const mean = ( values: number[] ): number => values.reduce( ( total, value ) => total + value, 0 ) / values.length;
 
 		expect( mean( red ) ).toBeLessThanOrEqual( 5 );
-		expect( mean( green ) ).toBeGreaterThanOrEqual( 64 );
-		expect( mean( green ) ).toBeLessThanOrEqual( 71 );
+		expect( mean( green ) ).toBeGreaterThanOrEqual( 80 );
+		expect( mean( green ) ).toBeLessThanOrEqual( 86 );
 		expect( mean( blue ) ).toBeLessThanOrEqual( 3 );
-		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 28 );
-		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 42 );
-		expect( percentile( luminance, 0.5 ) ).toBeGreaterThanOrEqual( 45 );
-		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 56 );
-		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 61 );
-		expect( percentile( luminance, 0.9 ) ).toBeLessThanOrEqual( 72 );
+		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 35 );
+		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 55 );
+		expect( percentile( luminance, 0.5 ) ).toBeGreaterThanOrEqual( 57 );
+		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 74 );
+		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 75 );
+		expect( percentile( luminance, 0.9 ) ).toBeLessThanOrEqual( 95 );
 
 	} );
 
@@ -595,13 +595,13 @@ describe( 'fir sprig texture', () => {
 
 		const texture = createFirSprigTexture( 1 );
 		const samples: [ number, [ number, number, number ] ][] = [
-			[ 0.05, [ 0, 34, 0 ] ],
-			[ 0.15, [ 0, 47, 0 ] ],
-			[ 0.3, [ 0, 56, 0 ] ],
-			[ 0.45, [ 0, 64, 0 ] ],
-			[ 0.6, [ 0, 74, 0 ] ],
-			[ 0.75, [ 0, 81, 0 ] ],
-			[ 0.9, [ 0, 89, 0 ] ],
+			[ 0.05, [ 0, 43, 0 ] ],
+			[ 0.15, [ 0, 59, 0 ] ],
+			[ 0.3, [ 0, 70, 0 ] ],
+			[ 0.45, [ 0, 80, 0 ] ],
+			[ 0.6, [ 0, 93, 0 ] ],
+			[ 0.75, [ 0, 101, 0 ] ],
+			[ 0.9, [ 0, 111, 0 ] ],
 		];
 		const measured = samples.map( ( [ v ] ) => meanGreenRowColor( texture, v ) );
 
@@ -628,6 +628,23 @@ describe( 'fir sprig texture', () => {
 
 		expect( ratio ).toBeGreaterThanOrEqual( 2.205 );
 		expect( ratio ).toBeLessThanOrEqual( 2.695 );
+
+	} );
+
+	it( 'matches the reference luminance profile from the sprig base to tip', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const expected = [ 33, 44, 45, 49, 52, 56, 58, 62, 66, 69, 71, 72, 74, 78, 81 ];
+		const measured = expected.map( ( _, index ) => {
+
+			const color = meanGreenRowColor( texture, ( index + 1 ) / 16 )!;
+
+			return Math.round( color[ 0 ] * 0.2126 + color[ 1 ] * 0.7152 + color[ 2 ] * 0.0722 );
+
+		} );
+		const maximumError = Math.max( ...measured.map( ( value, index ) => Math.abs( value - expected[ index ]! ) ) );
+
+		expect( maximumError ).toBeLessThanOrEqual( 5 );
 
 	} );
 
@@ -660,7 +677,7 @@ describe( 'fir sprig texture', () => {
 		}
 
 		expect( partialAlphaPixels ).toBeGreaterThan( 0 );
-		expect( brightestGreen ).toBeLessThanOrEqual( 102 );
+		expect( brightestGreen ).toBeLessThanOrEqual( 130 );
 
 	} );
 
@@ -822,7 +839,7 @@ describe( 'fir sprig texture', () => {
 				values.add( alpha );
 				if ( green > red && green > blue ) partialNeedlePixels ++;
 				if ( red > green + 2 && green > blue * 1.5 ) partialStemPixels ++;
-				if ( red >= 120 || green >= 120 || blue >= 40 ) invalidPartialRgb ++;
+				if ( red >= 120 || green >= 132 || blue >= 40 ) invalidPartialRgb ++;
 
 			}
 

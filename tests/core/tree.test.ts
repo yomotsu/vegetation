@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, buildBillboard, hexToLinear, impostorPart } from '../../src/core';
+import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte } from '../../src/core';
 import { generateTreeData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -106,6 +106,40 @@ function brownStemWidthAtRow( texture: { width: number; height: number; data: Ui
 	}
 
 	return width;
+
+}
+
+function sampleFrondLuminance( texture: { width: number; height: number; data: Uint8Array }, v: number, greenTint: number ): number {
+
+	const centerY = Math.round( v * ( texture.height - 1 ) );
+	let total = 0;
+	let count = 0;
+
+	for ( let y = Math.max( 0, centerY - 1 ); y <= Math.min( texture.height - 1, centerY + 1 ); y ++ ) {
+
+		for ( let x = 0; x < texture.width / 3; x ++ ) {
+
+			const offset = ( y * texture.width + x ) * 4;
+			const red = texture.data[ offset ]!;
+			const green = texture.data[ offset + 1 ]!;
+			const blue = texture.data[ offset + 2 ]!;
+
+			if ( texture.data[ offset + 3 ]! < 128 || green <= red || green <= blue ) continue;
+
+			const normalizedGreen = green / 255;
+			const linearGreen = normalizedGreen <= 0.04045
+				? normalizedGreen / 12.92
+				: ( ( normalizedGreen + 0.055 ) / 1.055 ) ** 2.4;
+			const renderedGreen = linearToSrgbByte( linearGreen * greenTint );
+
+			total += 0.2126 * red + 0.7152 * renderedGreen + 0.0722 * blue;
+			count ++;
+
+		}
+
+	}
+
+	return total / count;
 
 }
 
@@ -300,7 +334,51 @@ describe( 'conifer tree data', () => {
 		expect( mesh.colors[ midribOffset ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 1 ] ).toBeCloseTo( 1, 5 );
 		expect( mesh.colors[ midribOffset + 2 ] ).toBeCloseTo( 1, 5 );
-		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( 1.005, 2 );
+		expect( mesh.colors[ ( firstVertex + 6 ) * 3 + 1 ] ).toBeCloseTo( mesh.colors[ edgeOffset + 1 ]!, 5 );
+
+	} );
+
+	it( 'keeps the frond vertex tint constant from base to tip', () => {
+
+		const settings = [
+			{ lod: 0, trianglesPerFrond: 8, indicesPerFrond: 24, rows: 3 },
+			{ lod: 1, trianglesPerFrond: 4, indicesPerFrond: 12, rows: 2 },
+			{ lod: 2, trianglesPerFrond: 4, indicesPerFrond: 12, rows: 2 },
+		];
+
+		for ( const setting of settings ) {
+
+			const mesh = generateTreeData( { seed: 1 } ).lods[ setting.lod ]!;
+			const leaves = leafGroup( mesh );
+
+			for ( let frond = 0; frond < frondCount( mesh, setting.trianglesPerFrond ); frond ++ ) {
+
+				const firstVertex = mesh.indices[ leaves.start + frond * setting.indicesPerFrond ]!;
+				const baseGreen = mesh.colors[ firstVertex * 3 + 1 ]!;
+
+				for ( let row = 1; row < setting.rows; row ++ ) {
+
+					expect( mesh.colors[ ( firstVertex + row * 3 ) * 3 + 1 ] ).toBeCloseTo( baseGreen, 5 );
+
+				}
+
+			}
+
+		}
+
+	} );
+
+	it( 'keeps the rendered CPU frond proxy close to the reference luminance profile', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const mesh = data.lods[ 0 ]!;
+		const leaves = leafGroup( mesh );
+		const firstVertex = mesh.indices[ leaves.start ]!;
+		const greenTint = mesh.colors[ firstVertex * 3 + 1 ]!;
+		const expected = [ 33, 44, 45, 49, 52, 56, 58, 62, 66, 69, 71, 72, 74, 78, 81 ];
+		const measured = expected.map( ( _, index ) => Math.round( sampleFrondLuminance( data.textures.leaf!, ( index + 1 ) / 16, greenTint ) ) );
+		const maximumError = Math.max( ...measured.map( ( value, index ) => Math.abs( value - expected[ index ]! ) ) );
+		expect( maximumError ).toBeLessThanOrEqual( 5 );
 
 	} );
 
@@ -344,6 +422,36 @@ describe( 'conifer tree data', () => {
 				}
 
 			}
+
+		}
+
+	} );
+
+	it( 'keeps the calibrated mean green in both LOD3 top-down crown atlas tiles', () => {
+
+		const texture = generateTreeData( { seed: 1 } ).textures.leaf!;
+
+		for ( const tile of [ 1, 2 ] ) {
+
+			let total = 0;
+			let count = 0;
+
+			for ( let y = 0; y < texture.height; y ++ ) {
+
+				for ( let x = 0; x < texture.height; x ++ ) {
+
+					const offset = ( y * texture.width + tile * texture.height + x ) * 4;
+
+					if ( texture.data[ offset + 3 ]! < 128 ) continue;
+
+					total += texture.data[ offset + 1 ]!;
+					count ++;
+
+				}
+
+			}
+
+			expect( total / count ).toBe( 83 );
 
 		}
 
