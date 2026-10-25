@@ -718,7 +718,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 		},
 		{
 			name: 'leaf',
-			defaultColor: 0xffffff,
+			defaultColor: 0xd2d2d2,
 			texture: 'leaf',
 			roughness: 0.95,
 			emissive: 0x000000,

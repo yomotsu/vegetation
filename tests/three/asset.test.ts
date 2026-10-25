@@ -56,6 +56,19 @@ describe( 'VegetationAsset', () => {
 
 	} );
 
+	it( 'preserves leaf vertex colors and enables them on the LOD0 leaf material', () => {
+
+		const asset = generateTree( { seed: 1 } );
+		const leaf = asset.getParts( 0 ).find( ( part ) => part.part === 'leaf' )!;
+		const sourceColors = asset.data.lods[ 0 ]!.colors;
+		const leafColors = leaf.geometry.getAttribute( 'color' );
+
+		expect( leafColors.array ).toEqual( sourceColors );
+		expect( leaf.material.vertexColors ).toBe( true );
+		expect( leaf.material.color.getHex() ).toBe( 0xd2d2d2 );
+
+	} );
+
 	it( 'creates bark and leaf data textures with bottom-origin sRGB sampling', () => {
 
 		const asset = generateTree( { seed: 1 } );
