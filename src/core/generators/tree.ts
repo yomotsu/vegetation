@@ -37,9 +37,34 @@ interface TreeLayout {
 
 const barkColor: Color3 = [ 1, 1, 1 ];
 const leafColor: Color3 = [ 1, 1, 1 ];
-const trunkTopFraction = 0.947;
+const referenceTreeHeight = 7.55;
+const trunkTopFraction = 6.6 / referenceTreeHeight;
 const frondsPerTier = 5;
-const trunkProfile = [ 0.35, 0.3, 0.255, 0.22, 0.19, 0.16, 0.135, 0.112, 0.094, 0.078, 0.064, 0.05, 0.035 ];
+const trunkProfile = [
+	[ - 0.2, 0.36 ],
+	[ 0.1, 0.26 ],
+	[ 0.3, 0.24 ],
+	[ 0.7, 0.205 ],
+	[ 1.4, 0.19 ],
+	[ 2.4, 0.17 ],
+	[ 3.5, 0.146 ],
+	[ 4.3, 0.114 ],
+	[ 5.2, 0.085 ],
+	[ 5.9, 0.053 ],
+	[ 6.6, 0.022 ],
+] as const;
+const frondSizeProfile = [
+	[ 1.8, 2.2 ],
+	[ 2.4, 2.6 ],
+	[ 3.1, 2.1 ],
+	[ 3.8, 2.0 ],
+	[ 4.4, 1.8 ],
+	[ 5.0, 1.6 ],
+	[ 5.5, 1.4 ],
+	[ 5.8, 1.4 ],
+	[ 6.2, 1.2 ],
+	[ 6.6, 1.0 ],
+] as const;
 const frondPitchProfile = [
 	[ 1.8 / 7.55, - 17, 9 ],
 	[ 2.5 / 7.55, - 13, 13 ],
@@ -89,21 +114,51 @@ function normalize( vector: Vec3 ): Vec3 {
 
 }
 
-function getTrunkProfileIndex( fraction: number ): number {
+function getTrunkRadius( fraction: number, height: number ): number {
 
-	return clamp( fraction / trunkTopFraction, 0, 1 ) * ( trunkProfile.length - 1 );
+	const referenceY = clamp( fraction, 0, trunkTopFraction ) * referenceTreeHeight;
+	const scale = height / referenceTreeHeight;
+
+	for ( let index = 1; index < trunkProfile.length; index ++ ) {
+
+		const lower = trunkProfile[ index - 1 ]!;
+		const upper = trunkProfile[ index ]!;
+
+		if ( referenceY <= upper[ 0 ] || index === trunkProfile.length - 1 ) {
+
+			const amount = clamp( ( referenceY - lower[ 0 ] ) / ( upper[ 0 ] - lower[ 0 ] ), 0, 1 );
+
+			return ( lower[ 1 ] + ( upper[ 1 ] - lower[ 1 ] ) * amount ) * scale;
+
+		}
+
+	}
+
+	return trunkProfile[ trunkProfile.length - 1 ]![ 1 ] * scale;
 
 }
 
-function getTrunkRadius( fraction: number, height: number ): number {
+function getFrondLength( height: number, y: number ): number {
 
-	const profileIndex = getTrunkProfileIndex( fraction );
-	const lowerIndex = Math.floor( profileIndex );
-	const upperIndex = Math.min( trunkProfile.length - 1, lowerIndex + 1 );
-	const amount = profileIndex - lowerIndex;
-	const scale = height / 7.5;
+	const referenceY = y / height * referenceTreeHeight;
+	const scale = height / referenceTreeHeight;
 
-	return ( trunkProfile[ lowerIndex ]! + ( trunkProfile[ upperIndex ]! - trunkProfile[ lowerIndex ]! ) * amount ) * scale;
+	for ( let index = 1; index < frondSizeProfile.length; index ++ ) {
+
+		const lower = frondSizeProfile[ index - 1 ]!;
+		const upper = frondSizeProfile[ index ]!;
+
+		if ( referenceY <= upper[ 0 ] || index === frondSizeProfile.length - 1 ) {
+
+			const amount = clamp( ( referenceY - lower[ 0 ] ) / ( upper[ 0 ] - lower[ 0 ] ), 0, 1 );
+
+			return ( lower[ 1 ] + ( upper[ 1 ] - lower[ 1 ] ) * amount ) * scale;
+
+		}
+
+	}
+
+	return frondSizeProfile[ frondSizeProfile.length - 1 ]![ 1 ] * scale;
 
 }
 
@@ -209,7 +264,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 	const trunkLeanMagnitude = height * random.range( 0.004, 0.012 );
 	const trunk = makeTrunkSpine( height, [ Math.cos( trunkLeanAngle ) * trunkLeanMagnitude, 0, Math.sin( trunkLeanAngle ) * trunkLeanMagnitude ], 12 );
 	const tiers: Tier[] = [];
-	const heightScale = height / 7.5;
+	const heightScale = height / referenceTreeHeight;
 	const maximumRadius = heightScale * 2.42 * crownSize;
 	const tierRotation = random.range( 0, Math.PI * 2 );
 
@@ -217,7 +272,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 
 		const tierRandom = random.fork( tierIndex + 1 );
 		const t = branchCount === 1 ? 0.5 : tierIndex / ( branchCount - 1 );
-		const tierY = height * ( 0.253 + t * 0.547 + tierRandom.range( - 0.004, 0.004 ) );
+		const tierY = height * ( ( 1.8 + t * ( 6.2 - 1.8 ) ) / referenceTreeHeight + tierRandom.range( - 0.004, 0.004 ) );
 		const radiusProfile = 0.05 + 0.95 * Math.pow( 1 - t, 0.65 );
 		const tierRadius = maximumRadius * radiusProfile * tierRandom.range( 0.987, 1.013 );
 		const trunkPoint = getTrunkPoint( trunk.spine, height, tierY / height );
@@ -228,7 +283,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 			const branchRandom = tierRandom.fork( frondIndex + 101 );
 			const angle = angleOffset + frondIndex / frondsPerTier * Math.PI * 2 + branchRandom.range( - 0.2, 0.2 );
 			const startDistance = getTrunkRadius( tierY / height, height ) - heightScale * branchRandom.range( 0.015, 0.02 );
-			const length = ( 2.2 - t * 0.9 ) * heightScale * branchRandom.range( 0.8, 1.2 );
+			const length = getFrondLength( height, tierY ) * branchRandom.range( 0.99, 1.01 );
 			const width = length * 0.85 * branchRandom.range( 0.8, 1.2 ) * crownSize;
 			const base = [ trunkPoint[ 0 ] + Math.cos( angle ) * startDistance, tierY, trunkPoint[ 2 ] + Math.sin( angle ) * startDistance ] as Vec3;
 			const [ basePitch, tipPitch ] = getFrondPitch( height, tierY );
@@ -243,13 +298,18 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 
 			const branchRandom = tierRandom.fork( 901 );
 			const angle = angleOffset + Math.PI / 5;
-			const length = 0.27 * heightScale;
-			const width = length * 0.85 * crownSize;
-			const leaderY = height * 0.947;
+			const leaderY = height * trunkTopFraction;
 			const leaderPoint = getTrunkPoint( trunk.spine, height, leaderY / height );
 			const base = leaderPoint;
+			const fold = 0.12 * branchRandom.range( 0.8, 1.2 );
+			const firstPitch = 60 + branchRandom.range( - 4, 4 );
+			const secondPitch = 85 + branchRandom.range( - 2, 2 );
+			const verticalFactor = 0.4 * Math.sin( firstPitch * Math.PI / 180 ) + 0.6 * Math.sin( secondPitch * Math.PI / 180 );
+			const edgeLiftFactor = 0.85 * crownSize * fold;
+			const length = Math.min( getFrondLength( height, leaderY ), ( height - leaderY ) / ( verticalFactor + edgeLiftFactor ) );
+			const width = length * 0.85 * crownSize;
 
-			fronds.push( makeFrond( base, angle, length, width, 0.12 * branchRandom.range( 0.8, 1.2 ), 60 + branchRandom.range( - 4, 4 ), 85 + branchRandom.range( - 2, 2 ), tierRadius, true, crownSize ) );
+			fronds.push( makeFrond( base, angle, length, width, fold, firstPitch, secondPitch, tierRadius, true, crownSize ) );
 
 		}
 
@@ -451,7 +511,7 @@ function addPointedTrunk( builder: MeshBuilder, spine: Vec3[], radii: number[], 
 function buildLod0( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
-	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 9, 11, 12 ] );
+	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 7, 10, 12 ] );
 	builder.beginGroup( 0 );
 	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 7 );
 	addFronds( builder, layout, frondsPerTier, [ 0, 0.4, 1 ] );
@@ -573,7 +633,7 @@ function addSilhouetteCard( builder: MeshBuilder, centerX: number, centerZ: numb
 function buildLod3( layout: TreeLayout, radius: number ): MeshData {
 
 	const builder = new MeshBuilder();
-	const trunkFractions = [ 0, 0.17, 0.34, 0.51, 0.68, 0.85 ];
+	const trunkFractions = [ 0, 0.17, 0.34, 0.51, 0.68, trunkTopFraction ];
 	const trunkSpine = trunkFractions.map( ( fraction ) => getTrunkPoint( layout.trunkSpine, layout.height, fraction ) );
 	const trunkRadii = trunkFractions.map( ( fraction ) => getTrunkRadius( fraction, layout.height ) );
 

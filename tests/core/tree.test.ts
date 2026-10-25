@@ -44,6 +44,12 @@ function maximumY( positions: Float32Array ): number {
 
 }
 
+function distance3( a: [ number, number, number ], b: [ number, number, number ] ): number {
+
+	return Math.hypot( a[ 0 ] - b[ 0 ], a[ 1 ] - b[ 1 ], a[ 2 ] - b[ 2 ] );
+
+}
+
 function boundaryEdges( mesh: MeshData, group: { start: number; count: number } ): [ number, number ][] {
 
 	const counts = new Map<string, { edge: [ number, number ]; count: number }>();
@@ -186,6 +192,25 @@ function frondPitches( mesh: MeshData, frondIndex: number ): [ number, number ] 
 	const secondPitch = Math.atan2( tip[ 1 ] - mid[ 1 ], Math.hypot( tip[ 0 ] - mid[ 0 ], tip[ 2 ] - mid[ 2 ] ) ) * 180 / Math.PI;
 
 	return [ firstPitch, secondPitch ];
+
+}
+
+function meanFrondLengthAtTier( mesh: MeshData, tierIndex: number ): number {
+
+	const leaves = leafGroup( mesh );
+	let total = 0;
+
+	for ( let frond = tierIndex * 5; frond < tierIndex * 5 + 5; frond ++ ) {
+
+		const base = frondPoint( mesh, leaves, frond, 0, 1 );
+		const mid = frondPoint( mesh, leaves, frond, 1, 1 );
+		const tip = frondPoint( mesh, leaves, frond, 2, 1 );
+
+		total += distance3( base, mid ) + distance3( mid, tip );
+
+	}
+
+	return total / 5;
 
 }
 
@@ -531,7 +556,7 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( steepestPitch ).toBeGreaterThan( 75 );
-		expect( frondPoint( mesh, leaves, frondCount( mesh, 8 ) - 1, 0, 1 )[ 1 ] ).toBeCloseTo( 7.1, 1 );
+		expect( frondPoint( mesh, leaves, frondCount( mesh, 8 ) - 1, 0, 1 )[ 1 ] ).toBeCloseTo( 6.6 * 7.5 / 7.55, 1 );
 
 	} );
 
@@ -544,7 +569,7 @@ describe( 'conifer tree data', () => {
 			{ tier: 6, baseMid: - 6, midTip: 20 },
 			{ tier: 9, baseMid: 10, midTip: 36 },
 			{ tier: 12, baseMid: 22, midTip: 48 },
-			{ tier: 14, baseMid: 31, midTip: 56 },
+			{ tier: 14, baseMid: 39, midTip: 64 },
 		];
 		const measured: [ number, number ][] = [];
 
@@ -576,15 +601,32 @@ describe( 'conifer tree data', () => {
 		const leaves = leafGroup( mesh );
 		const bandHeights = Array.from( { length: 15 }, ( _, index ) => frondPoint( mesh, leaves, index * 5, 0, 1 )[ 1 ] );
 
-		expect( bandHeights[ 0 ] ).toBeGreaterThanOrEqual( 1.85 );
-		expect( bandHeights[ 0 ] ).toBeLessThanOrEqual( 1.95 );
-		expect( bandHeights[ 14 ] ).toBeGreaterThanOrEqual( 5.95 );
-		expect( bandHeights[ 14 ] ).toBeLessThanOrEqual( 6.05 );
-		expect( frondPoint( mesh, leaves, 75, 0, 1 )[ 1 ] ).toBeCloseTo( 7.1, 1 );
+		expect( bandHeights[ 0 ] ).toBeGreaterThanOrEqual( 1.75 );
+		expect( bandHeights[ 0 ] ).toBeLessThanOrEqual( 1.85 );
+		expect( bandHeights[ 14 ] ).toBeCloseTo( 6.2 * 7.5 / 7.55, 1 );
+		expect( frondPoint( mesh, leaves, 75, 0, 1 )[ 1 ] ).toBeCloseTo( 6.6 * 7.5 / 7.55, 1 );
 
 		for ( let index = 1; index < bandHeights.length; index ++ ) {
 
 			expect( bandHeights[ index ] ).toBeGreaterThan( bandHeights[ index - 1 ]! );
+
+		}
+
+	} );
+
+	it( 'reduces reference frond lengths toward the apex', () => {
+
+		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const tierLengths = Array.from( { length: 15 }, ( _, index ) => meanFrondLengthAtTier( mesh, index ) );
+		const referenceScale = 7.5 / 7.55;
+
+		expect( tierLengths[ 2 ] ).toBeGreaterThan( tierLengths[ 0 ]! );
+		expect( tierLengths[ 2 ] ).toBeCloseTo( 2.6 * referenceScale, 1 );
+		expect( tierLengths[ 14 ] ).toBeCloseTo( 1.2 * referenceScale, 1 );
+
+		for ( let index = 2; index < tierLengths.length - 1; index ++ ) {
+
+			expect( tierLengths[ index + 1 ] ).toBeLessThanOrEqual( tierLengths[ index ]! + 0.06 );
 
 		}
 
@@ -697,7 +739,7 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps the trunk base near 0.35 m and assigns one whorl per branchCount', () => {
+	it( 'keeps a reference root flare and assigns one whorl per branchCount', () => {
 
 		const fiveTiers = generateTreeData( { seed: 1, branchCount: 5 } );
 		const eightTiers = generateTreeData( { seed: 1, branchCount: 8 } );
@@ -715,9 +757,50 @@ describe( 'conifer tree data', () => {
 
 		}
 
-		expect( baseRadius ).toBeCloseTo( 0.35, 2 );
+		expect( baseRadius ).toBeCloseTo( 0.293, 2 );
 		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 77 + 26 * 8 );
 		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 77 + 41 * 8 );
+
+	} );
+
+	it( 'keeps the ground trunk radius about twice the mid-height radius', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const mesh = data.lods[ 0 ]!;
+		const base = trunkAxisAndRadiusAt( mesh, 7, 6, 0 );
+		const middle = trunkAxisAndRadiusAt( mesh, 7, 6, data.bounds.height * 0.5 );
+		const ratio = base.radius / middle.radius;
+
+		expect( ratio ).toBeGreaterThanOrEqual( 1.5 );
+		expect( ratio ).toBeLessThanOrEqual( 2.25 );
+
+	} );
+
+	it( 'keeps the closed trunk apex below the highest foliage', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const mesh = data.lods[ 0 ]!;
+		const trunk = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+		const leaves = mesh.groups.find( ( group ) => group.partIndex === 1 )!;
+		let trunkTipY = - Infinity;
+		let highestLeafY = - Infinity;
+
+		for ( let index = trunk.start; index < trunk.start + trunk.count; index ++ ) {
+
+			const vertex = mesh.indices[ index ]!;
+			trunkTipY = Math.max( trunkTipY, mesh.positions[ vertex * 3 + 1 ]! );
+
+		}
+
+		for ( let index = leaves.start; index < leaves.start + leaves.count; index ++ ) {
+
+			const vertex = mesh.indices[ index ]!;
+			highestLeafY = Math.max( highestLeafY, mesh.positions[ vertex * 3 + 1 ]! );
+
+		}
+
+		expect( highestLeafY ).toBeGreaterThan( data.bounds.height - 0.05 );
+		expect( trunkTipY ).toBeLessThan( highestLeafY - 0.25 );
 
 	} );
 
@@ -755,6 +838,47 @@ describe( 'conifer tree data', () => {
 			}
 
 		}
+	} );
+
+	it( 'matches the textured LOD4 billboard silhouette to LOD0 in both impostor views', () => {
+
+		for ( const seed of [ 1, 2, 3 ] ) {
+
+			const data = generateTreeData( { seed } );
+			const reference = bakeImpostor( data, defaultColors( data ), 128 );
+			const billboardData = {
+				...data,
+				lods: [ data.lods[ 4 ]!, ...data.lods.slice( 1 ) ],
+				textures: { ...data.textures, impostor: reference },
+			};
+			const candidate = bakeImpostor( billboardData, defaultColors( data ), 128 );
+
+			for ( let view = 0; view < 2; view ++ ) {
+
+				let intersection = 0;
+				let union = 0;
+
+				for ( let y = 0; y < 128; y ++ ) {
+
+					for ( let x = 0; x < 128; x ++ ) {
+
+						const offset = ( y * reference.width + view * 128 + x ) * 4 + 3;
+						const referenceOpaque = reference.data[ offset ]! >= 128;
+						const candidateOpaque = candidate.data[ offset ]! >= 128;
+
+						if ( referenceOpaque && candidateOpaque ) intersection ++;
+						if ( referenceOpaque || candidateOpaque ) union ++;
+
+					}
+
+				}
+
+				expect( intersection / union ).toBeGreaterThanOrEqual( 0.75 );
+
+			}
+
+		}
+
 	} );
 
 	it( 'keeps the trunk collider inside 1.5 times the base radius and reaches 85 percent height', () => {
