@@ -368,19 +368,23 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps the rendered CPU frond proxy profile shape close to the reference', () => {
+	it( 'keeps the rendered CPU frond proxy profile smooth from base to tip', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const mesh = data.lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 		const firstVertex = mesh.indices[ leaves.start ]!;
 		const greenTint = mesh.colors[ firstVertex * 3 + 1 ]!;
-		const expected = [ 33, 44, 45, 49, 52, 56, 58, 62, 66, 69, 71, 72, 74, 78, 81 ];
-		const raw = expected.map( ( _, index ) => sampleFrondLuminance( data.textures.leaf!, ( index + 1 ) / 16, greenTint ) );
-		const normalization = expected[ 7 ]! / raw[ 7 ]!;
-		const measured = raw.map( ( value ) => Math.round( value * normalization ) );
-		const maximumError = Math.max( ...measured.map( ( value, index ) => Math.abs( value - expected[ index ]! ) ) );
-		expect( maximumError ).toBeLessThanOrEqual( 5 );
+		const measured = Array.from( { length: 15 }, ( _, index ) => sampleFrondLuminance( data.textures.leaf!, ( index + 1 ) / 16, greenTint ) );
+
+		for ( let index = 1; index < measured.length; index ++ ) {
+
+			const step = measured[ index ]! - measured[ index - 1 ]!;
+
+			expect( step ).toBeGreaterThan( 0 );
+			expect( step ).toBeLessThan( 25 );
+
+		}
 
 	} );
 

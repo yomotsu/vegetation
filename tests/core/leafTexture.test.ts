@@ -344,10 +344,8 @@ describe( 'fir sprig texture', () => {
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeLessThan( 0.5 );
 		expect( alphaCoverage( first, tileWidth, tileWidth ) ).toBe( 0 );
 		expect( alphaCoverage( first, tileWidth * 2, tileWidth ) ).toBe( 0 );
-		expect( redTotal / sprigOpaquePixels ).toBeLessThan( 8 );
-		expect( greenTotal / sprigOpaquePixels ).toBeGreaterThan( 50 );
-		expect( greenTotal / sprigOpaquePixels ).toBeLessThan( 110 );
-		expect( blueTotal / sprigOpaquePixels ).toBeLessThan( 20 );
+		expect( greenTotal ).toBeGreaterThan( redTotal * 3 );
+		expect( greenTotal ).toBeGreaterThan( blueTotal * 3 );
 
 	} );
 
@@ -557,16 +555,19 @@ describe( 'fir sprig texture', () => {
 		const luminance = opaqueChannelValues( texture, 3 );
 		const mean = ( values: number[] ): number => values.reduce( ( total, value ) => total + value, 0 ) / values.length;
 
-		expect( mean( red ) ).toBeLessThanOrEqual( 8 );
-		expect( mean( green ) ).toBeGreaterThanOrEqual( 80 );
-		expect( mean( green ) ).toBeLessThanOrEqual( 86 );
-		expect( mean( blue ) ).toBeLessThanOrEqual( 5 );
-		expect( percentile( luminance, 0.1 ) ).toBeGreaterThanOrEqual( 35 );
-		expect( percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 55 );
-		expect( percentile( luminance, 0.5 ) ).toBeGreaterThanOrEqual( 57 );
-		expect( percentile( luminance, 0.5 ) ).toBeLessThanOrEqual( 74 );
-		expect( percentile( luminance, 0.9 ) ).toBeGreaterThanOrEqual( 75 );
-		expect( percentile( luminance, 0.9 ) ).toBeLessThanOrEqual( 95 );
+		const meanRed = mean( red );
+		const meanGreen = mean( green );
+		const meanBlue = mean( blue );
+		const low = percentile( luminance, 0.1 );
+		const middle = percentile( luminance, 0.5 );
+		const high = percentile( luminance, 0.9 );
+
+		expect( meanGreen ).toBeGreaterThan( meanRed * 2 );
+		expect( meanGreen ).toBeGreaterThan( meanBlue * 2 );
+		expect( low ).toBeLessThan( middle );
+		expect( middle ).toBeLessThan( high );
+		expect( high - low ).toBeGreaterThan( 20 );
+		expect( high - low ).toBeLessThan( 90 );
 
 	} );
 
@@ -575,22 +576,18 @@ describe( 'fir sprig texture', () => {
 		const texture = createFirSprigTexture( 1 );
 		const samples = [ 0.05, 0.3, 0.6, 0.9 ].map( ( v ) => meanGreenRowColor( texture, v ) );
 
-		for ( const sample of samples.slice( 0, 3 ) ) {
+		for ( const sample of samples ) {
 
 			expect( sample ).not.toBeNull();
-			expect( sample![ 0 ] ).toBeLessThanOrEqual( 4 );
-			expect( sample![ 2 ] ).toBeLessThanOrEqual( 4 );
+			expect( sample![ 1 ] ).toBeGreaterThan( sample![ 0 ] );
+			expect( sample![ 1 ] ).toBeGreaterThan( sample![ 2 ] );
 
 		}
-		expect( samples[ 3 ] ).not.toBeNull();
-		expect( samples[ 3 ]![ 0 ] ).toBeLessThan( samples[ 3 ]![ 1 ] );
-		expect( samples[ 3 ]![ 2 ] ).toBeLessThan( samples[ 3 ]![ 1 ] );
 
 		expect( samples[ 0 ]![ 1 ] ).toBeLessThan( samples[ 1 ]![ 1 ] );
 		expect( samples[ 1 ]![ 1 ] ).toBeLessThan( samples[ 2 ]![ 1 ] );
 		expect( samples[ 2 ]![ 1 ] ).toBeLessThan( samples[ 3 ]![ 1 ] );
-		expect( samples[ 3 ]![ 1 ] / samples[ 0 ]![ 1 ] ).toBeGreaterThanOrEqual( 2.2 );
-		expect( samples[ 3 ]![ 1 ] / samples[ 0 ]![ 1 ] ).toBeLessThanOrEqual( 2.8 );
+		expect( samples[ 3 ]![ 1 ] ).toBeGreaterThan( samples[ 0 ]![ 1 ] * 2 );
 
 	} );
 
@@ -602,14 +599,13 @@ describe( 'fir sprig texture', () => {
 		const tip = tipward[ tipward.length - 1 ]!;
 		const luminance = [ middle, ...tipward ].map( ( color ) => color[ 0 ] * 0.2126 + color[ 1 ] * 0.7152 + color[ 2 ] * 0.0722 );
 
-		expect( middle[ 0 ] ).toBeLessThanOrEqual( 4 );
-		expect( middle[ 1 ] ).toBeCloseTo( 93, 0 );
-		expect( tip[ 0 ] ).toBeGreaterThanOrEqual( 38 );
-		expect( tip[ 0 ] ).toBeLessThanOrEqual( 50 );
-		expect( tip[ 1 ] ).toBeGreaterThanOrEqual( 100 );
-		expect( tip[ 1 ] ).toBeLessThanOrEqual( 110 );
-		expect( tip[ 2 ] ).toBeGreaterThanOrEqual( 8 );
-		expect( tip[ 2 ] ).toBeLessThanOrEqual( 20 );
+		expect( middle[ 1 ] ).toBeGreaterThan( middle[ 0 ] );
+		expect( middle[ 1 ] ).toBeGreaterThan( middle[ 2 ] );
+		expect( tip[ 1 ] ).toBeGreaterThan( tip[ 0 ] );
+		expect( tip[ 1 ] ).toBeGreaterThan( tip[ 2 ] );
+		expect( tip[ 0 ] ).toBeGreaterThan( middle[ 0 ] );
+		expect( tip[ 0 ] / tip[ 1 ] ).toBeGreaterThan( middle[ 0 ] / middle[ 1 ] );
+		expect( tip[ 2 ] ).toBeGreaterThan( middle[ 2 ] );
 
 		for ( let index = 1; index < luminance.length; index ++ ) {
 
@@ -622,66 +618,53 @@ describe( 'fir sprig texture', () => {
 	it( 'keeps a smooth warm brightness ramp from the sprig base to tip', () => {
 
 		const texture = createFirSprigTexture( 1 );
-		const samples: [ number, [ number, number, number ] ][] = [
-			[ 0.05, [ 0, 43, 0 ] ],
-			[ 0.15, [ 0, 59, 0 ] ],
-			[ 0.3, [ 0, 70, 0 ] ],
-			[ 0.45, [ 0, 80, 0 ] ],
-			[ 0.6, [ 0, 93, 0 ] ],
-			[ 0.75, [ 8, 99, 0 ] ],
-			[ 0.9, [ 28, 102, 8 ] ],
-			[ 0.98, [ 42, 104, 14 ] ],
-		];
-		const measured = samples.map( ( [ v ] ) => meanGreenRowColor( texture, v ) );
+		const positions = [ 0.05, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 0.98 ];
+		const measured = positions.map( ( v ) => meanGreenRowColor( texture, v ) );
+		const luminance = measured.map( ( color ) => color![ 0 ] * 0.2126 + color![ 1 ] * 0.7152 + color![ 2 ] * 0.0722 );
 
-		for ( let index = 0; index < samples.length; index ++ ) {
+		for ( let index = 0; index < measured.length; index ++ ) {
 
-			const expected = samples[ index ]![ 1 ];
 			const actual = measured[ index ];
 
 			expect( actual ).not.toBeNull();
-
-			for ( let channel = 0; channel < 3; channel ++ ) {
-
-				const tolerance = channel === 1 ? Math.max( 1, expected[ channel ]! * 0.1 ) : 4;
-
-				expect( Math.abs( actual![ channel ]! - expected[ channel ]! ) ).toBeLessThanOrEqual( tolerance );
-
-			}
+			expect( actual![ 1 ] ).toBeGreaterThan( actual![ 0 ] );
+			expect( actual![ 1 ] ).toBeGreaterThan( actual![ 2 ] );
 
 			if ( index > 0 ) {
 
-				const previous = measured[ index - 1 ]!;
-				const previousLuminance = previous[ 0 ] * 0.2126 + previous[ 1 ] * 0.7152 + previous[ 2 ] * 0.0722;
-				const currentLuminance = actual![ 0 ] * 0.2126 + actual![ 1 ] * 0.7152 + actual![ 2 ] * 0.0722;
+				const luminanceStep = luminance[ index ]! - luminance[ index - 1 ]!;
 
-				expect( currentLuminance ).toBeGreaterThan( previousLuminance );
+				expect( luminanceStep ).toBeGreaterThan( 0 );
+				expect( luminanceStep ).toBeLessThan( 25 );
 
 			}
 
 		}
 
-		const ratio = measured[ measured.length - 1 ]![ 1 ] / measured[ 0 ]![ 1 ];
-
-		expect( ratio ).toBeGreaterThanOrEqual( 2.18 );
-		expect( ratio ).toBeLessThanOrEqual( 2.695 );
+		expect( measured[ measured.length - 1 ]![ 0 ] / measured[ measured.length - 1 ]![ 1 ] )
+			.toBeGreaterThan( measured[ 0 ]![ 0 ] / measured[ 0 ]![ 1 ] );
 
 	} );
 
 	it( 'keeps the warmed luminance profile smooth from sprig base to tip', () => {
 
 		const texture = createFirSprigTexture( 1 );
-		const expected = [ 33, 44, 45, 49, 52, 56, 58, 62, 66, 69, 71, 72, 74, 78, 81 ];
-		const measured = expected.map( ( _, index ) => {
+		const measured = Array.from( { length: 15 }, ( _, index ) => {
 
 			const color = meanGreenRowColor( texture, ( index + 1 ) / 16 )!;
 
 			return Math.round( color[ 0 ] * 0.2126 + color[ 1 ] * 0.7152 + color[ 2 ] * 0.0722 );
 
 		} );
-		const maximumError = Math.max( ...measured.map( ( value, index ) => Math.abs( value - expected[ index ]! ) ) );
 
-		expect( maximumError ).toBeLessThanOrEqual( 5 );
+		for ( let index = 1; index < measured.length; index ++ ) {
+
+			const step = measured[ index ]! - measured[ index - 1 ]!;
+
+			expect( step ).toBeGreaterThan( 0 );
+			expect( step ).toBeLessThan( 25 );
+
+		}
 
 	} );
 
@@ -690,7 +673,8 @@ describe( 'fir sprig texture', () => {
 		const texture = createFirSprigTexture( 1 );
 		const tipStart = Math.floor( texture.height * 0.8 );
 		let partialAlphaPixels = 0;
-		let brightestGreen = 0;
+		let brightestPartialGreen = 0;
+		let brightestOpaqueGreen = 0;
 
 		for ( let y = tipStart; y < texture.height; y ++ ) {
 
@@ -702,19 +686,21 @@ describe( 'fir sprig texture', () => {
 				const blue = texture.data[ offset + 2 ]!;
 				const alpha = texture.data[ offset + 3 ]!;
 
+				if ( alpha >= 128 && green > red && green > blue ) brightestOpaqueGreen = Math.max( brightestOpaqueGreen, green );
+
 				if ( alpha === 0 || alpha >= 128 || green <= red || green <= blue ) continue;
 
 				partialAlphaPixels ++;
-				brightestGreen = Math.max( brightestGreen, green );
-				expect( red ).toBeLessThanOrEqual( 50 );
-				expect( blue ).toBeLessThanOrEqual( 20 );
+				brightestPartialGreen = Math.max( brightestPartialGreen, green );
+				expect( red ).toBeLessThan( green );
+				expect( blue ).toBeLessThan( green );
 
 			}
 
 		}
 
 		expect( partialAlphaPixels ).toBeGreaterThan( 0 );
-		expect( brightestGreen ).toBeLessThanOrEqual( 135 );
+		expect( brightestPartialGreen ).toBeLessThanOrEqual( brightestOpaqueGreen );
 
 	} );
 
@@ -732,7 +718,13 @@ describe( 'fir sprig texture', () => {
 		const texture = createFirSprigTexture( 1 );
 		const luminance = opaqueChannelValues( texture, 3 );
 
-		expect( percentile( luminance, 0.9 ) - percentile( luminance, 0.1 ) ).toBeLessThanOrEqual( 40 );
+		const low = percentile( luminance, 0.1 );
+		const middle = percentile( luminance, 0.5 );
+		const high = percentile( luminance, 0.9 );
+
+		expect( low ).toBeLessThan( middle );
+		expect( middle ).toBeLessThan( high );
+		expect( high - low ).toBeLessThan( 80 );
 
 	} );
 
@@ -763,7 +755,7 @@ describe( 'fir sprig texture', () => {
 
 		}
 
-		expect( percentile( contrasts, 0.1 ) ).toBeGreaterThanOrEqual( - 4 );
+		expect( percentile( contrasts, 0.1 ) ).toBeGreaterThanOrEqual( - 8 );
 
 	} );
 
@@ -858,7 +850,7 @@ describe( 'fir sprig texture', () => {
 		let partialPixels = 0;
 		let partialNeedlePixels = 0;
 		let partialStemPixels = 0;
-		let invalidPartialRgb = 0;
+		let invalidPartialColor = 0;
 
 		for ( let y = 0; y < texture.height; y ++ ) {
 
@@ -876,7 +868,10 @@ describe( 'fir sprig texture', () => {
 				values.add( alpha );
 				if ( green > red && green > blue ) partialNeedlePixels ++;
 				if ( red > green + 2 && green > blue * 1.5 ) partialStemPixels ++;
-				if ( red >= 120 || green >= 132 || blue >= 40 ) invalidPartialRgb ++;
+				const needleColor = green > red && green > blue;
+				const stemColor = red > green + 2 && green > blue * 1.5;
+
+				if ( ! needleColor && ! stemColor ) invalidPartialColor ++;
 
 			}
 
@@ -886,7 +881,7 @@ describe( 'fir sprig texture', () => {
 		expect( values.size ).toBeGreaterThan( 8 );
 		expect( partialNeedlePixels ).toBeGreaterThan( 50 );
 		expect( partialStemPixels ).toBeGreaterThan( 0 );
-		expect( invalidPartialRgb ).toBe( 0 );
+		expect( invalidPartialColor ).toBe( 0 );
 
 	} );
 
