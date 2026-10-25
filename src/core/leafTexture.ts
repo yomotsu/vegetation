@@ -4,7 +4,7 @@ import type { TextureData } from './types';
 type Rgb = [ number, number, number ];
 
 const neighborOffsets: [ number, number ][] = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ];
-const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 48 ], [ 59, 57 ], [ 85, 75 ], [ 91, 80 ] ];
+const leafLuminanceStops: [ number, number ][] = [ [ 18, 37 ], [ 31, 48 ], [ 59, 57 ], [ 85, 76 ], [ 91, 80 ] ];
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -15,6 +15,18 @@ function clamp( value: number, minimum: number, maximum: number ): number {
 function lerp( a: number, b: number, amount: number ): number {
 
 	return a + ( b - a ) * amount;
+
+}
+
+function mixRgb( a: Rgb, b: Rgb, amount: number ): Rgb {
+
+	amount = clamp( amount, 0, 1 );
+
+	return [
+		Math.round( lerp( a[ 0 ], b[ 0 ], amount ) ),
+		Math.round( lerp( a[ 1 ], b[ 1 ], amount ) ),
+		Math.round( lerp( a[ 2 ], b[ 2 ], amount ) ),
+	];
 
 }
 
@@ -196,22 +208,29 @@ function softenSprigCenterline( data: Uint8Array, width: number, size: number, s
 function drawStem( data: Uint8Array, width: number, size: number, seed: number ): void {
 
 	const pixelScale = size / 256;
-	const stemWidth = Math.max( 1.8, pixelScale * 3.2 );
-	const baseStemWidth = Math.max( 1.2, pixelScale * 1.6 );
+	const baseStemWidth = Math.max( 2, pixelScale * 4.2 );
+	const tipStemWidth = Math.max( 0.9, pixelScale * 1.25 );
+	const baseY = size - 1;
+	const tipY = size * 0.19;
 	const stemColor: Rgb = [ 58, 50, 22 ];
 	const nodeSpacing = Math.max( 2.5, size / 30 );
+	const segmentCount = Math.ceil( ( baseY - tipY ) / nodeSpacing );
 	let previous: [ number, number ] | null = null;
+	let previousWidth = baseStemWidth;
 
-	for ( let y = 0; y <= size * 1.02; y += nodeSpacing ) {
+	for ( let index = 0; index <= segmentCount; index ++ ) {
 
+		const amount = index / segmentCount;
+		const y = lerp( baseY, tipY, amount );
 		const v = y / size;
 		const center = size * 0.5 + Math.sin( v * Math.PI * 1.3 + seed * 0.37 ) * size * 0.009;
 		const point: [ number, number ] = [ center, y ];
-		const strokeWidth = y < size * 0.46 ? baseStemWidth : stemWidth;
+		const strokeWidth = lerp( baseStemWidth, tipStemWidth, Math.pow( amount, 0.72 ) );
 
-		if ( previous !== null ) drawStroke( data, width, size, previous, point, strokeWidth, strokeWidth * 0.8, stemColor, stemColor );
+		if ( previous !== null ) drawStroke( data, width, size, previous, point, previousWidth, strokeWidth, stemColor, stemColor );
 
 		previous = point;
+		previousWidth = strokeWidth;
 
 	}
 
@@ -225,7 +244,7 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 	const pixelScale = size / 256;
 	const nodeSpacing = Math.max( 2.5, size / 30 );
 
-	for ( let y = size * 0.035; y <= size * 0.985; y += nodeSpacing ) {
+	for ( let y = size * 0.035; y <= size * 0.97; y += nodeSpacing ) {
 
 		const v = y / size;
 		const curve = Math.sin( v * Math.PI * 1.3 + seed * 0.37 ) * size * 0.009;
@@ -238,8 +257,9 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 	for ( const [ stemX, y ] of stemPoints ) {
 
 		const v = y / size;
+		const tipProgress = 1 - v;
 		const widthProfile = getSprigWidthProfile( v );
-		const envelope = size * 0.31 * widthProfile;
+		const envelope = size * 0.375 * widthProfile;
 
 		for ( const side of [ - 1, 1 ] ) {
 
@@ -249,22 +269,43 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 
 				const baseY = y + random.range( - 1.2, 1.2 ) * pixelScale;
 				const rootX = stemX + random.range( - 0.8, 0.8 ) * pixelScale;
-				const length = envelope * random.range( needle === 0 ? 0.68 : 0.48, needle === 0 ? 1.02 : 0.82 );
-				const rise = length * random.range( 0.24, 0.42 );
-				const curveX = side * length * random.range( 0.42, 0.61 );
-				const curveY = rise * random.range( 0.38, 0.54 );
-				const endX = rootX + side * length;
-				const endY = Math.min( size - 1, baseY + rise );
-				const midX = rootX + curveX;
-				const midY = baseY + curveY;
+				const tipTaper = v >= 0.4 ? 1 : 1 - 0.45 * Math.pow( clamp( ( 0.4 - v ) / 0.4, 0, 1 ), 0.8 );
+				const length = envelope * tipTaper * random.range( needle === 0 ? 0.68 : 0.48, needle === 0 ? 1.02 : 0.82 );
+				const lean = Math.pow( tipProgress, 1.35 );
+				const horizontalReach = length * lerp( 1, 0.38, lean );
+				const riseRatio = lerp( 0.2, 1.9, Math.pow( tipProgress, 1.45 ) ) * random.range( 0.92, 1.08 );
+				const rise = length * riseRatio;
+				const endX = rootX + side * horizontalReach;
+				const endY = Math.max( 0, baseY - rise );
+				const controlX = rootX + side * horizontalReach * lerp( 0.86, 0.7, tipProgress ) * random.range( 0.96, 1.04 );
+				const controlY = baseY - rise * lerp( 0.34, 0.46, tipProgress ) * random.range( 0.96, 1.04 );
 				const variation = random.range( 0.82, 1.18 );
 				const dark = getNeedleColor( random, false, variation );
 				const bright = getNeedleColor( random, true, variation );
-				const stemWidth = random.range( 8, 11 ) * pixelScale;
+				const stemWidth = random.range( 7.7, 10.7 ) * pixelScale;
 				const tipWidth = random.range( 2.4, 3.4 ) * pixelScale;
+				const curveSegments = 8;
+				let previous: [ number, number ] = [ rootX, baseY ];
+				let previousWidth = stemWidth;
 
-				drawStroke( data, width, size, [ rootX, baseY ], [ midX, midY ], stemWidth, ( stemWidth + tipWidth ) * 0.52, dark, bright );
-				drawStroke( data, width, size, [ midX, midY ], [ endX, endY ], ( stemWidth + tipWidth ) * 0.52, tipWidth, bright, bright );
+				for ( let segment = 1; segment <= curveSegments; segment ++ ) {
+
+					const amount = segment / curveSegments;
+					const inverse = 1 - amount;
+					const point: [ number, number ] = [
+						inverse * inverse * rootX + 2 * inverse * amount * controlX + amount * amount * endX,
+						inverse * inverse * baseY + 2 * inverse * amount * controlY + amount * amount * endY,
+					];
+					const lineWidth = lerp( stemWidth, tipWidth, amount );
+					const startColor = mixRgb( dark, bright, ( segment - 1 ) / ( curveSegments * 0.5 ) );
+					const endColor = mixRgb( dark, bright, amount / 0.5 );
+
+					drawStroke( data, width, size, previous, point, previousWidth, lineWidth, startColor, endColor );
+
+					previous = point;
+					previousWidth = lineWidth;
+
+				}
 
 			}
 

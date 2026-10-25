@@ -7,6 +7,54 @@ function alphaAt( texture: { width: number; data: Uint8Array }, x: number, y: nu
 
 }
 
+function isBrownStemPixel( texture: { width: number; data: Uint8Array }, x: number, y: number ): boolean {
+
+	const offset = ( y * texture.width + x ) * 4;
+
+	return texture.data[ offset + 3 ]! >= 128 && texture.data[ offset ]! > texture.data[ offset + 1 ]! + 2 && texture.data[ offset + 1 ]! > texture.data[ offset + 2 ]! * 1.5;
+
+}
+
+function brownStemWidthAt( texture: { width: number; height: number; data: Uint8Array }, seed: number, y: number ): number {
+
+	const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+	let width = 0;
+
+	for ( let x = center - 6; x <= center + 6; x ++ ) {
+
+		if ( isBrownStemPixel( texture, x, y ) ) width ++;
+
+	}
+
+	return width;
+
+}
+
+function meanNeedleDirectionAngle( texture: { width: number; height: number; data: Uint8Array }, startY: number, endY: number ): number {
+
+	const tileWidth = texture.width / 3;
+	const center = tileWidth * 0.5;
+	let horizontalGradientEnergy = 0;
+	let verticalGradientEnergy = 0;
+
+	for ( let y = startY; y < endY; y ++ ) {
+		for ( let x = 1; x < tileWidth - 1; x ++ ) {
+
+			if ( Math.abs( x - center ) < 7 ) continue;
+
+			const horizontalGradient = alphaAt( texture, x + 1, y ) - alphaAt( texture, x - 1, y );
+			const verticalGradient = alphaAt( texture, x, y + 1 ) - alphaAt( texture, x, y - 1 );
+
+			horizontalGradientEnergy += horizontalGradient * horizontalGradient;
+			verticalGradientEnergy += verticalGradient * verticalGradient;
+
+		}
+	}
+
+	return Math.atan2( Math.sqrt( verticalGradientEnergy ), Math.sqrt( horizontalGradientEnergy ) ) * 180 / Math.PI;
+
+}
+
 function alphaCoverage( texture: { width: number; height: number; data: Uint8Array }, xOffset: number, width: number ): number {
 
 	let covered = 0;
@@ -224,13 +272,13 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'stores the sprig base at v=0 and narrows toward its tip', () => {
+	it( 'stores the sprig base at v=1 and narrows toward its tip', () => {
 
 		const texture = createFirSprigTexture( 7 );
 		const tileWidth = texture.width / 3;
-		const baseRow = rowWidth( texture, 0, 12, tileWidth );
+		const baseRow = rowWidth( texture, 0, texture.height - 13, tileWidth );
 		const middleRow = rowWidth( texture, 0, 128, tileWidth );
-		const tipRow = rowWidth( texture, 0, 252, tileWidth );
+		const tipRow = rowWidth( texture, 0, 3, tileWidth );
 		expect( baseRow ).toBeGreaterThan( 0 );
 		expect( middleRow ).toBeGreaterThan( baseRow );
 		expect( tipRow ).toBeLessThan( middleRow );
@@ -242,7 +290,7 @@ describe( 'fir sprig texture', () => {
 		const seed = 1;
 		const texture = createFirSprigTexture( seed );
 
-		for ( const y of [ 136, 152, 168, 184, 200, 216, 232, 248 ] ) {
+		for ( const y of [ 136, 152, 168, 184, 200 ] ) {
 
 			const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
 			const brownPixels: number[] = [];
@@ -251,9 +299,7 @@ describe( 'fir sprig texture', () => {
 
 				const offset = ( y * texture.width + x ) * 4;
 
-				if ( texture.data[ offset + 3 ]! < 128 ) continue;
-				if ( texture.data[ offset ]! <= texture.data[ offset + 1 ]! + 2 ) continue;
-				if ( texture.data[ offset + 1 ]! <= texture.data[ offset + 2 ]! * 1.5 ) continue;
+				if ( ! isBrownStemPixel( texture, x, y ) ) continue;
 
 				brownPixels.push( x );
 
@@ -266,17 +312,66 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'keeps the stem opaque at the v=0 base edge', () => {
+	it( 'keeps the stem opaque at the v=1 base edge', () => {
 
 		const seed = 1;
 		const texture = createFirSprigTexture( seed );
 
-		for ( let y = 0; y < 5; y ++ ) {
+		for ( let y = texture.height - 5; y < texture.height; y ++ ) {
 
 			const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
 			expect( alphaAt( texture, center, y ) ).toBeGreaterThanOrEqual( 128 );
 
 		}
+
+	} );
+
+	it( 'tapers the brown stem away from its thick base', () => {
+
+		const seed = 1;
+		const texture = createFirSprigTexture( seed );
+		const baseWidth = brownStemWidthAt( texture, seed, texture.height - 8 );
+		const upperWidth = brownStemWidthAt( texture, seed, 128 );
+
+		expect( baseWidth ).toBeGreaterThan( upperWidth );
+		expect( baseWidth ).toBeGreaterThanOrEqual( 2 );
+
+	} );
+
+	it( 'ends the stem before the needle-only tip', () => {
+
+		const seed = 1;
+		const texture = createFirSprigTexture( seed );
+		const tipEnd = Math.ceil( texture.height * 0.18 );
+		let brownTipPixels = 0;
+		let needleTipPixels = 0;
+
+		for ( let y = 0; y < tipEnd; y ++ ) {
+
+			const center = Math.round( texture.height * 0.5 + Math.sin( y / texture.height * Math.PI * 1.3 + seed * 0.37 ) * texture.height * 0.009 );
+
+			for ( let x = center - 8; x <= center + 8; x ++ ) {
+
+				if ( isBrownStemPixel( texture, x, y ) ) brownTipPixels ++;
+				if ( alphaAt( texture, x, y ) >= 128 && ! isBrownStemPixel( texture, x, y ) ) needleTipPixels ++;
+
+			}
+
+		}
+
+		expect( brownTipPixels ).toBe( 0 );
+		expect( needleTipPixels ).toBeGreaterThan( 0 );
+		expect( rowWidth( texture, 0, tipEnd - 4, texture.width / 3 ) ).toBeGreaterThan( 0 );
+
+	} );
+
+	it( 'turns needle directions toward the tip from base to tip', () => {
+
+		const texture = createFirSprigTexture( 1 );
+		const baseAngle = meanNeedleDirectionAngle( texture, 176, 222 );
+		const tipAngle = meanNeedleDirectionAngle( texture, 34, 80 );
+
+		expect( tipAngle ).toBeLessThan( baseAngle - 8 );
 
 	} );
 
