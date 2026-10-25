@@ -9,6 +9,8 @@ import type { Color3, ColliderData, MeshData, PartDef, TextureData, Vec3, Vegeta
 export interface TreeOptions {
 	seed?: number;
 	height?: number;
+	/** y = 0 より下へ伸ばす幹の長さ（メートル）。未指定時は樹高に比例します。 */
+	rootDepth?: number;
 	crownSize?: number;
 	branchCount?: number;
 	leafColor?: number;
@@ -31,6 +33,7 @@ interface Tier {
 
 interface TreeLayout {
 	height: number;
+	rootDepth: number;
 	trunkSpine: Vec3[];
 	trunkRadii: number[];
 	tiers: Tier[];
@@ -260,7 +263,7 @@ function makeTrunkSpine( height: number, lean: Vec3, segments: number ): { spine
 
 }
 
-function createTreeLayout( seed: number, height: number, crownSize: number, branchCount: number ): TreeLayout {
+function createTreeLayout( seed: number, height: number, rootDepth: number, crownSize: number, branchCount: number ): TreeLayout {
 
 	const random = createRandom( seed );
 	const trunkLeanAngle = random.range( 0, Math.PI * 2 );
@@ -322,6 +325,7 @@ function createTreeLayout( seed: number, height: number, crownSize: number, bran
 
 	return {
 		height,
+		rootDepth,
 		trunkSpine: trunk.spine,
 		trunkRadii: trunk.radii,
 		tiers,
@@ -556,11 +560,31 @@ function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNor
 
 }
 
-function addPointedTrunk( builder: MeshBuilder, spine: Vec3[], radii: number[], sides: number ): number {
+function addRootRing( spine: Vec3[], radii: number[], rootDepth: number ): { spine: Vec3[]; radii: number[] } {
+
+	if ( rootDepth === 0 ) return { spine, radii };
+
+	const ground = spine[ 0 ]!;
+
+	return {
+		spine: [ [ ground[ 0 ], - rootDepth, ground[ 2 ] ], ...spine ],
+		radii: [ radii[ 0 ]!, ...radii ],
+	};
+
+}
+
+function addPointedTrunk( builder: MeshBuilder, spine: Vec3[], radii: number[], sides: number, rootDepth: number ): number {
 
 	const pointedRadii = [ ...radii ];
 	pointedRadii[ pointedRadii.length - 1 ] = 0;
-	addTube( builder, spine, pointedRadii, sides, { color: barkColor, wind: ( t ) => t * 0.3, capEnd: false } );
+	addTube( builder, spine, pointedRadii, sides, {
+		color: barkColor,
+		wind: ( t ) => {
+			const progress = rootDepth === 0 ? t : clamp( ( t * ( spine.length - 1 ) - 1 ) / ( spine.length - 2 ), 0, 1 );
+			return progress * 0.3;
+		},
+		capEnd: false,
+	} );
 
 	return ( spine.length - 1 ) * sides + 1;
 
@@ -570,10 +594,11 @@ function buildLod0( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
 	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 7, 10, 12 ] );
+	const extendedTrunk = addRootRing( trunk.spine, trunk.radii, layout.rootDepth );
 	builder.beginGroup( 0 );
-	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 7 );
+	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 7, layout.rootDepth );
 	addFronds( builder, layout, [ 0, 0.4, 1 ] );
-	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 7, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
+	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 7, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
@@ -585,10 +610,11 @@ function buildLod1( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
 	const trunk = selectTrunkRings( layout, [ 0, 1, 3, 7, 10, 12 ] );
+	const extendedTrunk = addRootRing( trunk.spine, trunk.radii, layout.rootDepth );
 	builder.beginGroup( 0 );
-	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 6 );
+	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 6, layout.rootDepth );
 	addFronds( builder, layout, [ 0, 1 ], [ 0, 0.5, 1 ], false, true );
-	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 6, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
+	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 6, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
@@ -600,11 +626,12 @@ function buildLod2( layout: TreeLayout ): MeshData {
 
 	const builder = new MeshBuilder();
 	const trunk = selectTrunkRings( layout, [ 0, 2, 6, 10, 12 ] );
+	const extendedTrunk = addRootRing( trunk.spine, trunk.radii, layout.rootDepth );
 
 	builder.beginGroup( 0 );
-	const trunkVertexCount = addPointedTrunk( builder, trunk.spine, trunk.radii, 4 );
+	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 4, layout.rootDepth );
 	addFronds( builder, layout, [ 0, 1 ], [ 0, 1 ], true, true );
-	const mesh = closeTrunkTip( builder.build(), trunk.spine.length, 4, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
+	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 4, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
 	scaleTrunkV( mesh, trunkVertexCount );
 
@@ -709,8 +736,10 @@ function buildLod3( height: number, radius: number, partIndex: number ): MeshDat
 function buildCollider( layout: TreeLayout ): ColliderData {
 
 	const fractions = [ 0, 0.425, 0.85 ];
-	const spine = fractions.map( ( fraction ) => getTrunkPoint( layout.trunkSpine, layout.height, fraction ) );
+	const trunk = fractions.map( ( fraction ) => getTrunkPoint( layout.trunkSpine, layout.height, fraction ) );
+	const spine = layout.rootDepth === 0 ? trunk : [ [ trunk[ 0 ]![ 0 ], - layout.rootDepth, trunk[ 0 ]![ 2 ] ] as Vec3, ...trunk ];
 	const radii = fractions.map( ( fraction ) => getTrunkRadius( fraction, layout.height ) );
+	if ( layout.rootDepth > 0 ) radii.unshift( radii[ 0 ]! );
 	const builder = new MeshBuilder();
 
 	builder.beginGroup( 0 );
@@ -741,11 +770,16 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	const seed = options.seed ?? 1;
 	const leafColor = options.leafColor ?? DEFAULT_LEAF_COLOR;
 	const height = options.height ?? 7.5;
+	const rootDepthInput = options.rootDepth ?? 0.3 * ( height / referenceTreeHeight );
 	const crownSizeInput = options.crownSize ?? 1;
 	const branchCount = options.branchCount ?? 10;
 
 	if ( ! Number.isFinite( height ) || height <= 0 ) {
 		throw new RangeError( 'Tree height must be a positive finite number' );
+	}
+
+	if ( ! Number.isFinite( rootDepthInput ) ) {
+		throw new RangeError( 'Tree rootDepth must be finite' );
 	}
 
 	if ( ! Number.isFinite( crownSizeInput ) ) {
@@ -757,7 +791,8 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	}
 
 	const crownSize = clamp( crownSizeInput, 0.5, 1.5 );
-	const layout = createTreeLayout( seed, height, crownSize, branchCount );
+	const rootDepth = Math.max( 0, rootDepthInput );
+	const layout = createTreeLayout( seed, height, rootDepth, crownSize, branchCount );
 	const lod0 = buildLod0( layout );
 	const lod1 = buildLod1( layout );
 	const lod2 = buildLod2( layout );

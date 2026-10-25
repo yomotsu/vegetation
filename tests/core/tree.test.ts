@@ -47,6 +47,21 @@ function minimumY( positions: Float32Array ): number {
 
 }
 
+function minimumYInGroup( mesh: MeshData, group: { start: number; count: number } ): number {
+
+	let minimum = Infinity;
+
+	for ( let i = group.start; i < group.start + group.count; i ++ ) {
+
+		const vertex = mesh.indices[ i ]!;
+		minimum = Math.min( minimum, mesh.positions[ vertex * 3 + 1 ]! );
+
+	}
+
+	return minimum;
+
+}
+
 function maximumY( positions: Float32Array ): number {
 
 	let maximum = - Infinity;
@@ -334,7 +349,9 @@ function frondCount( mesh: MeshData, trianglesPerFrond: number ): number {
 
 function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, ringSegments: number, y: number ): { center: [ number, number ]; radius: number } {
 
-	const ringCount = ringSegments;
+	const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+	const rootOffset = minimumYInGroup( mesh, bark ) < - 0.01 ? 1 : 0;
+	const ringCount = ringSegments + rootOffset;
 	const rings: { center: [ number, number ]; y: number; radius: number }[] = [];
 
 	for ( let ring = 0; ring <= ringCount; ring ++ ) {
@@ -429,7 +446,7 @@ describe( 'conifer tree data', () => {
 		const tenWhorls = generateTreeData( { seed: 1, branchCount: 10 } );
 
 		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBe( triangleCount( tenWhorls.lods[ 0 ]! ) );
-		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBe( 77 + 51 * 8 );
+		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBe( 91 + 51 * 8 );
 
 	} );
 
@@ -481,7 +498,7 @@ describe( 'conifer tree data', () => {
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 400 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBe( 77 + 51 * 8 );
+		expect( counts[ 0 ] ).toBe( 91 + 51 * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.55 );
@@ -748,22 +765,82 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps every LOD above the ground and below its configured height', () => {
+	it( 'extends only LOD0 through LOD2 trunks below ground and keeps bounds height above ground', () => {
 
-		const data = generateTreeData( { seed: 6 } );
+		const data = generateTreeData( { seed: 6, height: 7.5 } );
+		const rootDepth = 0.3 * ( data.bounds.height / 7.55 );
 
-		for ( const lod of data.lods ) {
+		for ( let index = 0; index < 3; index ++ ) {
+
+			const lod = data.lods[ index ]!;
+			const trunk = lod.groups.find( ( group ) => group.partIndex === 0 )!;
+			const leaves = lod.groups.find( ( group ) => group.partIndex === 1 )!;
+
+			expect( Math.abs( minimumYInGroup( lod, trunk ) + rootDepth ) ).toBeLessThanOrEqual( 1e-3 );
+			expect( minimumYInGroup( lod, leaves ) ).toBeGreaterThanOrEqual( - 0.05 );
+			expect( maximumY( lod.positions ) ).toBeLessThanOrEqual( data.bounds.height + 1e-5 );
+
+		}
+
+		expect( data.bounds.height ).toBe( 7.5 );
+		const taller = generateTreeData( { seed: 6, height: 15 } );
+		const tallerTrunk = taller.lods[ 0 ]!.groups.find( ( group ) => group.partIndex === 0 )!;
+		expect( Math.abs( minimumYInGroup( taller.lods[ 0 ]!, tallerTrunk ) + 0.3 * ( taller.bounds.height / 7.55 ) ) ).toBeLessThanOrEqual( 1e-3 );
+
+		for ( const lod of data.lods.slice( 3 ) ) {
 
 			expect( minimumY( lod.positions ) ).toBeGreaterThanOrEqual( - 0.05 );
-			expect( maximumY( lod.positions ) ).toBeLessThanOrEqual( data.bounds.height + 1e-5 );
 
 		}
 
 	} );
 
+	it( 'allows zero or negative root depth without extending the trunk', () => {
+
+		const zeroDepth = generateTreeData( { seed: 6, rootDepth: 0 } );
+		const negativeDepth = generateTreeData( { seed: 6, rootDepth: - 0.25 } );
+
+		expect( negativeDepth.lods[ 0 ]!.positions ).toEqual( zeroDepth.lods[ 0 ]!.positions );
+
+		for ( const data of [ zeroDepth, negativeDepth ] ) {
+
+			for ( let index = 0; index < 3; index ++ ) {
+
+				const lod = data.lods[ index ]!;
+				const trunk = lod.groups.find( ( group ) => group.partIndex === 0 )!;
+
+				expect( Math.abs( minimumYInGroup( lod, trunk ) ) ).toBeLessThanOrEqual( 1e-3 );
+
+			}
+
+			expect( Math.abs( minimumY( data.collider!.positions ) ) ).toBeLessThanOrEqual( 1e-3 );
+
+		}
+
+	} );
+
+	it( 'uses an explicit root depth for the trunk and collider', () => {
+
+		const rootDepth = 0.6;
+		const data = generateTreeData( { seed: 6, rootDepth } );
+
+		for ( let index = 0; index < 3; index ++ ) {
+
+			const lod = data.lods[ index ]!;
+			const trunk = lod.groups.find( ( group ) => group.partIndex === 0 )!;
+
+			expect( Math.abs( minimumYInGroup( lod, trunk ) + rootDepth ) ).toBeLessThanOrEqual( 1e-3 );
+
+		}
+
+		expect( Math.abs( minimumY( data.collider!.positions ) + rootDepth ) ).toBeLessThanOrEqual( 1e-3 );
+
+	} );
+
 	it( 'uses upward stylized leaf normals and separates trunk and frond wind weights', () => {
 
-		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
+		const data = generateTreeData( { seed: 1 } );
+		const mesh = data.lods[ 0 ]!;
 		const leaves = leafGroup( mesh );
 		const winds: number[] = [];
 
@@ -787,6 +864,23 @@ describe( 'conifer tree data', () => {
 
 		expect( Math.min( ...barkWinds ) ).toBeGreaterThanOrEqual( 0 );
 		expect( Math.max( ...barkWinds ) ).toBeLessThanOrEqual( 0.3001 );
+
+		for ( let lod = 0; lod < 3; lod ++ ) {
+
+			const trunkMesh = data.lods[ lod ]!;
+			const trunk = trunkMesh.groups.find( ( group ) => group.partIndex === 0 )!;
+
+			for ( let i = trunk.start; i < trunk.start + trunk.count; i ++ ) {
+
+				const vertex = trunkMesh.indices[ i ]!;
+
+				if ( trunkMesh.positions[ vertex * 3 + 1 ]! < 0.01 ) {
+					expect( trunkMesh.windWeight[ vertex ] ).toBe( 0 );
+				}
+
+			}
+
+		}
 
 	} );
 
@@ -990,9 +1084,9 @@ describe( 'conifer tree data', () => {
 		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 51 );
 		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 51 );
 		expect( frondCount( data.lods[ 2 ]!, 2 ) ).toBe( 51 );
-		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 485 );
-		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 258 );
-		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 130 );
+		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 499 );
+		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 270 );
+		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 138 );
 
 		for ( let frond = 0; frond < 51; frond ++ ) {
 
@@ -1088,9 +1182,10 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'closes each trunk apex with a pointed tip and leaves only the base ring open', () => {
+	it( 'closes each trunk apex and leaves the underground root ring open', () => {
 
 		const data = generateTreeData( { seed: 1 } );
+		const rootDepth = 0.3 * ( data.bounds.height / 7.55 );
 		const sideCounts = [ 7, 6, 4 ];
 
 		for ( let lod = 0; lod < sideCounts.length; lod ++ ) {
@@ -1103,8 +1198,8 @@ describe( 'conifer tree data', () => {
 
 			for ( const [ first, second ] of boundary ) {
 
-				expect( Math.abs( mesh.positions[ first * 3 + 1 ]! ) ).toBeLessThan( 0.02 );
-				expect( Math.abs( mesh.positions[ second * 3 + 1 ]! ) ).toBeLessThan( 0.02 );
+				expect( Math.abs( mesh.positions[ first * 3 + 1 ]! + rootDepth ) ).toBeLessThan( 0.02 );
+				expect( Math.abs( mesh.positions[ second * 3 + 1 ]! + rootDepth ) ).toBeLessThan( 0.02 );
 
 			}
 
@@ -1153,6 +1248,7 @@ describe( 'conifer tree data', () => {
 		expect( maxU ).toBeGreaterThanOrEqual( 0.8 );
 		expect( minV ).toBe( 0 );
 		expect( maxV ).toBeGreaterThanOrEqual( 2 );
+		expect( mesh.uvs[ 7 * 2 + 1 ] ).toBeGreaterThan( mesh.uvs[ 1 ]! );
 
 	} );
 
@@ -1175,8 +1271,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( baseRadius ).toBeCloseTo( 0.293, 2 );
-		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 77 + 26 * 8 );
-		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 77 + 41 * 8 );
+		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 91 + 26 * 8 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 91 + 41 * 8 );
 
 	} );
 
@@ -1354,6 +1450,7 @@ describe( 'conifer tree data', () => {
 		const bark = data.lods[ 0 ]!.groups.find( ( group ) => group.partIndex === 0 )!;
 		let baseRadius = 0;
 		let colliderMaximumY = - Infinity;
+		let colliderMinimumY = Infinity;
 
 		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
 
@@ -1373,11 +1470,13 @@ describe( 'conifer tree data', () => {
 			const z = collider.positions[ i + 2 ]!;
 
 			colliderMaximumY = Math.max( colliderMaximumY, y );
+			colliderMinimumY = Math.min( colliderMinimumY, y );
 			expect( Math.hypot( x, z ) ).toBeLessThanOrEqual( baseRadius * 1.5 );
 
 		}
 
 		expect( triangleCount( { indices: collider.indices } ) ).toBeLessThanOrEqual( 48 );
+		expect( Math.abs( colliderMinimumY + 0.3 * ( data.bounds.height / 7.55 ) ) ).toBeLessThanOrEqual( 1e-3 );
 		expect( colliderMaximumY ).toBeGreaterThanOrEqual( data.bounds.height * 0.84 );
 		expect( colliderMaximumY ).toBeLessThanOrEqual( data.bounds.height * 0.86 );
 
@@ -1403,6 +1502,7 @@ describe( 'conifer tree data', () => {
 	it( 'rejects invalid tree dimensions and tier counts', () => {
 
 		expect( () => generateTreeData( { height: 0 } ) ).toThrow( RangeError );
+		expect( () => generateTreeData( { rootDepth: Infinity } ) ).toThrow( RangeError );
 		expect( () => generateTreeData( { crownSize: Infinity } ) ).toThrow( RangeError );
 		expect( () => generateTreeData( { branchCount: 0 } ) ).toThrow( RangeError );
 

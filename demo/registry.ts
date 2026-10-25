@@ -23,6 +23,7 @@ export const kinds: VegetationKind[] = [
 		options: {
 			seed: 1,
 			height: 7.5,
+			rootDepth: 0.3 * ( 7.5 / 7.55 ),
 			crownSize: 1,
 			branchCount: 10,
 		},

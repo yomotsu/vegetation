@@ -62,5 +62,5 @@ export interface VegetationData {
 	collider: ColliderData | null;
 	textures: Record<string, TextureData>; // impostor 以外の生成テクスチャ
 	textureGenerators?: Record<string, TextureGeneratorDef>;
-	bounds: { radius: number; height: number }; // XZ 半径、高さ
+	bounds: { radius: number; height: number }; // XZ 半径、地上高（地下部分を含まない）
 }
