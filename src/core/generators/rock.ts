@@ -5,6 +5,8 @@ import { addRockShell } from '../primitives';
 import { createRockTextures } from '../rockTexture';
 import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
+const ROCK_SEED_SALT = 62;
+
 export interface RockOptions {
 	seed?: number;
 	size?: number;
@@ -566,11 +568,12 @@ function buildShell( frequency: number, radiusAt: ( direction: Vec3 ) => number,
 export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	const seed = options.seed ?? 1;
+	const internalSeed = seed + ROCK_SEED_SALT;
 	const seedBand = Math.floor( Math.abs( seed ) );
 	const size = options.size ?? ( seedBand % 2 === 0 ? 12.3 : 6.4 );
 	const roughnessInput = options.roughness ?? 1.2;
 	const flatnessInput = options.flatness ?? 0.04;
-	const burial = options.burial ?? getDefaultBurial( seed );
+	const burial = options.burial ?? getDefaultBurial( internalSeed );
 	const rockColor = options.rockColor ?? 0xffffff;
 
 	if ( ! Number.isFinite( seed ) ) {
@@ -600,10 +603,10 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const roughness = clamp( roughnessInput, 0, 1.5 );
 	const flatness = clamp( flatnessInput, 0, 1 );
 	const radius = size * 0.5;
-	const verticalScale = getVerticalScale( seed, flatness );
-	const noise = createNoise3D( seed + 71 );
-	const noiseOffset = [ ( seed * 17.13 ) % 71, ( seed * 31.7 ) % 89, ( seed * 53.9 ) % 97 ];
-	const cuttingPlanes = createCuttingPlanes( seed, radius );
+	const verticalScale = getVerticalScale( internalSeed, flatness );
+	const noise = createNoise3D( internalSeed + 71 );
+	const noiseOffset = [ ( internalSeed * 17.13 ) % 71, ( internalSeed * 31.7 ) % 89, ( internalSeed * 53.9 ) % 97 ];
+	const cuttingPlanes = createCuttingPlanes( internalSeed, radius );
 	const radiusAt = ( direction: Vec3 ): number => {
 
 		const coarse = noise( direction[ 0 ] * 1.05 + noiseOffset[ 0 ]!, direction[ 1 ] * 1.05 + noiseOffset[ 1 ]!, direction[ 2 ] * 1.05 + noiseOffset[ 2 ]! );
@@ -644,7 +647,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	liftMesh( lod0, groundOffset );
 	liftMesh( lod1, groundOffset );
 	liftMesh( lod2, groundOffset );
-	const targetHeight = getHorizontalSpan( lod0 ) * getTargetAspect( seed, flatness );
+	const targetHeight = getHorizontalSpan( lod0 ) * getTargetAspect( internalSeed, flatness );
 	const heightScale = targetHeight / getBounds( lod0 ).height;
 
 	scaleHeight( lod0, heightScale );

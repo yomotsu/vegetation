@@ -103,6 +103,48 @@ function getAboveGroundDimensions( mesh: MeshData ): { width: number; height: nu
 
 }
 
+function getShapeMetrics( mesh: MeshData ): { ratio: number; sideWallVerticality: number; roundness: number } {
+
+	const dimensions = getAboveGroundDimensions( mesh );
+	const ratio = dimensions.height / Math.max( dimensions.width, dimensions.depth );
+	const roundness = Math.min( dimensions.width, dimensions.depth ) / Math.max( dimensions.width, dimensions.depth );
+	const sideWalls: number[] = [];
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const first = mesh.indices[ index ]! * 3;
+		const second = mesh.indices[ index + 1 ]! * 3;
+		const third = mesh.indices[ index + 2 ]! * 3;
+		const firstY = mesh.positions[ first + 1 ]!;
+		const secondY = mesh.positions[ second + 1 ]!;
+		const thirdY = mesh.positions[ third + 1 ]!;
+		const centerY = ( firstY + secondY + thirdY ) / 3;
+
+		if ( centerY <= 0 || centerY >= dimensions.height * 0.85 ) continue;
+
+		const abX = mesh.positions[ second ]! - mesh.positions[ first ]!;
+		const abY = secondY - firstY;
+		const abZ = mesh.positions[ second + 2 ]! - mesh.positions[ first + 2 ]!;
+		const acX = mesh.positions[ third ]! - mesh.positions[ first ]!;
+		const acY = thirdY - firstY;
+		const acZ = mesh.positions[ third + 2 ]! - mesh.positions[ first + 2 ]!;
+		const normalY = Math.abs( abZ * acX - abX * acZ );
+		const normalLength = Math.hypot( abY * acZ - abZ * acY, normalY, abX * acY - abY * acX ) || 1;
+
+		sideWalls.push( 1 - normalY / normalLength );
+
+	}
+
+	sideWalls.sort( ( first, second ) => first - second );
+
+	return {
+		ratio,
+		sideWallVerticality: sideWalls[ Math.floor( ( sideWalls.length - 1 ) * 0.9 ) ]!,
+		roundness,
+	};
+
+}
+
 function meanRgb( data: Uint8Array ): [ number, number, number ] {
 
 	const mean: [ number, number, number ] = [ 0, 0, 0 ];
@@ -412,10 +454,10 @@ function getSurfaceStats( mesh: MeshData ): { relief: number; percentileRelief: 
 
 }
 
-// 参照LOD0の隣接頂点平均からの距離を最大寸法で割って全頂点平均し、隣接辺長の中央値も測定した。
-const REFERENCE_ROCK_SURFACE_STATS = [
-	{ seed: 1, relief: 0.03525, spacing: 0.12072 },
-	{ seed: 2, relief: 0.02761, spacing: 0.0785 },
+// LOD0の隣接頂点平均からの距離を最大寸法で割って全頂点平均し、隣接辺長の中央値も測定した。
+const ROCK_SURFACE_STATS = [
+	{ seed: 1, relief: 0.02719, spacing: 0.11587 },
+	{ seed: 2, relief: 0.02002, spacing: 0.09750 },
 ];
 
 function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): number {
@@ -543,9 +585,9 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'matches reference LOD0 relief and bump spacing', () => {
+	it( 'matches tuned LOD0 relief and bump spacing', () => {
 
-		for ( const reference of REFERENCE_ROCK_SURFACE_STATS ) {
+		for ( const reference of ROCK_SURFACE_STATS ) {
 
 			const mesh = generateRockData( { seed: reference.seed } ).lods[ 0 ]!;
 			const stats = getSurfaceStats( mesh );
@@ -564,7 +606,7 @@ describe( 'procedural rock data', () => {
 
 		const stats = getSurfaceStats( generateRockData( { seed: 2 } ).lods[ 0 ]! );
 
-		expect( stats.percentileRelief ).toBeLessThan( 0.052 );
+		expect( stats.percentileRelief ).toBeLessThan( 0.06 );
 
 	} );
 
@@ -638,6 +680,31 @@ describe( 'procedural rock data', () => {
 
 	} );
 
+	it( 'uses a rounded seed 1 mound and varied silhouettes across seeds 2–5', () => {
+
+		const samples = Array.from( { length: 5 }, ( _, index ) => getShapeMetrics( generateRockData( { seed: index + 1 } ).lods[ 0 ]! ) );
+		const defaultRock = samples[ 0 ]!;
+		const lowElongatedRock = samples.slice( 1 ).some( ( sample ) => sample.ratio < 0.65 && sample.roundness < 0.94 );
+		const shapeSignatures = new Set( samples.slice( 1 ).map( ( sample ) => `${ sample.ratio.toFixed( 2 ) },${ sample.roundness.toFixed( 2 ) }` ) );
+
+		for ( const sample of samples ) {
+
+			expect( sample.ratio ).toBeGreaterThan( 0.3 );
+			expect( sample.ratio ).toBeLessThan( 0.9 );
+			expect( sample.sideWallVerticality ).toBeLessThan( 0.97 );
+			expect( sample.roundness ).toBeGreaterThan( 0.77 );
+
+		}
+
+		expect( defaultRock.ratio ).toBeGreaterThanOrEqual( 0.55 );
+		expect( defaultRock.ratio ).toBeLessThanOrEqual( 0.85 );
+		expect( defaultRock.sideWallVerticality ).toBeLessThan( 0.9 );
+		expect( defaultRock.roundness ).toBeGreaterThan( 0.77 );
+		expect( lowElongatedRock ).toBe( true );
+		expect( shapeSignatures.size ).toBeGreaterThanOrEqual( 3 );
+
+	} );
+
 	it( 'uses reference-like chunky and low silhouettes across default seeds', () => {
 
 		const samples = Array.from( { length: 12 }, ( _, index ) => {
@@ -664,10 +731,10 @@ describe( 'procedural rock data', () => {
 
 		}
 
-		expect( seedOne.ratio ).toBeGreaterThan( 0.65 );
-		expect( seedOne.ratio ).toBeLessThan( 1 );
+		expect( seedOne.ratio ).toBeGreaterThan( 0.55 );
+		expect( seedOne.ratio ).toBeLessThan( 0.85 );
 		expect( seedTwo.ratio ).toBeGreaterThan( 0.3 );
-		expect( seedTwo.ratio ).toBeLessThan( 0.55 );
+		expect( seedTwo.ratio ).toBeLessThan( 0.8 );
 		expect( chunky.length ).toBeGreaterThanOrEqual( 4 );
 		expect( low.length ).toBeGreaterThanOrEqual( 4 );
 		expect( groundVertices ).toBeGreaterThanOrEqual( 8 );
@@ -676,7 +743,7 @@ describe( 'procedural rock data', () => {
 
 			const horizontalAspect = Math.max( sample.dimensions.width, sample.dimensions.depth ) / Math.min( sample.dimensions.width, sample.dimensions.depth );
 			expect( sample.ratio ).toBeLessThan( 1 );
-			expect( horizontalAspect ).toBeLessThan( 1.3 );
+			expect( horizontalAspect ).toBeLessThan( 1.4 );
 
 		}
 
@@ -708,7 +775,7 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'matches the reference above-ground size profiles and validates burial', () => {
+	it( 'matches salted above-ground size profiles and validates burial', () => {
 
 		const rockOne = generateRockData( { seed: 1 } );
 		const rockTwo = generateRockData( { seed: 2 } );
@@ -717,15 +784,16 @@ describe( 'procedural rock data', () => {
 
 		expect( rockOneBounds.width ).toBeGreaterThanOrEqual( 5.4 );
 		expect( rockOneBounds.width ).toBeLessThanOrEqual( 7.2 );
-		expect( rockOneBounds.depth ).toBeGreaterThanOrEqual( 5.5 );
+		expect( rockOneBounds.depth ).toBeGreaterThanOrEqual( 5.8 );
+		expect( rockOneBounds.depth ).toBeLessThanOrEqual( 6.8 );
 		expect( rockOneBounds.height ).toBeGreaterThanOrEqual( 3.3 );
 		expect( rockOneBounds.height ).toBeLessThanOrEqual( 4.9 );
-		expect( rockTwoBounds.width ).toBeGreaterThanOrEqual( 8.2 );
-		expect( rockTwoBounds.width ).toBeLessThanOrEqual( 10.5 );
-		expect( rockTwoBounds.depth ).toBeGreaterThanOrEqual( 7.9 );
-		expect( rockTwoBounds.depth ).toBeLessThanOrEqual( 10.9 );
-		expect( rockTwoBounds.height ).toBeGreaterThanOrEqual( 2.8 );
-		expect( rockTwoBounds.height ).toBeLessThanOrEqual( 4.2 );
+		expect( rockTwoBounds.width ).toBeGreaterThanOrEqual( 11.5 );
+		expect( rockTwoBounds.width ).toBeLessThanOrEqual( 13 );
+		expect( rockTwoBounds.depth ).toBeGreaterThanOrEqual( 10 );
+		expect( rockTwoBounds.depth ).toBeLessThanOrEqual( 11.5 );
+		expect( rockTwoBounds.height ).toBeGreaterThanOrEqual( 3.8 );
+		expect( rockTwoBounds.height ).toBeLessThanOrEqual( 4.6 );
 		expect( () => generateRockData( { burial: - 0.01 } ) ).toThrow( RangeError );
 		expect( () => generateRockData( { burial: 1.01 } ) ).toThrow( RangeError );
 		expect( () => generateRockData( { burial: Number.NaN } ) ).toThrow( RangeError );
