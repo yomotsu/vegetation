@@ -5,6 +5,7 @@ import { createRockTextures } from '../../src/core/rockTexture';
 import { sampleOutlineRadius } from '../helpers/meshOutline';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
+import { topCardCoverageIou } from '../helpers/topCardCoverage';
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -630,8 +631,8 @@ describe( 'procedural rock data', () => {
 		expect( Object.keys( data.textures ) ).toEqual( [ 'albedo', 'normal' ] );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeGreaterThanOrEqual( 12 );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeLessThanOrEqual( 16 );
-		expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 4 );
-		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 2 );
+		expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
+		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 4 );
 		expect( data.lods[ 4 ]!.groups[ 0 ]!.partIndex ).toBe( 1 );
 		expect( boundaryEdgeCount( data.lods[ 3 ]!.positions, data.lods[ 3 ]!.indices ) ).toBe( 8 );
 		for ( const mesh of data.lods.slice( 0, 3 ) ) {
@@ -650,6 +651,21 @@ describe( 'procedural rock data', () => {
 
 		}
 		for ( const mesh of data.lods ) validateMeshData( mesh );
+
+	} );
+
+	it( 'matches the top-down LOD4 coverage to LOD0', () => {
+
+		for ( const seed of [ 1, 4, 7 ] ) {
+
+			const data = generateRockData( { seed } );
+
+			expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 4 );
+			expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
+			expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
+			expect( topCardCoverageIou( data ) ).toBeGreaterThanOrEqual( 0.6 );
+
+		}
 
 	} );
 

@@ -1,8 +1,19 @@
 import { linearToSrgbByte } from './color';
 import { MeshBuilder } from './meshBuilder';
-import type { Color3, MeshData, PartDef, TextureData, VegetationData } from './types';
+import type { Color3, ImpostorView, MeshData, PartDef, TextureData, VegetationData } from './types';
 
 export const LOD3_IMPOSTOR_YAW_ANGLES = [ 0, Math.PI / 6, Math.PI / 3, Math.PI / 2, Math.PI * 2 / 3, Math.PI * 5 / 6 ] as const;
+
+export function yawImpostorView( yaw: number ): ImpostorView {
+
+	return { direction: [ Math.sin( yaw ), 0, Math.cos( yaw ) ], up: [ 0, 1, 0 ] };
+
+}
+
+export const LOD4_IMPOSTOR_VIEWS = [
+	yawImpostorView( 0 ),
+	{ direction: [ 0, 1, 0 ], up: [ 0, 0, - 1 ] },
+] as const satisfies readonly ImpostorView[];
 
 const linearSrgb = new Float32Array( 256 );
 
@@ -19,7 +30,7 @@ export function impostorPart(): PartDef {
 		name: 'impostor',
 		defaultColor: 0xffffff,
 		texture: 'impostor',
-		impostorYawAngles: [ 0 ],
+		impostorViews: LOD4_IMPOSTOR_VIEWS,
 		alphaTest: 0.5,
 		doubleSided: true,
 		flatShading: false,
@@ -41,23 +52,70 @@ export function impostorLod3Part(): PartDef {
 
 }
 
-export function buildBillboard( bounds: { radius: number; height: number }, impostorPartIndex: number ): MeshData {
+export function impostorViewsForPart( part: PartDef ): readonly ImpostorView[] | undefined {
+
+	if ( part.impostorViews !== undefined ) {
+
+		return part.impostorViews;
+
+	}
+
+	return part.impostorYawAngles?.map( yawImpostorView );
+
+}
+
+function getFootprint( mesh: MeshData | undefined, fallbackRadius: number ): { minX: number; maxX: number; minZ: number; maxZ: number } {
+
+	if ( mesh === undefined || mesh.positions.length === 0 ) {
+
+		return { minX: - fallbackRadius, maxX: fallbackRadius, minZ: - fallbackRadius, maxZ: fallbackRadius };
+
+	}
+
+	let minX = Infinity;
+	let maxX = - Infinity;
+	let minZ = Infinity;
+	let maxZ = - Infinity;
+
+	for ( let index = 0; index < mesh.positions.length; index += 3 ) {
+
+		minX = Math.min( minX, mesh.positions[ index ]! );
+		maxX = Math.max( maxX, mesh.positions[ index ]! );
+		minZ = Math.min( minZ, mesh.positions[ index + 2 ]! );
+		maxZ = Math.max( maxZ, mesh.positions[ index + 2 ]! );
+
+	}
+
+	return { minX, maxX, minZ, maxZ };
+
+}
+
+export function buildBillboard( bounds: { radius: number; height: number }, impostorPartIndex: number, lod0?: MeshData, topHeight = bounds.height * 0.75 ): MeshData {
 
 	const builder = new MeshBuilder();
 	const radius = bounds.radius;
 	const height = bounds.height;
 	const normalWeight = Math.SQRT1_2;
 	const color: Color3 = [ 1, 1, 1 ];
+	const footprint = getFootprint( lod0, radius );
 
 	builder.beginGroup( impostorPartIndex );
 
 	const a0 = builder.addVertex( [ - radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 0 ], color, 0 );
-	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 1, 0 ], color, 0 );
-	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 1, 1 ], color, 1 );
+	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 0.5, 0 ], color, 0 );
+	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0.5, 1 ], color, 1 );
 	const a3 = builder.addVertex( [ - radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 1 ], color, 1 );
 
 	builder.addTriangle( a0, a1, a2 );
 	builder.addTriangle( a0, a2, a3 );
+
+	const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 0.5, 0 ], color, 0 );
+	const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 1, 0 ], color, 0 );
+	const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 1, 1 ], color, 0 );
+	const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 0.5, 1 ], color, 0 );
+
+	builder.addTriangle( top0, top1, top2 );
+	builder.addTriangle( top0, top2, top3 );
 
 	return builder.build();
 
@@ -93,14 +151,161 @@ export function buildSixPlaneImpostor( height: number, radius: number, partIndex
 
 }
 
-/** 指定した yaw ごとの画像を横に並べたアトラスを作ります。 */
-export function bakeImpostor( data: VegetationData, colors: Color3[], size: number, viewYawAngles: readonly number[] = [ 0, Math.PI / 2 ] ): TextureData {
+interface ViewProjection {
+	direction: [ number, number, number ];
+	right: [ number, number, number ];
+	up: [ number, number, number ];
+	minRight: number;
+	maxRight: number;
+	minUp: number;
+	maxUp: number;
+}
 
-	if ( viewYawAngles.length === 0 || viewYawAngles.some( ( angle ) => ! Number.isFinite( angle ) ) ) {
-		throw new RangeError( 'Impostor views must contain finite yaw angles' );
+type ImpostorViewInput = number | ImpostorView;
+
+function resolveImpostorView( view: ImpostorViewInput ): ImpostorView {
+
+	return typeof view === 'number' ? yawImpostorView( view ) : view;
+
+}
+
+function createViewProjection( data: VegetationData, mesh: MeshData, input: ImpostorViewInput ): ViewProjection {
+
+	const view = resolveImpostorView( input );
+	const directionLength = Math.hypot( ...view.direction );
+
+	if ( ! Number.isFinite( directionLength ) || directionLength === 0 || view.direction.some( ( component ) => ! Number.isFinite( component ) ) ) {
+
+		throw new RangeError( 'Impostor view direction must be finite and nonzero' );
+
 	}
 
-	const width = size * viewYawAngles.length;
+	const direction = view.direction.map( ( component ) => component / directionLength ) as [ number, number, number ];
+	let upReference = view.up ?? [ 0, 1, 0 ];
+
+	if ( upReference.some( ( component ) => ! Number.isFinite( component ) ) || Math.hypot( ...upReference ) === 0 ) {
+
+		throw new RangeError( 'Impostor view up direction must be finite and nonzero' );
+
+	}
+
+	let right: [ number, number, number ] = [
+		upReference[ 1 ] * direction[ 2 ] - upReference[ 2 ] * direction[ 1 ],
+		upReference[ 2 ] * direction[ 0 ] - upReference[ 0 ] * direction[ 2 ],
+		upReference[ 0 ] * direction[ 1 ] - upReference[ 1 ] * direction[ 0 ],
+	];
+	let rightLength = Math.hypot( ...right );
+
+	if ( rightLength < 1e-8 && view.up === undefined ) {
+
+		upReference = direction[ 1 ] >= 0 ? [ 0, 0, - 1 ] : [ 0, 0, 1 ];
+		right = [
+			upReference[ 1 ] * direction[ 2 ] - upReference[ 2 ] * direction[ 1 ],
+			upReference[ 2 ] * direction[ 0 ] - upReference[ 0 ] * direction[ 2 ],
+			upReference[ 0 ] * direction[ 1 ] - upReference[ 1 ] * direction[ 0 ],
+		];
+		rightLength = Math.hypot( ...right );
+
+	}
+
+	if ( rightLength < 1e-8 ) {
+
+		throw new RangeError( 'Impostor view up direction cannot be parallel to its view direction' );
+
+	}
+
+	right = right.map( ( component ) => component / rightLength ) as [ number, number, number ];
+	const up: [ number, number, number ] = [
+		direction[ 1 ] * right[ 2 ] - direction[ 2 ] * right[ 1 ],
+		direction[ 2 ] * right[ 0 ] - direction[ 0 ] * right[ 2 ],
+		direction[ 0 ] * right[ 1 ] - direction[ 1 ] * right[ 0 ],
+	];
+	let minRight = Infinity;
+	let maxRight = - Infinity;
+	let minUp = Infinity;
+	let maxUp = - Infinity;
+
+	if ( Math.abs( direction[ 1 ] ) < 1e-8 && Math.abs( up[ 1 ] ) > 1 - 1e-8 ) {
+
+		minRight = - data.bounds.radius;
+		maxRight = data.bounds.radius;
+		minUp = 0;
+		maxUp = data.bounds.height;
+
+	} else {
+
+		for ( let triangle = 0; triangle < mesh.indices.length; triangle += 3 ) {
+
+			const projected: [ number, number ][] = [];
+
+			for ( let corner = 0; corner < 3; corner ++ ) {
+
+				const offset = mesh.indices[ triangle + corner ]! * 3;
+				const x = mesh.positions[ offset ]!;
+				const y = mesh.positions[ offset + 1 ]!;
+				const z = mesh.positions[ offset + 2 ]!;
+				projected.push( [ x * right[ 0 ] + y * right[ 1 ] + z * right[ 2 ], x * up[ 0 ] + y * up[ 1 ] + z * up[ 2 ] ] );
+
+			}
+
+			const area = ( projected[ 1 ]![ 0 ] - projected[ 0 ]![ 0 ] ) * ( projected[ 2 ]![ 1 ] - projected[ 0 ]![ 1 ] ) - ( projected[ 1 ]![ 1 ] - projected[ 0 ]![ 1 ] ) * ( projected[ 2 ]![ 0 ] - projected[ 0 ]![ 0 ] );
+
+			if ( Math.abs( area ) < 1e-10 ) {
+
+				continue;
+
+			}
+
+			for ( const [ projectedRight, projectedUp ] of projected ) {
+
+				minRight = Math.min( minRight, projectedRight );
+				maxRight = Math.max( maxRight, projectedRight );
+				minUp = Math.min( minUp, projectedUp );
+				maxUp = Math.max( maxUp, projectedUp );
+
+			}
+
+		}
+
+	}
+
+	if ( ! Number.isFinite( minRight ) || ! Number.isFinite( maxRight ) ) {
+
+		minRight = - 0.5;
+		maxRight = 0.5;
+
+	} else if ( maxRight - minRight < 1e-8 ) {
+
+		minRight -= 0.5;
+		maxRight += 0.5;
+
+	}
+	if ( ! Number.isFinite( minUp ) || ! Number.isFinite( maxUp ) ) {
+
+		minUp = - 0.5;
+		maxUp = 0.5;
+
+	} else if ( maxUp - minUp < 1e-8 ) {
+
+		minUp -= 0.5;
+		maxUp += 0.5;
+
+	}
+
+	return { direction, right, up, minRight, maxRight, minUp, maxUp };
+
+}
+
+/** 指定した視線方向の正射影を横並びに焼きます。 */
+export function bakeImpostor( data: VegetationData, colors: Color3[], size: number, viewInputs: readonly ImpostorViewInput[] = [ 0, Math.PI / 2 ] ): TextureData {
+
+	if ( viewInputs.length === 0 || viewInputs.some( ( view ) => typeof view === 'number' ? ! Number.isFinite( view ) : false ) ) {
+
+		throw new RangeError( 'Impostor views must contain finite directions' );
+
+	}
+
+	const width = size * viewInputs.length;
 	const height = size;
 	const image = new Uint8Array( width * height * 4 );
 	const depthBuffer = new Float32Array( width * height );
@@ -111,7 +316,9 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	depthBuffer.fill( - Infinity );
 
-	for ( let view = 0; view < viewYawAngles.length; view ++ ) {
+	for ( let view = 0; view < viewInputs.length; view ++ ) {
+
+		const projection = createViewProjection( data, mesh, viewInputs[ view ]! );
 
 		for ( const group of mesh.groups ) {
 
@@ -122,7 +329,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 			for ( let i = group.start; i < group.start + group.count; i += 3 ) {
 
-				rasterizeTriangle( data, mesh, i, size, width, view, viewYawAngles[ view ]!, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
+				rasterizeTriangle( data, mesh, i, size, width, view, projection, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
 
 			}
 
@@ -130,7 +337,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	}
 
-	dilateEdges( image, width, size, height, viewYawAngles.length );
+	dilateEdges( image, width, size, height, viewInputs.length );
 
 	return { width, height, data: image };
 
@@ -143,7 +350,7 @@ function rasterizeTriangle(
 	size: number,
 	imageWidth: number,
 	view: number,
-	yaw: number,
+	projection: ViewProjection,
 	image: Uint8Array,
 	depthBuffer: Float32Array,
 	materialColor: Color3,
@@ -169,16 +376,14 @@ function rasterizeTriangle(
 	const xWorld2 = mesh.positions[ position2 ]!;
 	const yWorld2 = mesh.positions[ position2 + 1 ]!;
 	const zWorld2 = mesh.positions[ position2 + 2 ]!;
-	const centerOffset = data.bounds.radius;
-	const sine = Math.sin( yaw );
-	const cosine = Math.cos( yaw );
-	const x0 = ( ( xWorld0 * cosine - zWorld0 * sine ) + centerOffset ) / ( centerOffset * 2 ) * size;
-	const x1 = ( ( xWorld1 * cosine - zWorld1 * sine ) + centerOffset ) / ( centerOffset * 2 ) * size;
-	const x2 = ( ( xWorld2 * cosine - zWorld2 * sine ) + centerOffset ) / ( centerOffset * 2 ) * size;
-	// 行 0 が地面なので、ワールドの高さをそのまま下から上へ写す。
-	const y0 = yWorld0 / data.bounds.height * size;
-	const y1 = yWorld1 / data.bounds.height * size;
-	const y2 = yWorld2 / data.bounds.height * size;
+	const projectRight = ( x: number, y: number, z: number ) => ( x * projection.right[ 0 ] + y * projection.right[ 1 ] + z * projection.right[ 2 ] - projection.minRight ) / ( projection.maxRight - projection.minRight ) * size;
+	const projectUp = ( x: number, y: number, z: number ) => ( x * projection.up[ 0 ] + y * projection.up[ 1 ] + z * projection.up[ 2 ] - projection.minUp ) / ( projection.maxUp - projection.minUp ) * size;
+	const x0 = projectRight( xWorld0, yWorld0, zWorld0 );
+	const x1 = projectRight( xWorld1, yWorld1, zWorld1 );
+	const x2 = projectRight( xWorld2, yWorld2, zWorld2 );
+	const y0 = projectUp( xWorld0, yWorld0, zWorld0 );
+	const y1 = projectUp( xWorld1, yWorld1, zWorld1 );
+	const y2 = projectUp( xWorld2, yWorld2, zWorld2 );
 	const denominator = ( y1 - y2 ) * ( x0 - x2 ) + ( x2 - x1 ) * ( y0 - y2 );
 
 	if ( denominator === 0 ) {
@@ -204,9 +409,9 @@ function rasterizeTriangle(
 	const uv0 = index0 * 2;
 	const uv1 = index1 * 2;
 	const uv2 = index2 * 2;
-	const depth0 = xWorld0 * sine + zWorld0 * cosine;
-	const depth1 = xWorld1 * sine + zWorld1 * cosine;
-	const depth2 = xWorld2 * sine + zWorld2 * cosine;
+	const depth0 = xWorld0 * projection.direction[ 0 ] + yWorld0 * projection.direction[ 1 ] + zWorld0 * projection.direction[ 2 ];
+	const depth1 = xWorld1 * projection.direction[ 0 ] + yWorld1 * projection.direction[ 1 ] + zWorld1 * projection.direction[ 2 ];
+	const depth2 = xWorld2 * projection.direction[ 0 ] + yWorld2 * projection.direction[ 1 ] + zWorld2 * projection.direction[ 2 ];
 	const inverseDenominator = 1 / denominator;
 	const viewOffset = view * size;
 

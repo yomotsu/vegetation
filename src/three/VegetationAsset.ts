@@ -17,9 +17,9 @@ import {
 	UnsignedByteType,
 } from 'three';
 import type { ColorRepresentation, Texture } from 'three';
-import { bakeImpostor } from '../core/impostor';
+import { bakeImpostor, impostorViewsForPart } from '../core/impostor';
 import { regenerateTexture } from '../core/textureRegenerator';
-import type { LodLevel, MeshData, PartDef, TextureData, VegetationData } from '../core/types';
+import type { ImpostorView, LodLevel, MeshData, PartDef, TextureData, VegetationData } from '../core/types';
 
 function createTexture( data: TextureData, normalMap = false ): DataTexture {
 
@@ -105,7 +105,7 @@ export class VegetationAsset {
 	readonly materials: MeshStandardMaterial[];
 	readonly collider: BufferGeometry | null;
 	private readonly impostorTextures = new Map<string, DataTexture>();
-	private readonly impostorViews = new Map<string, readonly number[]>();
+	private readonly impostorViews = new Map<string, readonly ImpostorView[]>();
 	private readonly partIndices = new Map<string, number>();
 	private readonly partColors: Color[];
 	private readonly partsCache = new Map<LodLevel, { part: string; geometry: BufferGeometry; material: MeshStandardMaterial }[]>();
@@ -143,7 +143,9 @@ export class VegetationAsset {
 
 		for ( const part of this.data.parts ) {
 
-			if ( part.texture === null || part.impostorYawAngles === undefined ) {
+			const views = impostorViewsForPart( part );
+
+			if ( part.texture === null || views === undefined ) {
 
 				continue;
 
@@ -154,8 +156,8 @@ export class VegetationAsset {
 
 			}
 
-			this.impostorViews.set( part.texture, part.impostorYawAngles );
-			this.impostorTextures.set( part.texture, createTexture( bakeImpostor( this.data, toLinearColors( materialColors ), impostorSize, part.impostorYawAngles ) ) );
+			this.impostorViews.set( part.texture, views );
+			this.impostorTextures.set( part.texture, createTexture( bakeImpostor( this.data, toLinearColors( materialColors ), impostorSize, views ) ) );
 
 		}
 
@@ -163,7 +165,7 @@ export class VegetationAsset {
 
 			this.partIndices.set( part.name, index );
 
-			const isImpostor = part.impostorYawAngles !== undefined;
+			const isImpostor = impostorViewsForPart( part ) !== undefined;
 			const texture = isImpostor ? this.impostorTextures.get( part.texture! ) ?? null : part.texture === null ? null : this.data.textures[ part.texture ] === undefined ? null : createTexture( this.data.textures[ part.texture ]! );
 			const normalTexture = part.normalTexture === undefined ? null : this.data.textures[ part.normalTexture ] === undefined ? null : createTexture( this.data.textures[ part.normalTexture ]!, true );
 			const materialParameters = {
@@ -269,7 +271,7 @@ export class VegetationAsset {
 
 			if ( part.colorizesTexture ) {
 
-				if ( part.texture === null || part.impostorYawAngles !== undefined || this.materials[ index ]!.map === null ) {
+				if ( part.texture === null || impostorViewsForPart( part ) !== undefined || this.materials[ index ]!.map === null ) {
 					throw new Error( `Vegetation part cannot regenerate its texture: ${ partName }` );
 				}
 

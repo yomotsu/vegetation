@@ -372,7 +372,7 @@ export function generatePebblesData( options: PebblesOptions = {} ): VegetationD
 	const lod2 = buildStoneLod( placements, burial, 2 );
 	const lod3 = buildFarStoneLod( placements, burial, size );
 	const bounds = getBounds( lod0 );
-	const lod4 = buildBillboard( bounds, 1 );
+	const lod4 = buildBillboard( bounds, 1, lod0, bounds.height * 0.75 );
 	lod3.colors.fill( lod0.colors[ 0 ]! * FAR_PEBBLE_COLOR_FACTOR );
 	const parts: PartDef[] = [
 		{

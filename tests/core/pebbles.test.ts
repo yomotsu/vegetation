@@ -5,6 +5,7 @@ import { createRockTextures } from '../../src/core/rockTexture';
 import { validateMeshData } from '../helpers/validateMeshData';
 import { sampleOutlineRadius, splitConnectedComponents } from '../helpers/meshOutline';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
+import { topCardCoverageIou } from '../helpers/topCardCoverage';
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -211,14 +212,29 @@ describe( 'procedural pebbles data', () => {
 		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 128 );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeGreaterThan( vertexCount( data.lods[ 4 ]! ) );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeLessThanOrEqual( 90 );
-		expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 4 );
-		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 2 );
+		expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
+		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 4 );
 		expect( data.lods[ 4 ]!.groups[ 0 ]!.partIndex ).toBe( 1 );
 		expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
 		expect( Object.keys( data.textures ) ).toEqual( [ 'albedo', 'normal' ] );
 		expect( hashBytes( data.textures.albedo!.data ) ).toBe( hashBytes( createRockTextures( 4 ).albedo.data ) );
 		expect( hashBytes( data.textures.normal!.data ) ).toBe( hashBytes( createRockTextures( 4 ).normal.data ) );
 		for ( const mesh of data.lods ) validateMeshData( mesh );
+
+	} );
+
+	it( 'matches the top-down LOD4 coverage to LOD0', () => {
+
+		for ( const seed of [ 1, 4, 7 ] ) {
+
+			const data = generatePebblesData( { seed } );
+
+			expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 4 );
+			expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
+			expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
+			expect( topCardCoverageIou( data ) ).toBeGreaterThanOrEqual( 0.6 );
+
+		}
 
 	} );
 

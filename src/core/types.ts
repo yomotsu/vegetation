@@ -2,6 +2,11 @@ export type LodLevel = 0 | 1 | 2 | 3 | 4;
 export type Color3 = [ number, number, number ]; // リニア RGB 0〜1
 export type Vec3 = [ number, number, number ];
 
+export interface ImpostorView {
+	direction: readonly [ number, number, number ];
+	up?: readonly [ number, number, number ];
+}
+
 export interface MeshGroup {
 	start: number;
 	count: number;
@@ -24,6 +29,7 @@ export interface PartDef {
 	defaultColor: number;
 	texture: string | null; // VegetationData.textures のキー
 	impostorYawAngles?: readonly number[]; // 指定時は texture 用のビューを three 層で焼く。
+	impostorViews?: readonly ImpostorView[]; // 視線方向と画像の上方向を指定して焼く。
 	normalTexture?: string; // tangent-space normal map のキー
 	/** true なら色変更でテクスチャを再生成し、false または未指定ならマテリアル色を乗算します。 */
 	colorizesTexture?: boolean;

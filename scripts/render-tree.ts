@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
-import { bakeImpostor } from '../src/core/impostor';
+import { bakeImpostor, LOD4_IMPOSTOR_VIEWS } from '../src/core/impostor';
 import { hexToLinear } from '../src/core/color';
 import { generateTreeData } from '../src/core/generators/tree';
 import type { TextureData, VegetationData } from '../src/core/types';
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
 	for ( let lod = 0; lod < 4; lod ++ ) {
 
 		const lodData: VegetationData = { ...data, lods: [ data.lods[ lod ]!, ...data.lods.slice( 1 ) ] };
-		const image = bakeImpostor( lodData, colors, 256 );
+		const image = bakeImpostor( lodData, colors, 256, LOD4_IMPOSTOR_VIEWS );
 		const png = encodePng( image.width, image.height, composite( image ) );
 		const path = `${ outputDirectory }/${ suffix }-lod${ lod }.png`;
 		renders.push( image );
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
 		lods: [ data.lods[ 4 ]!, ...data.lods.slice( 1 ) ],
 		textures: { ...data.textures, impostor: lodZeroTexture },
 	};
-	const lod4 = bakeImpostor( billboardData, colors, 256 );
+	const lod4 = bakeImpostor( billboardData, colors, 256, LOD4_IMPOSTOR_VIEWS );
 	const lod4Path = `${ outputDirectory }/${ suffix }-lod4.png`;
 
 	await writeFile( lod4Path, encodePng( lod4.width, lod4.height, composite( lod4 ) ) );

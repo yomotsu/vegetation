@@ -374,11 +374,11 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	applyRockSurfaceShading( lod2 );
 
 	const lod3 = buildLowPolyRockShell( lod0, size );
-	const lod4 = buildBillboard( getBounds( lod0 ), 1 );
+	const bounds = getBounds( lod0 );
+	const lod4 = buildBillboard( bounds, 1, lod0, bounds.height * 0.75 );
 	recomputeSmoothNormals( lod3 );
 	lod3.colors.fill( lod0.colors[ 0 ]! );
 
-	const bounds = getBounds( lod0 );
 	const parts: PartDef[] = [
 		{
 			name: 'rock',

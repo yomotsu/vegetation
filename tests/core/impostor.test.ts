@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBillboard, bakeImpostor, impostorPart } from '../../src/core/impostor';
+import { buildBillboard, bakeImpostor, impostorPart, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
 import { MeshBuilder } from '../../src/core/meshBuilder';
 import type { MeshData, VegetationData, Vec3 } from '../../src/core/types';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -161,13 +161,14 @@ function createVegetationData( mesh: MeshData ): VegetationData {
 
 describe( 'impostor generation', () => {
 
-	it( 'builds one camera-facing billboard plane with two triangles and valid attributes', () => {
+	it( 'builds a side and top billboard plane with four triangles and valid attributes', () => {
 
 		const mesh = buildBillboard( { radius: 0.5, height: 1 }, 2 );
 
-		expect( mesh.indices.length / 3 ).toBe( 2 );
-		expect( mesh.positions.length / 3 ).toBe( 4 );
-		expect( mesh.uvs ).toEqual( new Float32Array( [ 0, 0, 1, 0, 1, 1, 0, 1 ] ) );
+		expect( mesh.indices.length / 3 ).toBe( 4 );
+		expect( mesh.positions.length / 3 ).toBe( 8 );
+		expect( mesh.uvs ).toEqual( new Float32Array( [ 0, 0, 0.5, 0, 0.5, 1, 0, 1, 0.5, 0, 1, 0, 1, 1, 0.5, 1 ] ) );
+		expect( Array.from( mesh.normals.slice( 12, 24 ) ) ).toEqual( [ 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0 ] );
 		validateMeshData( mesh );
 
 		for ( let i = 1; i < mesh.positions.length; i += 3 ) {
@@ -176,6 +177,33 @@ describe( 'impostor generation', () => {
 			expect( mesh.positions[ i ] ).toBeLessThanOrEqual( 1 );
 
 		}
+
+	} );
+
+	it( 'bakes a generic top-down direction into the second LOD4 atlas tile', () => {
+
+		const data = createVegetationData( createBoxMesh() );
+		const texture = bakeImpostor( data, [ white ], 32, LOD4_IMPOSTOR_VIEWS );
+		const topTile = 32;
+		let opaque = 0;
+
+		for ( let y = 0; y < 32; y ++ ) {
+
+			for ( let x = 0; x < 32; x ++ ) {
+
+				if ( texture.data[ ( y * texture.width + topTile + x ) * 4 + 3 ] === 255 ) {
+
+					opaque ++;
+
+				}
+
+			}
+
+		}
+
+		expect( texture.width ).toBe( 64 );
+		expect( texture.height ).toBe( 32 );
+		expect( opaque ).toBeGreaterThan( 0 );
 
 	} );
 
@@ -271,7 +299,7 @@ describe( 'impostor generation', () => {
 			name: 'impostor',
 			defaultColor: 0xffffff,
 			texture: 'impostor',
-			impostorYawAngles: [ 0 ],
+			impostorViews: LOD4_IMPOSTOR_VIEWS,
 			alphaTest: 0.5,
 			doubleSided: true,
 			flatShading: false,

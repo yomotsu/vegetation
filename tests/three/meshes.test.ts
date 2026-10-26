@@ -125,7 +125,7 @@ describe( 'tree meshes', () => {
 
 	} );
 
-	it( 'turns the LOD4 quad toward the render camera but skips shadow cameras', () => {
+	it( 'turns only the LOD4 side quad toward the camera and skips shadow cameras', () => {
 
 		const asset = generateTree( { seed: 1 } );
 		const mesh = new VegetationMesh( asset, 4 );
@@ -136,6 +136,7 @@ describe( 'tree meshes', () => {
 		camera.position.copy( mesh.localToWorld( new Vector3( 10, 2, 0 ) ) );
 		camera.updateMatrixWorld( true );
 		const part = mesh.parts[ 0 ]!;
+		const topCard = mesh.parts[ 1 ]!;
 		const shadowCamera = new PerspectiveCamera();
 		shadowCamera.position.set( - 10, 0, 0 );
 		shadowCamera.updateMatrixWorld( true );
@@ -157,6 +158,8 @@ describe( 'tree meshes', () => {
 
 		expect( mesh.rotation.y ).toBeCloseTo( 0.4 );
 		expect( part.rotation.y ).toBeCloseTo( Math.PI / 2 );
+		expect( topCard.rotation.y ).toBe( 0 );
+		expect( topCard.geometry.getIndex()!.count ).toBe( 6 );
 
 		asset.dispose();
 
@@ -227,7 +230,7 @@ describe( 'tree meshes', () => {
 		expect( levels ).toHaveLength( 5 );
 		expect( levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 15, 30, 60, 120 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => part.material === asset.materials[ asset.data.parts.findIndex( ( definition ) => definition.name === part.name ) ] ) ) ).toBe( true );
-		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 2, 2, 1, 1 ] );
+		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 2, 2, 1, 2 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => Array.isArray( part.material ) === false ) ) ).toBe( true );
 		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).lod ) ).toEqual( [ 0, 1, 2, 3, 4 ] );
 		const disposeAsset = vi.spyOn( asset, 'dispose' );

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES } from '../../src/core';
+import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES, LOD4_IMPOSTOR_VIEWS } from '../../src/core';
 import { generateTreeData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { validateMeshData } from '../helpers/validateMeshData';
+import { topCardCoverageIou } from '../helpers/topCardCoverage';
 
 const BARK_PART_INDEX = 0;
 const LEAF_PART_INDEX = 1;
@@ -700,7 +701,7 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
 		expect( data.lods[ 3 ]!.groups ).toEqual( [ { start: 0, count: 36, partIndex: LOD3_IMPOSTOR_PART_INDEX } ] );
-		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, IMPOSTOR_PART_INDEX ) );
+		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, IMPOSTOR_PART_INDEX, data.lods[ 0 ]!, data.bounds.height * 0.58 ) );
 
 	} );
 
@@ -720,7 +721,7 @@ describe( 'conifer tree data', () => {
 			expect( triangles[ 3 ] ).toBeLessThanOrEqual( 40 );
 			expect( triangles[ 4 ] ).toBeLessThanOrEqual( 12 );
 			expect( counts[ 3 ] ).toBe( 24 );
-			expect( counts[ 4 ] ).toBe( 4 );
+			expect( counts[ 4 ] ).toBe( 8 );
 			expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 			expect( counts[ 4 ] ).toBeLessThan( counts[ 2 ]! );
 
@@ -1719,7 +1720,7 @@ describe( 'conifer tree data', () => {
 		for ( const seed of [ 1, 2, 3 ] ) {
 
 			const data = generateTreeData( { seed } );
-			const reference = bakeImpostor( data, defaultColors( data ), 128, [ 0 ] );
+			const reference = bakeImpostor( data, defaultColors( data ), 128, LOD4_IMPOSTOR_VIEWS );
 			const billboardData = {
 				...data,
 				lods: [ data.lods[ 4 ]!, ...data.lods.slice( 1 ) ],
@@ -1736,9 +1737,10 @@ describe( 'conifer tree data', () => {
 
 					for ( let x = 0; x < 128; x ++ ) {
 
-						const offset = ( y * reference.width + view * 128 + x ) * 4 + 3;
-						const referenceOpaque = reference.data[ offset ]! >= 128;
-						const candidateOpaque = candidate.data[ offset ]! >= 128;
+						const referenceOffset = ( y * reference.width + view * 128 + x ) * 4 + 3;
+						const candidateOffset = ( y * candidate.width + x ) * 4 + 3;
+						const referenceOpaque = reference.data[ referenceOffset ]! >= 128;
+						const candidateOpaque = candidate.data[ candidateOffset ]! >= 128;
 
 						if ( referenceOpaque && candidateOpaque ) {
 
@@ -1758,6 +1760,21 @@ describe( 'conifer tree data', () => {
 				expect( intersection / union ).toBeGreaterThanOrEqual( 0.75 );
 
 			}
+
+		}
+
+	} );
+
+	it( 'matches the top-down LOD4 coverage to LOD0', () => {
+
+		for ( const seed of [ 1, 2, 3 ] ) {
+
+			const data = generateTreeData( { seed } );
+
+			expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 4 );
+			expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
+			expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
+			expect( topCardCoverageIou( data ) ).toBeGreaterThanOrEqual( 0.6 );
 
 		}
 

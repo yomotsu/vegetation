@@ -162,7 +162,7 @@ describe( 'VegetationAsset', () => {
 		expect( leafTexture.image.width ).toBe( 256 );
 		expect( leafTexture.image.height ).toBe( 256 );
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
-		expect( impostorTexture.image.width ).toBe( 128 );
+		expect( impostorTexture.image.width ).toBe( 128 * 2 );
 		expect( impostorTexture.image.height ).toBe( 128 );
 		expect( impostorLod3Texture.image.width ).toBe( 128 * 6 );
 		expect( impostorLod3Texture.image.height ).toBe( 128 );
@@ -259,6 +259,7 @@ describe( 'VegetationAsset', () => {
 		const originalLeafData = leafTexture.image.data;
 		const lod3Impostor = asset.getParts( 3 )[ 0 ]!;
 		const lod4Impostor = asset.getParts( 4 )[ 0 ]!;
+		let topTileChanged = false;
 
 		asset.setColor( 'leaf', '#c0392b' );
 
@@ -270,6 +271,23 @@ describe( 'VegetationAsset', () => {
 		expect( impostorLod3Texture.image.data ).not.toEqual( originalLod3Pixels );
 		expect( lod3Impostor.material.map ).toBe( impostorLod3Texture );
 		expect( impostorTexture.image.data ).not.toEqual( originalImpostorPixels );
+		for ( let y = 0; y < impostorTexture.image.height && ! topTileChanged; y ++ ) {
+
+			for ( let x = impostorTexture.image.width / 2; x < impostorTexture.image.width; x ++ ) {
+
+				const offset = ( y * impostorTexture.image.width + x ) * 4;
+
+				if ( impostorTexture.image.data![ offset ] !== originalImpostorPixels[ offset ] ) {
+
+					topTileChanged = true;
+					break;
+
+				}
+
+			}
+
+		}
+		expect( topTileChanged ).toBe( true );
 		expect( lod4Impostor.material.map ).toBe( impostorTexture );
 		expect( asset.geometries[ 0 ]!.getAttribute( 'position' ).array ).toBe( positions );
 		expect( () => asset.setColor( 'nope', 0 ) ).toThrow();
@@ -344,7 +362,7 @@ describe( 'VegetationAsset', () => {
 			flatShading: false,
 		} );
 		const asset = new VegetationAsset( data );
-		const impostor = asset.materials.find( ( material ) => ( material.map as DataTexture | null )?.image.width === 128 )!.map as DataTexture;
+		const impostor = asset.materials[ 3 ]!.map as DataTexture;
 		const originalPixels = impostor.image.data;
 		const originalVersion = impostor.version;
 

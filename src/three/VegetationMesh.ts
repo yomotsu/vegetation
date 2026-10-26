@@ -1,4 +1,4 @@
-import { BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
 import type { Camera, Color, ColorRepresentation, MeshStandardMaterial } from 'three';
 import type { LodLevel } from '../core/types';
 import { VegetationAsset } from './VegetationAsset';
@@ -15,7 +15,33 @@ function createEmptyGeometry( source: BufferGeometry ): BufferGeometry {
 
 }
 
-/** InstancedMesh の各 LOD4 行列をカメラへ向け、位置とスケールを保ちます。 */
+function createBillboardPlaneGeometry( source: BufferGeometry, planeIndex: number ): BufferGeometry {
+
+	const geometry = new BufferGeometry();
+	const attributes = [ 'position', 'normal', 'uv', 'color', 'windWeight' ];
+
+	for ( const name of attributes ) {
+
+		const attribute = source.getAttribute( name );
+
+		if ( attribute !== undefined ) {
+
+			geometry.setAttribute( name, attribute );
+
+		}
+
+	}
+
+	const index = source.getIndex()!;
+	const start = planeIndex * 6;
+	geometry.setIndex( new BufferAttribute( index.array.slice( start, start + 6 ), 1 ) );
+	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
+
+	return geometry;
+
+}
+
+/** 水平カードの UV も一緒に回るため、各 LOD4 インスタンス全体を yaw 回転します。 */
 export function orientBillboardInstances( mesh: InstancedMesh, camera: Camera ): void {
 
 	mesh.updateWorldMatrix( true, false );
@@ -45,6 +71,7 @@ export function orientBillboardInstances( mesh: InstancedMesh, camera: Camera ):
 export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 	private partMeshes: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
+	private readonly ownedGeometries: BufferGeometry[] = [];
 	private shadowCast = false;
 	private shadowReceive = false;
 	private readonly ownsAsset: boolean;
@@ -107,11 +134,17 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 		if ( level === 4 ) {
 
 			const part = parts[ 0 ]!;
-			const billboard = new Mesh( part.geometry, part.material );
+			const billboardGeometry = createBillboardPlaneGeometry( part.geometry, 0 );
+			const topCardGeometry = createBillboardPlaneGeometry( part.geometry, 1 );
+			const billboard = new Mesh( billboardGeometry, part.material );
+			const topCard = new Mesh( topCardGeometry, part.material );
 			const cameraPosition = new Vector3();
 			billboard.name = part.part;
+			topCard.name = part.part;
 			billboard.castShadow = this.shadowCast;
 			billboard.receiveShadow = this.shadowReceive;
+			topCard.castShadow = this.shadowCast;
+			topCard.receiveShadow = this.shadowReceive;
 			const shadowCameras = new WeakSet<Camera>();
 			const inverseWorldMatrix = new Matrix4();
 			billboard.onBeforeShadow = ( renderer, object, camera, shadowCamera ) => {
@@ -138,7 +171,9 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 			};
 			this.add( billboard );
-			this.partMeshes.push( billboard );
+			this.add( topCard );
+			this.partMeshes.push( billboard, topCard );
+			this.ownedGeometries.push( billboardGeometry, topCardGeometry );
 
 		} else {
 
@@ -191,6 +226,11 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 		this.disposed = true;
 		this.emptyGeometry?.dispose();
+		for ( const geometry of this.ownedGeometries ) {
+
+			geometry.dispose();
+
+		}
 
 		if ( this.ownsAsset ) {
 			this.asset.dispose();
