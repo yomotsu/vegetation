@@ -13,6 +13,8 @@ import {
 import { describe, expect, it } from 'vitest';
 import { generateTree } from '../../src/three/meshes';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
+import { registerTextureRegenerator } from '../../src/core/textureRegenerator';
+import { generateTreeData } from '../../src/core/generators/tree';
 
 function meanTextureColorInTile( texture: { width: number; height: number; data: Uint8Array }, tile: number ): [ number, number, number ] {
 
@@ -244,6 +246,89 @@ describe( 'VegetationAsset', () => {
 			asset.dispose();
 
 		} ).not.toThrow();
+
+	} );
+
+	it( 'dispatches color regeneration by the texture generator type', () => {
+
+		registerTextureRegenerator( 'asset-test-color', ( texture, _generator, color ) => {
+
+			const data = texture.data.slice();
+
+			for ( let offset = 0; offset < data.length; offset += 4 ) {
+
+				data[ offset ] = ( color >>> 16 ) & 0xff;
+
+			}
+
+			return { ...texture, data };
+
+		} );
+		const data = generateTreeData( { seed: 1 } );
+		data.textureGenerators!.leaf!.type = 'asset-test-color';
+		const asset = new VegetationAsset( data );
+
+		expect( () => asset.setColor( 'leaf', 0xc0392b ) ).not.toThrow();
+		expect( asset.data.textures.leaf!.data[ 0 ] ).toBe( 0xc0 );
+
+		asset.dispose();
+
+	} );
+
+	it( 'creates impostor textures only for texture keys referenced by parts', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		data.parts = data.parts.filter( ( part ) => part.texture !== 'impostor' && part.texture !== 'impostor-lod3' );
+		data.lods = data.lods.map( ( mesh ) => ( {
+			...mesh,
+			groups: mesh.groups.filter( ( group ) => group.partIndex < data.parts.length ),
+		} ) );
+		const asset = new VegetationAsset( data );
+		const internals = asset as unknown as { impostorTextures: Map<string, DataTexture> };
+
+		expect( internals.impostorTextures.size ).toBe( 0 );
+
+		asset.dispose();
+
+	} );
+
+	it( 'does not rebake impostors when a changed part is absent from the source LOD', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		data.parts.push( {
+			name: 'unused',
+			defaultColor: 0xffffff,
+			texture: null,
+			alphaTest: 0,
+			doubleSided: false,
+			flatShading: false,
+		} );
+		const asset = new VegetationAsset( data );
+		const impostor = asset.materials.find( ( material ) => ( material.map as DataTexture | null )?.image.width === 128 )!.map as DataTexture;
+		const originalPixels = impostor.image.data;
+		const originalVersion = impostor.version;
+
+		asset.setColor( 'unused', 0xff0000 );
+
+		expect( impostor.image.data ).toBe( originalPixels );
+		expect( impostor.version ).toBe( originalVersion );
+
+		asset.dispose();
+
+	} );
+
+	it( 'keeps source texture buffers unchanged while recoloring an asset', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const originalPixels = data.textures.leaf!.data.slice();
+		const asset = new VegetationAsset( data );
+
+		asset.setColor( 'leaf', 0xc0392b );
+
+		expect( data.textures.leaf!.data ).toEqual( originalPixels );
+		expect( asset.data.textures.leaf!.data ).not.toEqual( originalPixels );
+
+		asset.dispose();
 
 	} );
 

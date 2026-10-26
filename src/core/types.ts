@@ -20,8 +20,9 @@ export interface MeshData {
 
 export interface PartDef {
 	name: string; // 'bark' | 'leaf' | 'rock' | 'impostor' など
-	defaultColor: number; // sRGB hex（0x5a8f3a）
-	texture: string | null; // VegetationData.textures のキー（impostor は three 層で焼く）
+	defaultColor: number; // sRGB hex（0x5a8f3a）。texture が再生成対象なら色を再生成し、それ以外は乗算する。
+	texture: string | null; // VegetationData.textures のキー
+	impostorYawAngles?: readonly number[]; // 指定時は texture 用のビューを three 層で焼く。
 	normalTexture?: string; // tangent-space normal map のキー
 	colorizesTexture?: boolean;
 	roughness?: number;
@@ -37,7 +38,7 @@ export interface PartDef {
 }
 
 export interface TextureGeneratorDef {
-	type: 'tree-leaf';
+	type: string;
 	seed: number;
 	size: number;
 }

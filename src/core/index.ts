@@ -1,4 +1,5 @@
 export * from './types';
+export * from './textureRegenerator';
 export * from './random';
 export * from './noise';
 export * from './color';

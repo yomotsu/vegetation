@@ -4,7 +4,8 @@ import { addTube } from '../primitives';
 import { createRandom } from '../random';
 import { createBarkTexture } from '../barkTexture';
 import { createFirSprigTexture, DEFAULT_LEAF_COLOR, getFirSprigLeafColor, padTextureEdges } from '../leafTexture';
-import type { Color3, ColliderData, MeshData, PartDef, TextureData, Vec3, VegetationData } from '../types';
+import { registerTextureRegenerator } from '../textureRegenerator';
+import type { Color3, ColliderData, MeshData, PartDef, TextureData, TextureGeneratorDef, Vec3, VegetationData } from '../types';
 
 export interface TreeOptions {
 	seed?: number;
@@ -905,12 +906,9 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 
 }
 
-export function regenerateTreeLeafTexture( data: VegetationData, color: number ): void {
+function regenerateTreeLeafTextureData( existing: TextureData, generator: TextureGeneratorDef, color: number ): TextureData {
 
-	const generator = data.textureGenerators?.leaf;
-	const existing = data.textures.leaf;
-
-	if ( generator?.type !== 'tree-leaf' || existing?.colorFactors === undefined || existing.colorPixelIndices === undefined ) {
+	if ( generator.type !== 'tree-leaf' || existing.colorFactors === undefined || existing.colorPixelIndices === undefined ) {
 		throw new Error( 'Tree leaf texture cannot be regenerated' );
 	}
 
@@ -942,6 +940,22 @@ export function regenerateTreeLeafTexture( data: VegetationData, color: number )
 
 	const texture = { ...existing, data: nextPixels };
 	updateCrownAtlas( texture, null, color, existing );
-	existing.data = nextPixels;
+
+	return texture;
 
 }
+
+export function regenerateTreeLeafTexture( data: VegetationData, color: number ): void {
+
+	const generator = data.textureGenerators?.leaf;
+	const existing = data.textures.leaf;
+
+	if ( generator === undefined || existing === undefined ) {
+		throw new Error( 'Tree leaf texture cannot be regenerated' );
+	}
+
+	data.textures.leaf = regenerateTreeLeafTextureData( existing, generator, color );
+
+}
+
+registerTextureRegenerator( 'tree-leaf', regenerateTreeLeafTextureData );

@@ -17,8 +17,8 @@ import {
 	UnsignedByteType,
 } from 'three';
 import type { ColorRepresentation, Texture } from 'three';
-import { bakeImpostor, LOD3_IMPOSTOR_YAW_ANGLES } from '../core/impostor';
-import { regenerateTreeLeafTexture } from '../core/generators/tree';
+import { bakeImpostor } from '../core/impostor';
+import { regenerateTexture } from '../core/textureRegenerator';
 import type { LodLevel, MeshData, TextureData, VegetationData } from '../core/types';
 
 function createTexture( data: TextureData, normalMap = false ): DataTexture {
@@ -63,7 +63,9 @@ function createGeometry( data: MeshData ): BufferGeometry {
 
 function createCollider( data: VegetationData['collider'] ): BufferGeometry | null {
 
-	if ( data === null ) return null;
+	if ( data === null ) {
+		return null;
+	}
 
 	const geometry = new BufferGeometry();
 	geometry.setAttribute( 'position', new BufferAttribute( data.positions, 3 ) );
@@ -80,6 +82,19 @@ function toLinearColors( colors: Color[] ): [ number, number, number ][] {
 
 }
 
+function copyTextureData( data: VegetationData ): VegetationData {
+
+	const textures = Object.fromEntries( Object.entries( data.textures ).map( ( [ name, texture ] ) => [ name, {
+		...texture,
+		data: texture.data.slice(),
+		...( texture.colorFactors === undefined ? {} : { colorFactors: texture.colorFactors.slice() } ),
+		...( texture.colorPixelIndices === undefined ? {} : { colorPixelIndices: texture.colorPixelIndices.slice() } ),
+	} ] ) );
+
+	return { ...data, textures };
+
+}
+
 export class VegetationAsset {
 
 	readonly data: VegetationData;
@@ -89,28 +104,51 @@ export class VegetationAsset {
 	readonly materials: MeshStandardMaterial[];
 	readonly collider: BufferGeometry | null;
 	private readonly impostorTextures = new Map<string, DataTexture>();
+	private readonly impostorViews = new Map<string, readonly number[]>();
 	private readonly partIndices = new Map<string, number>();
 	private readonly partColors: Color[];
 	private readonly partsCache = new Map<LodLevel, { part: string; geometry: BufferGeometry; material: MeshStandardMaterial }[]>();
+	private readonly impostorSize: number;
 	private disposed = false;
 
 	constructor( data: VegetationData, colors: Record<string, ColorRepresentation> = {}, impostorSize = 128 ) {
 
-		this.data = data;
-		this.geometries = data.lods.map( createGeometry );
-		this.collider = createCollider( data.collider );
+		this.data = copyTextureData( data );
+		this.impostorSize = impostorSize;
+		this.geometries = this.data.lods.map( createGeometry );
+		this.collider = createCollider( this.data.collider );
 
-		this.partColors = data.parts.map( ( part ) => new Color( colors[ part.name ] ?? part.defaultColor ) );
-		const materialColors = this.partColors.map( ( color, index ) => data.parts[ index ]!.colorizesTexture ? new Color( 0xffffff ) : color.clone() );
-		this.impostorTextures.set( 'impostor', createTexture( bakeImpostor( data, toLinearColors( materialColors ), impostorSize, [ 0 ] ) ) );
-		this.impostorTextures.set( 'impostor-lod3', createTexture( bakeImpostor( data, toLinearColors( materialColors ), impostorSize, LOD3_IMPOSTOR_YAW_ANGLES ) ) );
-		this.materials = data.parts.map( ( part, index ) => {
+		this.partColors = this.data.parts.map( ( part ) => new Color( colors[ part.name ] ?? part.defaultColor ) );
+		const materialColors = this.getMaterialColors();
+
+		for ( let index = 0; index < this.data.parts.length; index ++ ) {
+
+			const part = this.data.parts[ index ]!;
+
+			if ( ! part.colorizesTexture || part.texture === null ) continue;
+			if ( this.partColors[ index ]!.getHex() === part.defaultColor ) continue;
+
+			this.data.textures[ part.texture ] = regenerateTexture( this.data, part.texture, this.partColors[ index ]!.getHex() );
+
+		}
+
+		for ( const part of this.data.parts ) {
+
+			if ( part.texture === null || part.impostorYawAngles === undefined ) continue;
+			if ( this.impostorTextures.has( part.texture ) ) continue;
+
+			this.impostorViews.set( part.texture, part.impostorYawAngles );
+			this.impostorTextures.set( part.texture, createTexture( bakeImpostor( this.data, toLinearColors( materialColors ), impostorSize, part.impostorYawAngles ) ) );
+
+		}
+
+		this.materials = this.data.parts.map( ( part, index ) => {
 
 			this.partIndices.set( part.name, index );
 
-			const isImpostor = part.texture === 'impostor' || part.texture === 'impostor-lod3';
-			const texture = isImpostor ? this.impostorTextures.get( part.texture! )! : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]! );
-			const normalTexture = part.normalTexture === undefined ? null : data.textures[ part.normalTexture ] === undefined ? null : createTexture( data.textures[ part.normalTexture ]!, true );
+			const isImpostor = part.impostorYawAngles !== undefined;
+			const texture = isImpostor ? this.impostorTextures.get( part.texture! ) ?? null : part.texture === null ? null : this.data.textures[ part.texture ] === undefined ? null : createTexture( this.data.textures[ part.texture ]! );
+			const normalTexture = part.normalTexture === undefined ? null : this.data.textures[ part.normalTexture ] === undefined ? null : createTexture( this.data.textures[ part.normalTexture ]!, true );
 			const materialParameters = {
 				color: materialColors[ index ]!,
 				map: texture,
@@ -137,6 +175,12 @@ export class VegetationAsset {
 			return material;
 
 		} );
+
+	}
+
+	private getMaterialColors(): Color[] {
+
+		return this.partColors.map( ( color, index ) => this.data.parts[ index ]!.colorizesTexture ? new Color( 0xffffff ) : color.clone() );
 
 	}
 
@@ -189,14 +233,17 @@ export class VegetationAsset {
 		const definition = this.data.parts[ index ]!;
 		const nextColor = new Color( color );
 
+		if ( this.partColors[ index ]!.equals( nextColor ) ) {
+			return;
+		}
+
 		if ( definition.colorizesTexture ) {
 
-			if ( definition.texture === null || definition.texture === 'impostor' || this.materials[ index ]!.map === null ) {
+			if ( definition.texture === null || definition.impostorYawAngles !== undefined || this.materials[ index ]!.map === null ) {
 				throw new Error( `Vegetation part cannot regenerate its texture: ${ part }` );
 			}
 
-			regenerateTreeLeafTexture( this.data, nextColor.getHex() );
-
+			this.data.textures[ definition.texture ] = regenerateTexture( this.data, definition.texture, nextColor.getHex() );
 			const texture = this.materials[ index ]!.map as DataTexture;
 			texture.image.data = this.data.textures[ definition.texture ]!.data;
 			texture.needsUpdate = true;
@@ -209,13 +256,15 @@ export class VegetationAsset {
 
 		this.partColors[ index ]!.copy( nextColor );
 
-		const materialColors = this.partColors.map( ( partColor, partIndex ) => this.data.parts[ partIndex ]!.colorizesTexture ? new Color( 0xffffff ) : partColor );
-		const viewSets: [ string, readonly number[] ][] = [ [ 'impostor', [ 0 ] ], [ 'impostor-lod3', LOD3_IMPOSTOR_YAW_ANGLES ] ];
+		const sourceGroups = this.data.lods[ 0 ]!.groups;
+		if ( ! sourceGroups.some( ( group ) => group.partIndex === index ) ) return;
 
-		for ( const [ textureName, viewYawAngles ] of viewSets ) {
+		const materialColors = this.getMaterialColors();
+
+		for ( const [ textureName, viewYawAngles ] of this.impostorViews ) {
 
 			const texture = this.impostorTextures.get( textureName )!;
-			const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), texture.image.height, viewYawAngles );
+			const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), this.impostorSize, viewYawAngles );
 			texture.image.data = pixels.data;
 			texture.needsUpdate = true;
 

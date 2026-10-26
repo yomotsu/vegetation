@@ -271,6 +271,7 @@ describe( 'impostor generation', () => {
 			name: 'impostor',
 			defaultColor: 0xffffff,
 			texture: 'impostor',
+			impostorYawAngles: [ 0 ],
 			alphaTest: 0.5,
 			doubleSided: true,
 			flatShading: false,

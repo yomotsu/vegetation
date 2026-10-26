@@ -584,6 +584,7 @@ describe( 'conifer tree data', () => {
 			name: 'impostor-lod3',
 			defaultColor: 0xffffff,
 			texture: 'impostor-lod3',
+			impostorYawAngles: LOD3_IMPOSTOR_YAW_ANGLES,
 			alphaTest: 0.5,
 			doubleSided: true,
 			flatShading: false,
