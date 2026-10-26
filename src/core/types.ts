@@ -49,6 +49,7 @@ export interface TextureData {
 	data: Uint8Array;
 	colorFactors?: Float32Array;
 	colorPixelIndices?: Uint32Array;
+	colorOffsets?: Float32Array;
 	wrap?: 'repeat' | 'clamp';
 	wrapS?: 'repeat' | 'clamp';
 	wrapT?: 'repeat' | 'clamp';

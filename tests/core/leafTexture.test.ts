@@ -309,6 +309,34 @@ function percentile( values: number[], fraction: number ): number {
 
 describe( 'fir sprig texture', () => {
 
+	it( 'keeps stem pixels brown at antialiased edges for every leaf tint', () => {
+
+		const original = createFirSprigTexture( 1, 256, true, 0x2f7d1f );
+		const tinted = createFirSprigTexture( 1, 256, true, 0xc0392b );
+		let stemPixels = 0;
+
+		for ( let y = 4; y <= 20; y ++ ) {
+
+			const sourceY = original.height - y - 1;
+			const center = Math.round( original.height * 0.5 + Math.sin( sourceY / original.height * Math.PI * 1.3 + 0.37 ) * original.height * 0.009 );
+
+			for ( let x = center - 8; x <= center + 8; x ++ ) {
+
+				const pixel = y * original.width + x;
+				if ( original.colorFactors![ pixel ]! > 0 || alphaAt( original, x, y ) === 0 ) continue;
+
+				const offset = pixel * 4;
+				expect( [ tinted.data[ offset ], tinted.data[ offset + 1 ], tinted.data[ offset + 2 ] ] ).toEqual( [ original.data[ offset ], original.data[ offset + 1 ], original.data[ offset + 2 ] ] );
+				stemPixels ++;
+
+			}
+
+		}
+
+		expect( stemPixels ).toBeGreaterThan( 0 );
+
+	} );
+
 	it( 'keeps the calibrated default ramp after the former leaf material tint is baked into the texture', () => {
 
 		const texture = generateTreeData( { seed: 1 } ).textures.leaf!;

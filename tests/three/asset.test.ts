@@ -39,6 +39,24 @@ function meanTextureColorInTile( texture: { width: number; height: number; data:
 
 }
 
+function haveEqualBytes( first: Uint8Array, second: Uint8Array ): boolean {
+
+	if ( first.length !== second.length ) {
+		return false;
+	}
+
+	for ( let index = 0; index < first.length; index ++ ) {
+
+		if ( first[ index ] !== second[ index ] ) {
+			return false;
+		}
+
+	}
+
+	return true;
+
+}
+
 describe( 'VegetationAsset', () => {
 
 	it( 'builds all LOD geometries, per-part materials, and a collider', () => {
@@ -329,6 +347,23 @@ describe( 'VegetationAsset', () => {
 		expect( asset.data.textures.leaf!.data ).not.toEqual( originalPixels );
 
 		asset.dispose();
+
+	} );
+
+	it( 'recolors leaf pixels identically to construction and restores the default bytes', () => {
+
+		const asset = generateTree( { seed: 1 } );
+		const defaultPixels = asset.data.textures.leaf!.data.slice();
+		const constructed = generateTree( { seed: 1, leafColor: '#c0392b' } );
+
+		asset.setColor( 'leaf', '#c0392b' );
+		expect( haveEqualBytes( asset.data.textures.leaf!.data, constructed.data.textures.leaf!.data ) ).toBe( true );
+
+		asset.setColor( 'leaf', 0x2f7d1f );
+		expect( haveEqualBytes( asset.data.textures.leaf!.data, defaultPixels ) ).toBe( true );
+
+		asset.dispose();
+		constructed.dispose();
 
 	} );
 

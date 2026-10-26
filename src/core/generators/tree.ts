@@ -3,7 +3,7 @@ import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
 import { createBarkTexture } from '../barkTexture';
-import { createFirSprigTexture, DEFAULT_LEAF_COLOR, getFirSprigLeafColor, padTextureEdges } from '../leafTexture';
+import { composeFirSprigTexture, createFirSprigTexture, DEFAULT_LEAF_COLOR, padTextureEdges } from '../leafTexture';
 import { registerTextureRegenerator } from '../textureRegenerator';
 import type { Color3, ColliderData, MeshData, PartDef, TextureData, TextureGeneratorDef, Vec3, VegetationData } from '../types';
 
@@ -889,6 +889,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 
 	updateCrownAtlas( textures.leaf, silhouette, leafColor );
 	padTextureEdges( textures.leaf );
+	textures.leaf = composeFirSprigTexture( textures.leaf, leafColor );
 
 	const lod3 = buildSixPlaneImpostor( height, lod0Bounds.radius, parts.length - 2 );
 	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ), getBoundsRadius( lod3 ) ), height };
@@ -912,36 +913,10 @@ function regenerateTreeLeafTextureData( existing: TextureData, generator: Textur
 		throw new Error( 'Tree leaf texture cannot be regenerated' );
 	}
 
-	const nextPixels = existing.data.slice();
-	const factors = existing.colorFactors;
-	const rowColors = new Float32Array( existing.height * 3 );
+	const composed = composeFirSprigTexture( existing, color );
+	updateCrownAtlas( composed, null, color, existing );
 
-	for ( let y = 0; y < existing.height; y ++ ) {
-
-		const target = getFirSprigLeafColor( y / ( existing.height - 1 ), color );
-		rowColors[ y * 3 ] = target[ 0 ];
-		rowColors[ y * 3 + 1 ] = target[ 1 ];
-		rowColors[ y * 3 + 2 ] = target[ 2 ];
-
-	}
-
-	for ( const pixel of existing.colorPixelIndices ) {
-
-		const y = Math.floor( pixel / existing.width );
-		const factor = factors[ pixel ]!;
-		const offset = pixel * 4;
-		const row = y * 3;
-
-		nextPixels[ offset ] = Math.round( clamp( rowColors[ row ]! * factor, 0, 255 ) );
-		nextPixels[ offset + 1 ] = Math.round( clamp( rowColors[ row + 1 ]! * factor, 0, 255 ) );
-		nextPixels[ offset + 2 ] = Math.round( clamp( rowColors[ row + 2 ]! * factor, 0, 255 ) );
-
-	}
-
-	const texture = { ...existing, data: nextPixels };
-	updateCrownAtlas( texture, null, color, existing );
-
-	return texture;
+	return composed;
 
 }
 

@@ -89,6 +89,7 @@ function copyTextureData( data: VegetationData ): VegetationData {
 		data: texture.data.slice(),
 		...( texture.colorFactors === undefined ? {} : { colorFactors: texture.colorFactors.slice() } ),
 		...( texture.colorPixelIndices === undefined ? {} : { colorPixelIndices: texture.colorPixelIndices.slice() } ),
+		...( texture.colorOffsets === undefined ? {} : { colorOffsets: texture.colorOffsets.slice() } ),
 	} ] ) );
 
 	return { ...data, textures };

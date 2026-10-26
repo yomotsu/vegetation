@@ -85,6 +85,7 @@ function drawStroke(
 	startColor: Rgb,
 	endColor: Rgb,
 	colorFactors?: Float32Array,
+	overwriteColor = false,
 ): void {
 
 	const dx = to[ 0 ] - from[ 0 ];
@@ -117,6 +118,16 @@ function drawStroke(
 				Math.round( lerp( startColor[ 1 ], endColor[ 1 ], amount ) ),
 				Math.round( lerp( startColor[ 2 ], endColor[ 2 ], amount ) ),
 			], Math.round( coverage * 255 ) );
+
+			if ( overwriteColor ) {
+
+				const offset = ( y * width + x ) * 4;
+				data[ offset ] = Math.round( lerp( startColor[ 0 ], endColor[ 0 ], amount ) );
+				data[ offset + 1 ] = Math.round( lerp( startColor[ 1 ], endColor[ 1 ], amount ) );
+				data[ offset + 2 ] = Math.round( lerp( startColor[ 2 ], endColor[ 2 ], amount ) );
+
+			}
+
 			if ( colorFactors !== undefined ) colorFactors[ y * width + x ] = 0;
 
 		}
@@ -364,7 +375,7 @@ function drawStem( data: Uint8Array, width: number, size: number, seed: number, 
 		const point: [ number, number ] = [ center, y ];
 		const strokeWidth = lerp( baseStemWidth, tipStemWidth, Math.pow( amount, 0.72 ) );
 
-		if ( previous !== null ) drawStroke( data, width, size, previous, point, previousWidth, strokeWidth, stemColor, stemColor, colorFactors );
+		if ( previous !== null ) drawStroke( data, width, size, previous, point, previousWidth, strokeWidth, stemColor, stemColor, colorFactors, true );
 
 		previous = point;
 		previousWidth = strokeWidth;
@@ -587,6 +598,16 @@ export function padTextureEdges( texture: TextureData ): void {
 				if ( texture.colorFactors !== undefined ) {
 
 					texture.colorFactors[ textureIndex / 4 ] = texture.colorFactors[ sourceTextureIndex / 4 ]!;
+					if ( texture.colorOffsets !== undefined ) {
+
+						const targetOffset = textureIndex / 4 * 3;
+					const sourceOffset = sourceTextureIndex / 4 * 3;
+					texture.colorOffsets[ targetOffset ] = texture.colorOffsets[ sourceOffset ]!;
+					texture.colorOffsets[ targetOffset + 1 ] = texture.colorOffsets[ sourceOffset + 1 ]!;
+					texture.colorOffsets[ targetOffset + 2 ] = texture.colorOffsets[ sourceOffset + 2 ]!;
+
+					}
+
 					if ( texture.colorFactors[ sourceTextureIndex / 4 ]! > 0 ) colorPixelIndices!.push( textureIndex / 4 );
 
 				}
@@ -636,6 +657,56 @@ function flipColorFactorsVertically( factors: Float32Array, width: number, heigh
 
 }
 
+function getColorPixelIndices( factors: Float32Array ): Uint32Array {
+
+	const indices: number[] = [];
+
+	for ( let pixel = 0; pixel < factors.length; pixel ++ ) {
+		if ( factors[ pixel ]! > 0 ) indices.push( pixel );
+	}
+
+	return Uint32Array.from( indices );
+
+}
+
+export function composeFirSprigTexture( texture: TextureData, color: number ): TextureData {
+
+	if ( texture.colorFactors === undefined ) {
+		throw new Error( 'Fir sprig texture has no color-independent inputs' );
+	}
+
+	const colorPixelIndices = texture.colorPixelIndices ?? getColorPixelIndices( texture.colorFactors );
+	const data = texture.data.slice();
+	const colorOffsets = texture.colorOffsets?.slice() ?? new Float32Array( texture.colorFactors.length * 3 );
+	const defaultColor = DEFAULT_LEAF_COLOR;
+
+	for ( const pixel of colorPixelIndices ) {
+
+		const y = Math.floor( pixel / texture.width );
+		const factor = texture.colorFactors[ pixel ]!;
+		const offset = pixel * 4;
+		const target = getFirSprigLeafColor( texture.height === 1 ? 1 : y / ( texture.height - 1 ), color );
+		const defaultTarget = getFirSprigLeafColor( texture.height === 1 ? 1 : y / ( texture.height - 1 ), defaultColor );
+		const colorOffset = pixel * 3;
+
+		if ( texture.colorOffsets === undefined ) {
+
+			for ( let channel = 0; channel < 3; channel ++ ) {
+				colorOffsets[ colorOffset + channel ] = texture.data[ offset + channel ]! - defaultTarget[ channel ]! * factor;
+			}
+
+		}
+
+		for ( let channel = 0; channel < 3; channel ++ ) {
+			data[ offset + channel ] = Math.round( clamp( target[ channel ]! * factor + colorOffsets[ colorOffset + channel ]!, 0, 255 ) );
+		}
+
+	}
+
+	return { ...texture, data, colorPixelIndices, colorOffsets };
+
+}
+
 export function createFirSprigTexture( seed: number, size = 256, padEdges = true, color = DEFAULT_LEAF_COLOR ): TextureData {
 
 	if ( ! Number.isInteger( size ) || size < 1 ) {
@@ -653,7 +724,7 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 
 	drawSprig( data, width, size, seed );
 	matchLeafColorDistribution( data, width, size );
-	const colorFactors = matchLeafBrightnessRamp( data, width, size, color );
+	const colorFactors = matchLeafBrightnessRamp( data, width, size, DEFAULT_LEAF_COLOR );
 	softenSprigCenterline( data, width, size, seed, colorFactors );
 	drawStem( data, width, size, seed, colorFactors );
 	flipTextureVertically( data, width, size );
@@ -665,6 +736,6 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 
 	}
 
-	return texture;
+	return composeFirSprigTexture( texture, color );
 
 }
