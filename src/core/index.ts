@@ -11,3 +11,4 @@ export * from './barkTexture';
 export * from './rockTexture';
 export * from './generators/tree';
 export * from './generators/rock';
+export * from './generators/pebbles';
