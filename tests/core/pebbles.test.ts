@@ -87,7 +87,7 @@ describe( 'procedural pebbles data', () => {
 		expect( data.parts[ 0 ]!.normalTexture ).toBe( 'normal' );
 		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
 		expect( data.collider ).toBeNull();
-		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 192 );
+		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 160 );
 		expect( triangleCount( data.lods[ 3 ]! ) ).toBe( 12 );
 		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 2 );
 		expect( data.textures.albedo!.data ).toEqual( createRockTextures( 4 ).albedo.data );
@@ -108,18 +108,28 @@ describe( 'procedural pebbles data', () => {
 
 	} );
 
-	it( 'keeps every mesh within the reference vertex caps with decreasing triangle counts', () => {
+	it( 'keeps default vertex budgets near the requested LOD targets with decreasing triangle counts', () => {
 
 		for ( const seed of [ 1, 2, 3 ] ) {
 
 			const data = generatePebblesData( { seed } );
 			const lods = data.lods.slice( 0, 3 );
 			const vertices = lods.map( vertexCount );
+			const allVertices = data.lods.map( vertexCount );
 			const triangles = data.lods.map( triangleCount );
 
-			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 1113 );
-			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 426 );
-			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 213 );
+			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 160 );
+			expect( vertices[ 1 ] ).toBeGreaterThanOrEqual( 120 );
+			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 136 );
+			expect( vertices[ 2 ] ).toBeGreaterThanOrEqual( 80 );
+			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 96 );
+			if ( seed === 1 ) expect( vertices ).toEqual( [ 160, 128, 96 ] );
+			for ( let lod = 0; lod < allVertices.length - 1; lod ++ ) {
+
+				expect( allVertices[ lod ] ).toBeGreaterThan( allVertices[ lod + 1 ]! );
+
+			}
+
 			expect( triangles[ 0 ] ).toBeGreaterThan( triangles[ 1 ]! );
 			expect( triangles[ 1 ] ).toBeGreaterThan( triangles[ 2 ]! );
 			expect( triangles[ 2 ] ).toBeGreaterThan( triangles[ 3 ]! );
@@ -128,9 +138,9 @@ describe( 'procedural pebbles data', () => {
 		}
 
 		const maximumCount = generatePebblesData( { count: 30 } );
-		expect( vertexCount( maximumCount.lods[ 0 ]! ) ).toBeLessThanOrEqual( 1113 );
-		expect( vertexCount( maximumCount.lods[ 1 ]! ) ).toBeLessThanOrEqual( 426 );
-		expect( vertexCount( maximumCount.lods[ 2 ]! ) ).toBeLessThanOrEqual( 213 );
+		expect( vertexCount( maximumCount.lods[ 0 ]! ) ).toBeLessThanOrEqual( 300 );
+		expect( vertexCount( maximumCount.lods[ 1 ]! ) ).toBeLessThanOrEqual( 240 );
+		expect( vertexCount( maximumCount.lods[ 2 ]! ) ).toBeLessThanOrEqual( 180 );
 
 	} );
 
@@ -144,7 +154,7 @@ describe( 'procedural pebbles data', () => {
 			for ( const lod of [ 1, 2 ] ) {
 
 				const coverage = coverageIou( lod0, renderCoverage( data, lod, topDown ), 1 );
-				expect( coverage ).toBeGreaterThan( 0.65 );
+				expect( coverage, `LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThan( 0.65 );
 
 			}
 

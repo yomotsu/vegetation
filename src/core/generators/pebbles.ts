@@ -215,7 +215,7 @@ function buildConvexHullFaces( positions: Vec3[] ): [ number, number, number ][]
 
 }
 
-function selectPebbleVertices( mesh: MeshData, count: number ): Vec3[] {
+function selectPebbleVertices( mesh: MeshData, count: number, prioritizeFootprint = false ): Vec3[] {
 
 	const unique = new Map<string, Vec3>();
 
@@ -233,7 +233,7 @@ function selectPebbleVertices( mesh: MeshData, count: number ): Vec3[] {
 	const bounds = getMeshBounds( mesh );
 	const selected = new Set<number>();
 
-	for ( let axis = 0; axis < 3; axis ++ ) {
+	for ( const axis of prioritizeFootprint ? [ 0, 2 ] : [ 0, 1, 2 ] ) {
 
 		let minimum = 0;
 		let maximum = 0;
@@ -247,6 +247,19 @@ function selectPebbleVertices( mesh: MeshData, count: number ): Vec3[] {
 
 		selected.add( minimum );
 		selected.add( maximum );
+
+	}
+
+	if ( prioritizeFootprint ) {
+
+		let highest = 0;
+		for ( let index = 1; index < positions.length; index ++ ) {
+
+			if ( positions[ index ]![ 1 ]! > positions[ highest ]![ 1 ]! ) highest = index;
+
+		}
+
+		selected.add( highest );
 
 	}
 
@@ -267,14 +280,16 @@ function selectPebbleVertices( mesh: MeshData, count: number ): Vec3[] {
 
 			let spacing = Infinity;
 			const position = positions[ candidate ]!;
-			const candidateDirection: Vec3 = [ position[ 0 ] - center[ 0 ], position[ 1 ] - center[ 1 ], position[ 2 ] - center[ 2 ] ];
-			const candidateLength = Math.hypot( candidateDirection[ 0 ], candidateDirection[ 1 ], candidateDirection[ 2 ] ) || 1;
+			const candidateDirection: Vec3 = [ position[ 0 ] - center[ 0 ], prioritizeFootprint ? 0 : position[ 1 ] - center[ 1 ], position[ 2 ] - center[ 2 ] ];
+			const candidateLength = Math.hypot( candidateDirection[ 0 ], candidateDirection[ 1 ], candidateDirection[ 2 ] );
+			if ( candidateLength < 1e-8 ) continue;
 
 			for ( const index of selected ) {
 
 				const other = positions[ index ]!;
-				const otherDirection: Vec3 = [ other[ 0 ] - center[ 0 ], other[ 1 ] - center[ 1 ], other[ 2 ] - center[ 2 ] ];
-				const otherLength = Math.hypot( otherDirection[ 0 ], otherDirection[ 1 ], otherDirection[ 2 ] ) || 1;
+				const otherDirection: Vec3 = [ other[ 0 ] - center[ 0 ], prioritizeFootprint ? 0 : other[ 1 ] - center[ 1 ], other[ 2 ] - center[ 2 ] ];
+				const otherLength = Math.hypot( otherDirection[ 0 ], otherDirection[ 1 ], otherDirection[ 2 ] );
+				if ( otherLength < 1e-8 ) continue;
 				const dot = ( candidateDirection[ 0 ] * otherDirection[ 0 ] + candidateDirection[ 1 ] * otherDirection[ 1 ] + candidateDirection[ 2 ] * otherDirection[ 2 ] ) / ( candidateLength * otherLength );
 				spacing = Math.min( spacing, 1 - dot );
 
@@ -392,9 +407,8 @@ function buildStoneLod( placements: PebblePlacement[], burial: number, level: 0 
 		const reference = buildRockShell( 1, radiusAt, 1 );
 		scaleMesh( reference, [ placement.size * 0.5 * placement.aspect, placement.size * 0.5 * placement.verticalAspect, placement.size * 0.5 * placement.depthAspect ] );
 		rotateMesh( reference, placement.yaw );
-		const lod2VertexLimit = Math.min( 8, Math.floor( 213 / placements.length ) );
-		const vertexLimit = level === 0 ? 12 : level === 1 ? 10 : lod2VertexLimit;
-		const stone = buildLowPolyPebble( selectPebbleVertices( reference, vertexLimit ) );
+		const vertexLimit = level === 0 ? 10 : level === 1 ? 8 : 6;
+		const stone = buildLowPolyPebble( selectPebbleVertices( reference, vertexLimit, level === 2 ) );
 
 		appendPebble( builder, stone, placement, burial );
 
