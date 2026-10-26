@@ -12,6 +12,7 @@ import { VegetationMesh } from 'vegetation';
 import type { VegetationAsset } from 'vegetation';
 import { kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
+import { createColorUpdateScheduler } from './colorUpdateScheduler';
 import { createScatter } from './scatter';
 import type { ScatterController } from './scatter';
 import { createPreviewScene, setPreviewShadowFlags } from './rendering';
@@ -73,6 +74,11 @@ let colorFolder: GUI | null = null;
 let labels: CompareLabel[] = [];
 let colliderLines: LineSegments[] = [];
 let lastScatterShadowUpdate = - Infinity;
+const scheduleColorUpdate = createColorUpdateScheduler( ( colors ) => {
+
+	for ( const current of [ asset, ...scatterVariants ] ) current.setColors( colors );
+
+} );
 
 for ( const part of activeKind.colorParts ) {
 
@@ -84,7 +90,11 @@ function getLeafPreset( color: string ): string {
 
 	for ( const [ preset, presetColor ] of Object.entries( leafColorPresets ) ) {
 
-		if ( presetColor.toLowerCase() === color.toLowerCase() ) return preset;
+		if ( presetColor.toLowerCase() === color.toLowerCase() ) {
+
+			return preset;
+
+		}
 
 	}
 
@@ -108,14 +118,46 @@ async function createPreviewRenderer(): Promise<{ renderer: PreviewRenderer; lab
 
 function getOptionBounds( name: string ): [ number, number, number ] {
 
-	if ( name === 'seed' ) return [ 0, 999999, 1 ];
-	if ( name === 'height' ) return [ 2, 14, 0.1 ];
-	if ( name === 'rootDepth' ) return [ 0, 1, 0.05 ];
-	if ( name === 'crownSize' ) return [ 0.5, 1.5, 0.01 ];
-	if ( name === 'branchCount' ) return [ 1, 18, 1 ];
-	if ( name === 'size' ) return [ 1, 12, 0.1 ];
-	if ( name === 'roughness' ) return [ 0, 1.5, 0.01 ];
-	if ( name === 'flatness' ) return [ 0, 1, 0.01 ];
+	if ( name === 'seed' ) {
+
+		return [ 0, 999999, 1 ];
+
+	}
+	if ( name === 'height' ) {
+
+		return [ 2, 14, 0.1 ];
+
+	}
+	if ( name === 'rootDepth' ) {
+
+		return [ 0, 1, 0.05 ];
+
+	}
+	if ( name === 'crownSize' ) {
+
+		return [ 0.5, 1.5, 0.01 ];
+
+	}
+	if ( name === 'branchCount' ) {
+
+		return [ 1, 18, 1 ];
+
+	}
+	if ( name === 'size' ) {
+
+		return [ 1, 12, 0.1 ];
+
+	}
+	if ( name === 'roughness' ) {
+
+		return [ 0, 1.5, 0.01 ];
+
+	}
+	if ( name === 'flatness' ) {
+
+		return [ 0, 1, 0.01 ];
+
+	}
 
 	const value = state.options[ name ]!;
 	return [ 0, Math.max( 10, value * 2 ), 0.1 ];
@@ -128,8 +170,16 @@ function makeAsset( kind: VegetationKind, options: Record<string, number>, color
 
 	for ( const part of kind.colorParts ) {
 
-		if ( part === 'leaf' ) continue;
-		if ( colors[ part ] !== undefined ) next.setColor( part, colors[ part ]! );
+		if ( part === 'leaf' ) {
+
+			continue;
+
+		}
+		if ( colors[ part ] !== undefined ) {
+
+			next.setColor( part, colors[ part ]! );
+
+		}
 
 	}
 
@@ -139,7 +189,7 @@ function makeAsset( kind: VegetationKind, options: Record<string, number>, color
 
 function setPartColor( part: string, color: string ): void {
 
-	for ( const current of [ asset, ...scatterVariants ] ) current.setColor( part, color );
+	scheduleColorUpdate( part, color );
 
 }
 
@@ -147,7 +197,11 @@ function setWireframe( enabled: boolean ): void {
 
 	for ( const current of [ asset, ...scatterVariants ] ) {
 		current.materials.forEach( ( material ) => {
-			if ( material.wireframe === enabled ) return;
+			if ( material.wireframe === enabled ) {
+
+				return;
+
+			}
 
 			material.wireframe = enabled;
 			material.needsUpdate = true;
@@ -182,7 +236,11 @@ function disposePreview(): void {
 
 function addCollider( x: number, visible: boolean ): void {
 
-	if ( asset.collider === null ) return;
+	if ( asset.collider === null ) {
+
+		return;
+
+	}
 
 	const lines = new LineSegments(
 		new WireframeGeometry( asset.collider ),
@@ -197,7 +255,7 @@ function addCollider( x: number, visible: boolean ): void {
 
 function frameView(): void {
 
-	const height = state.options.height ?? state.options.size ?? 6;
+	const height = state.options.height ?? state.options.size ?? 7.5;
 	controls.target.set( 0, state.mode === 'scatter' ? 0 : height * 0.5, 0 );
 
 	if ( state.mode === 'single' ) {
@@ -300,7 +358,11 @@ function rebuildOptionFolders( gui: GUI ): void {
 		presetController.onChange( ( preset: string ) => {
 
 			const color = leafColorPresets[ preset as keyof typeof leafColorPresets ];
-			if ( color === undefined ) return;
+			if ( color === undefined ) {
+
+				return;
+
+			}
 
 			state.colors.leaf = color;
 			updateLeafColorDisplay();
@@ -356,7 +418,11 @@ function createGui(): void {
 	gui.add( state, 'mode', [ 'single', 'compare', 'scatter' ] ).name( 'view' ).onChange( rebuildPreview );
 	gui.add( state, 'lod', 0, 4, 1 ).name( 'single LOD' ).onChange( () => {
 
-		if ( state.mode === 'single' ) rebuildPreview();
+		if ( state.mode === 'single' ) {
+
+			rebuildPreview();
+
+		}
 
 	} );
 	gui.add( state, 'turntable' ).name( 'turntable' ).onChange( ( enabled: boolean ) => controls.autoRotate = enabled );
@@ -368,12 +434,20 @@ function createGui(): void {
 	} );
 	gui.add( state, 'scatterCount', 0, 5000, 100 ).name( 'scatter count' ).onFinishChange( () => {
 
-		if ( state.mode === 'scatter' ) rebuildPreview();
+		if ( state.mode === 'scatter' ) {
+
+			rebuildPreview();
+
+		}
 
 	} );
 	gui.add( state, 'seedVariants', 1, 4, 1 ).name( 'seed variants' ).onFinishChange( () => {
 
-		if ( state.mode === 'scatter' ) rebuildPreview();
+		if ( state.mode === 'scatter' ) {
+
+			rebuildPreview();
+
+		}
 
 	} );
 
@@ -386,7 +460,7 @@ function updateCompareLabels(): void {
 	for ( const label of labels ) {
 
 		const position = label.mesh.position.clone();
-		position.y = ( state.options.height ?? state.options.size ?? 6 ) * 1.13;
+		position.y = ( state.options.height ?? state.options.size ?? 7.5 ) * 1.13;
 		position.project( camera );
 		label.element.style.left = `${ ( position.x * 0.5 + 0.5 ) * window.innerWidth }px`;
 		label.element.style.top = `${ ( - position.y * 0.5 + 0.5 ) * window.innerHeight }px`;
