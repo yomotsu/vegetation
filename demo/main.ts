@@ -345,7 +345,10 @@ function rebuildPreview(): void {
 
 			const label = document.createElement( 'div' );
 			label.className = 'compare-label';
-			label.textContent = `LOD ${ lod } · ${ Math.round( asset.geometries[ lod ]!.getIndex()!.count / 3 ).toLocaleString() } tris`;
+			const geometry = asset.geometries[ lod ]!;
+			const triangles = Math.round( geometry.getIndex()!.count / 3 ).toLocaleString();
+			const vertices = geometry.getAttribute( 'position' ).count.toLocaleString();
+			label.textContent = `LOD ${ lod } · ${ triangles } tris\n${ vertices } verts`;
 			compareLabels.append( label );
 			labels.push( { mesh, element: label } );
 
