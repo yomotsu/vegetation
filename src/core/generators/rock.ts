@@ -203,6 +203,62 @@ function scaleHeight( mesh: MeshData, scale: number ): void {
 
 }
 
+function recomputeSmoothNormals( mesh: MeshData ): void {
+
+	const sums = new Map<string, [ number, number, number ]>();
+	const keys = Array.from( { length: mesh.positions.length / 3 }, ( _, index ) => {
+
+		const offset = index * 3;
+		return `${ mesh.positions[ offset ]! },${ mesh.positions[ offset + 1 ]! },${ mesh.positions[ offset + 2 ]! }`;
+
+	} );
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const first = mesh.indices[ index ]! * 3;
+		const second = mesh.indices[ index + 1 ]! * 3;
+		const third = mesh.indices[ index + 2 ]! * 3;
+		const firstX = mesh.positions[ first ]!;
+		const firstY = mesh.positions[ first + 1 ]!;
+		const firstZ = mesh.positions[ first + 2 ]!;
+		const abX = mesh.positions[ second ]! - firstX;
+		const abY = mesh.positions[ second + 1 ]! - firstY;
+		const abZ = mesh.positions[ second + 2 ]! - firstZ;
+		const acX = mesh.positions[ third ]! - firstX;
+		const acY = mesh.positions[ third + 1 ]! - firstY;
+		const acZ = mesh.positions[ third + 2 ]! - firstZ;
+		const normal: [ number, number, number ] = [
+			abY * acZ - abZ * acY,
+			abZ * acX - abX * acZ,
+			abX * acY - abY * acX,
+		];
+
+		for ( const vertex of [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ] ) {
+
+			const key = keys[ vertex ]!;
+			const sum = sums.get( key ) ?? [ 0, 0, 0 ];
+			sum[ 0 ] += normal[ 0 ];
+			sum[ 1 ] += normal[ 1 ];
+			sum[ 2 ] += normal[ 2 ];
+			sums.set( key, sum );
+
+		}
+
+	}
+
+	for ( let vertex = 0; vertex < keys.length; vertex ++ ) {
+
+		const normal = sums.get( keys[ vertex ]! ) ?? [ 0, 1, 0 ];
+		const length = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) || 1;
+		const offset = vertex * 3;
+		mesh.normals[ offset ] = normal[ 0 ] / length;
+		mesh.normals[ offset + 1 ] = normal[ 1 ] / length;
+		mesh.normals[ offset + 2 ] = normal[ 2 ] / length;
+
+	}
+
+}
+
 function buildCollider( mesh: MeshData ): ColliderData {
 
 	const vertices = new Map<string, number>();
@@ -337,6 +393,9 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( lod0, burial * fullHeight, skirtFloor );
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
 	sinkMesh( lod2, burial * fullHeight, skirtFloor );
+	recomputeSmoothNormals( lod0 );
+	recomputeSmoothNormals( lod1 );
+	recomputeSmoothNormals( lod2 );
 
 	const bounds = getBounds( lod0 );
 	const parts: PartDef[] = [
@@ -350,7 +409,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 			ior: 1.05,
 			alphaTest: 0,
 			doubleSided: false,
-			flatShading: true,
+			flatShading: false,
 		},
 		impostorLod3Part(),
 		impostorPart(),

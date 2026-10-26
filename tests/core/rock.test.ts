@@ -322,6 +322,39 @@ describe( 'procedural rock data', () => {
 
 	} );
 
+	it( 'uses shared smooth normals for each shell LOD', () => {
+
+		const data = generateRockData( { seed: 6 } );
+
+		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
+
+		for ( const mesh of data.lods.slice( 0, 3 ) ) {
+
+			expect( vertexCount( mesh ) ).toBeLessThan( triangleCount( mesh ) * 2 );
+
+			const normalsByPosition = new Map<string, number[]>();
+
+			for ( let vertex = 0; vertex < vertexCount( mesh ); vertex ++ ) {
+
+				const offset = vertex * 3;
+				const positionKey = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ].map( ( value ) => value.toFixed( 6 ) ).join( ',' );
+				const normal = [ mesh.normals[ offset ]!, mesh.normals[ offset + 1 ]!, mesh.normals[ offset + 2 ]! ];
+				const existing = normalsByPosition.get( positionKey );
+
+				if ( existing !== undefined ) {
+					expect( normal[ 0 ] ).toBeCloseTo( existing[ 0 ]!, 5 );
+					expect( normal[ 1 ] ).toBeCloseTo( existing[ 1 ]!, 5 );
+					expect( normal[ 2 ] ).toBeCloseTo( existing[ 2 ]!, 5 );
+				} else {
+					normalsByPosition.set( positionKey, normal );
+				}
+
+			}
+
+		}
+
+	} );
+
 	it( 'uses reference-like chunky and low silhouettes across default seeds', () => {
 
 		const samples = Array.from( { length: 12 }, ( _, index ) => {
@@ -478,7 +511,7 @@ describe( 'procedural rock data', () => {
 		const normal = data.textures[ part.normalTexture! ]!;
 
 		expect( part.roughness ).toBe( 0.9 );
-		expect( part.flatShading ).toBe( true );
+		expect( part.flatShading ).toBe( false );
 		expect( part.specularIntensity ).toBeCloseTo( 0.014872 );
 		expect( part.ior ).toBeCloseTo( 1.05 );
 		expect( albedo.width ).toBeGreaterThanOrEqual( 64 );
@@ -490,6 +523,7 @@ describe( 'procedural rock data', () => {
 		expect( Math.abs( albedoMean[ 1 ] - 95.08 ) ).toBeLessThanOrEqual( 8 );
 		expect( Math.abs( albedoMean[ 2 ] - 102.47 ) ).toBeLessThanOrEqual( 8 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeLessThan( 2 );
+		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeGreaterThan( 1.1 );
 		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 2.5 );
 		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 72 );
 		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 88 );

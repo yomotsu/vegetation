@@ -28,7 +28,7 @@ function getRockDirection( u: number, v: number ): [ number, number, number ] {
 export function createRockTextures( seed: number, size = 256 ): { albedo: TextureData; normal: TextureData } {
 
 	const noise = createNoise3D( seed + 419 );
-	const noiseOffset = [ ( seed * 13.7 ) % 61, ( seed * 27.1 ) % 73, ( seed * 41.9 ) % 89 ];
+	const offset = [ ( seed * 13.7 ) % 61, ( seed * 27.1 ) % 73, ( seed * 41.9 ) % 89 ];
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
 	const normalData = new Uint8Array( size * size * 4 );
@@ -38,28 +38,25 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 		for ( let x = 0; x < size; x ++ ) {
 
 			const direction = getRockDirection( x / size, y / size );
-			const broad = noise( direction[ 0 ] * 1.4 + noiseOffset[ 0 ]!, direction[ 1 ] * 1.4 + noiseOffset[ 1 ]!, direction[ 2 ] * 1.4 + noiseOffset[ 2 ]! );
-			const middle = noise( direction[ 0 ] * 3.6 - noiseOffset[ 2 ]!, direction[ 1 ] * 3.6 + noiseOffset[ 0 ]!, direction[ 2 ] * 3.6 - noiseOffset[ 1 ]! );
-			const detail = noise( direction[ 0 ] * 8.5 + noiseOffset[ 1 ]!, direction[ 1 ] * 8.5 - noiseOffset[ 2 ]!, direction[ 2 ] * 8.5 + noiseOffset[ 0 ]! );
-			const layerHeight = direction[ 1 ] + middle * 0.05 + broad * 0.015;
-			const phase = layerHeight * Math.PI * 2 * 2.6 + detail * 0.12;
-			const strata = Math.cos( phase );
-			const crackDistance = Math.abs( Math.sin( phase * 0.5 + middle * 0.08 ) );
-			const layerVisibility = smoothstep( - 0.2, 0.35, detail );
-			const crackLine = 1 - smoothstep( 0.008, 0.028, crackDistance );
-			const crack = crackLine * layerVisibility;
-			const fractureDistance = Math.abs( middle );
-			const fractureLine = 1 - smoothstep( 0.02, 0.065, fractureDistance );
-			const fracture = fractureLine * ( 0.5 + smoothstep( - 0.2, 0.3, detail ) * 0.5 );
-			const edgeHighlight = 1 - smoothstep( 0.025, 0.09, Math.abs( fractureDistance - 0.1 ) );
-			const layerHighlight = ( 1 - smoothstep( 0.025, 0.085, Math.abs( crackDistance - 0.09 ) ) ) * layerVisibility;
-			const brightness = broad * 16 + middle * 12 + detail * 8 + strata * ( 0.8 + layerVisibility * 1.4 ) - crack * 6 - fracture * 6 + edgeHighlight * 2 + layerHighlight;
+			const broad = noise( direction[ 0 ] * 1.8 + offset[ 0 ]!, direction[ 1 ] * 1.8 + offset[ 1 ]!, direction[ 2 ] * 1.8 + offset[ 2 ]! );
+			const medium = noise( direction[ 0 ] * 5.2 - offset[ 2 ]!, direction[ 1 ] * 5.2 + offset[ 0 ]!, direction[ 2 ] * 5.2 - offset[ 1 ]! );
+			const strata = noise(
+				direction[ 0 ] * 4.4 + offset[ 2 ]!,
+				direction[ 1 ] * 15 + offset[ 0 ]! + medium * 1.8,
+				direction[ 2 ] * 4.4 - offset[ 1 ]!,
+			);
+			const fracture = noise( direction[ 0 ] * 13 + offset[ 1 ]!, direction[ 1 ] * 16 - offset[ 2 ]!, direction[ 2 ] * 13 + offset[ 0 ]! );
+			const grain = noise( direction[ 0 ] * 58 + offset[ 2 ]!, direction[ 1 ] * 58 - offset[ 0 ]!, direction[ 2 ] * 58 + offset[ 1 ]! );
+			const crackDistance = Math.abs( fracture );
+			const crack = 1 - smoothstep( 0.035, 0.095, crackDistance );
+			const crackEdge = smoothstep( 0.075, 0.12, crackDistance ) * ( 1 - smoothstep( 0.15, 0.22, crackDistance ) );
+			const brightness = broad * 21 + medium * 10 + strata * 5 + grain * 1.2 - crack * 9 + crackEdge * 1.8;
 			const index = y * size + x;
 
-			heightMap[ index ] = broad * 0.027 + middle * 0.018 + strata * 0.006 + detail * 0.0075 - crack * 0.002 - fracture * 0.004 + edgeHighlight * 0.001;
-			albedoData[ index * 4 ] = Math.round( clamp( 82 + brightness * 0.94, 0, 255 ) );
-			albedoData[ index * 4 + 1 ] = Math.round( clamp( 98 + brightness, 0, 255 ) );
-			albedoData[ index * 4 + 2 ] = Math.round( clamp( 105 + brightness * 1.05, 0, 255 ) );
+			heightMap[ index ] = broad * 0.022 + medium * 0.014 + strata * 0.007 + grain * 0.0008 - crack * 0.0018 + crackEdge * 0.001;
+			albedoData[ index * 4 ] = Math.round( clamp( 82 + brightness * 0.93, 0, 255 ) );
+			albedoData[ index * 4 + 1 ] = Math.round( clamp( 96 + brightness, 0, 255 ) );
+			albedoData[ index * 4 + 2 ] = Math.round( clamp( 103 + brightness * 1.05, 0, 255 ) );
 			albedoData[ index * 4 + 3 ] = 255;
 
 		}
@@ -75,8 +72,10 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 			const right = heightMap[ y * size + ( x + 1 ) % size ]!;
 			const down = heightMap[ Math.max( 0, y - 1 ) * size + x ]!;
 			const up = heightMap[ Math.min( size - 1, y + 1 ) * size + x ]!;
-			const normalX = - ( right - left ) * size * 0.6;
-			const normalY = - ( up - down ) * size * 0.6;
+			const latitude = y / ( size - 1 );
+			const poleFade = smoothstep( 0, 0.04, latitude ) * smoothstep( 0, 0.04, 1 - latitude );
+			const normalX = - ( right - left ) * size * 0.65 * poleFade;
+			const normalY = - ( up - down ) * size * 0.65 * poleFade;
 			const inverseLength = 1 / Math.hypot( normalX, normalY, 1 );
 
 			normalData[ index * 4 ] = Math.round( ( normalX * inverseLength * 0.5 + 0.5 ) * 255 );
