@@ -13,6 +13,7 @@ import type { VegetationAsset } from 'vegetation';
 import { kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
 import { createColorUpdateScheduler } from './colorUpdateScheduler';
+import { createColliderMaterialController } from './colliderVisualization';
 import { createScatter } from './scatter';
 import type { ScatterController } from './scatter';
 import { createPreviewScene, setPreviewShadowFlags } from './rendering';
@@ -43,7 +44,7 @@ const canvasContainer = document.querySelector<HTMLDivElement>( '#canvas' )!;
 const rendererLabel = document.querySelector<HTMLDivElement>( '#renderer-label' )!;
 const status = document.querySelector<HTMLDivElement>( '#status' )!;
 const compareLabels = document.querySelector<HTMLDivElement>( '#compare-labels' )!;
-const { scene, sunlight } = createPreviewScene();
+const { scene, ground, sunlight } = createPreviewScene();
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
 let controls: OrbitControls;
@@ -74,6 +75,7 @@ let colorFolder: GUI | null = null;
 let labels: CompareLabel[] = [];
 let colliderLines: LineSegments[] = [];
 let lastScatterShadowUpdate = - Infinity;
+const colliderMaterialController = createColliderMaterialController();
 const scheduleColorUpdate = createColorUpdateScheduler( ( colors ) => {
 
 	for ( const current of [ asset, ...scatterVariants ] ) current.setColors( colors );
@@ -212,6 +214,8 @@ function setWireframe( enabled: boolean ): void {
 
 function disposePreview(): void {
 
+	colliderMaterialController.restore();
+
 	if ( scatter !== null ) {
 		scatter.dispose();
 		scatter = null;
@@ -244,12 +248,29 @@ function addCollider( x: number, visible: boolean ): void {
 
 	const lines = new LineSegments(
 		new WireframeGeometry( asset.collider ),
-		new LineBasicMaterial( { color: '#e34242', transparent: true, opacity: 0.9 } ),
+		new LineBasicMaterial( { color: '#ff3b30', transparent: true, opacity: 0.9, depthTest: false } ),
 	);
 	lines.position.x = x;
+	lines.renderOrder = 1;
 	lines.visible = visible;
 	root.add( lines );
 	colliderLines.push( lines );
+
+}
+
+function updateColliderVisualization(): void {
+
+	colliderMaterialController.restore();
+	const visible = state.collider && state.mode !== 'scatter' && asset.collider !== null;
+
+	for ( const lines of colliderLines ) lines.visible = visible;
+
+	if ( visible ) {
+
+		colliderMaterialController.show( asset.materials, 0.35 );
+		colliderMaterialController.show( Array.isArray( ground.material ) ? ground.material : [ ground.material ], 0.5 );
+
+	}
 
 }
 
@@ -316,6 +337,7 @@ function rebuildPreview(): void {
 	}
 
 	setWireframe( state.wireframe );
+	updateColliderVisualization();
 	sunlight.shadow.needsUpdate = true;
 	lastScatterShadowUpdate = - Infinity;
 	status.hidden = state.mode !== 'scatter';
@@ -429,7 +451,8 @@ function createGui(): void {
 	gui.add( state, 'wireframe' ).name( 'wireframe' ).onChange( setWireframe );
 	gui.add( state, 'collider' ).name( 'collider' ).onChange( ( visible: boolean ) => {
 
-		for ( const lines of colliderLines ) lines.visible = visible;
+		state.collider = visible;
+		updateColliderVisualization();
 
 	} );
 	gui.add( state, 'scatterCount', 0, 5000, 100 ).name( 'scatter count' ).onFinishChange( () => {
