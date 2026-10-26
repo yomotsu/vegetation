@@ -96,6 +96,41 @@ function median( values: number[] ): number {
 
 }
 
+function componentExtents( mesh: MeshData ): { sizes: number[]; footprint: [ number, number ] } {
+
+	const components = splitConnectedComponents( mesh );
+	const sizes: number[] = [];
+	const minimum = [ Infinity, Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity, - Infinity ];
+
+	for ( const component of components ) {
+
+		const componentMinimum = [ Infinity, Infinity, Infinity ];
+		const componentMaximum = [ - Infinity, - Infinity, - Infinity ];
+
+		for ( let offset = 0; offset < component.positions.length; offset += 3 ) {
+
+			for ( let axis = 0; axis < 3; axis ++ ) {
+
+				const value = component.positions[ offset + axis ]!;
+				componentMinimum[ axis ] = Math.min( componentMinimum[ axis ]!, value );
+				componentMaximum[ axis ] = Math.max( componentMaximum[ axis ]!, value );
+				minimum[ axis ] = Math.min( minimum[ axis ]!, value );
+				maximum[ axis ] = Math.max( maximum[ axis ]!, value );
+
+			}
+
+		}
+
+		const extent = componentMaximum.map( ( value, axis ) => value - componentMinimum[ axis ]! );
+		sizes.push( Math.max( ...extent ) );
+
+	}
+
+	return { sizes, footprint: [ maximum[ 0 ]! - minimum[ 0 ]!, maximum[ 2 ]! - minimum[ 2 ]! ] };
+
+}
+
 function meshColorSpread( mesh: MeshData ): number {
 
 	let minimum = Infinity;
@@ -302,6 +337,35 @@ describe( 'procedural pebbles data', () => {
 
 			expect( fraction ).toBeGreaterThan( 0.19 );
 			expect( fraction ).toBeLessThan( 0.22 );
+
+		}
+
+	} );
+
+	it( 'keeps pebble sizes within the original LOD0 distribution and footprint', () => {
+
+		const referenceMaximum = 0.457542;
+		const referenceMedian = 0.247926;
+		const referenceFootprint: [ number, number ] = [ 2.961952, 2.656292 ];
+		const results: ReturnType<typeof componentExtents>[] = [];
+
+		for ( const seed of [ 1, 2, 3 ] ) {
+
+			const metrics = componentExtents( generatePebblesData( { seed } ).lods[ 0 ]! );
+			results.push( metrics );
+
+		}
+
+		for ( const [ index, metrics ] of results.entries() ) {
+
+			const seed = index + 1;
+			const medianSize = median( metrics.sizes );
+			expect( Math.max( ...metrics.sizes ), `seed ${ seed } pebble size maximum` ).toBeLessThanOrEqual( referenceMaximum );
+			expect( medianSize, `seed ${ seed } pebble size median` ).toBeLessThanOrEqual( referenceMedian );
+			expect( metrics.footprint[ 0 ] / referenceFootprint[ 0 ], `seed ${ seed } X footprint` ).toBeGreaterThanOrEqual( 0.85 );
+			expect( metrics.footprint[ 0 ] / referenceFootprint[ 0 ], `seed ${ seed } X footprint` ).toBeLessThanOrEqual( 1.15 );
+			expect( metrics.footprint[ 1 ] / referenceFootprint[ 1 ], `seed ${ seed } Z footprint` ).toBeGreaterThanOrEqual( 0.85 );
+			expect( metrics.footprint[ 1 ] / referenceFootprint[ 1 ], `seed ${ seed } Z footprint` ).toBeLessThanOrEqual( 1.15 );
 
 		}
 

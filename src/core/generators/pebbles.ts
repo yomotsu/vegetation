@@ -348,9 +348,9 @@ export function generatePebblesData( options: PebblesOptions = {} ): VegetationD
 
 	const seed = options.seed ?? 1;
 	const count = options.count ?? DEFAULT_COUNT;
-	const spread = options.spread ?? 1.6;
-	const size = options.size ?? 0.32;
-	const sizeVariation = options.sizeVariation ?? 0.48;
+	const spread = options.spread ?? 1.56;
+	const size = options.size ?? 0.22;
+	const sizeVariation = options.sizeVariation ?? 0.8;
 	const burial = options.burial ?? 0.4;
 	const stoneColor = options.stoneColor ?? 0xffffff;
 
