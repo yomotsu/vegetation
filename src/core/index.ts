@@ -7,4 +7,6 @@ export * from './primitives';
 export * from './impostor';
 export * from './leafTexture';
 export * from './barkTexture';
+export * from './rockTexture';
 export * from './generators/tree';
+export * from './generators/rock';

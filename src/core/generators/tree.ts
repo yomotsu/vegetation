@@ -1,4 +1,4 @@
-import { bakeImpostor, buildBillboard, impostorLod3Part, impostorPart, LOD3_IMPOSTOR_YAW_ANGLES } from '../impostor';
+import { bakeImpostor, buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
@@ -786,36 +786,6 @@ function updateCrownAtlas( texture: TextureData, silhouette: TextureData | null,
 
 }
 
-function buildLod3( height: number, radius: number, partIndex: number ): MeshData {
-
-	const builder = new MeshBuilder();
-	const normalWeight = Math.SQRT1_2;
-	const color: Color3 = [ 1, 1, 1 ];
-	const planeRadius = radius * 0.995;
-	builder.beginGroup( partIndex );
-
-	for ( let view = 0; view < LOD3_IMPOSTOR_YAW_ANGLES.length; view ++ ) {
-
-		const yaw = LOD3_IMPOSTOR_YAW_ANGLES[ view ]!;
-		const rightX = Math.cos( yaw );
-		const rightZ = - Math.sin( yaw );
-		const normal: Vec3 = [ Math.sin( yaw ) * normalWeight, normalWeight, Math.cos( yaw ) * normalWeight ];
-		const tileStart = view / LOD3_IMPOSTOR_YAW_ANGLES.length;
-		const tileEnd = ( view + 1 ) / LOD3_IMPOSTOR_YAW_ANGLES.length;
-		const a0 = builder.addVertex( [ - rightX * planeRadius, 0, - rightZ * planeRadius ], normal, [ tileStart, 0 ], color, 0 );
-		const a1 = builder.addVertex( [ rightX * planeRadius, 0, rightZ * planeRadius ], normal, [ tileEnd, 0 ], color, 0 );
-		const a2 = builder.addVertex( [ rightX * planeRadius, height, rightZ * planeRadius ], normal, [ tileEnd, 1 ], color, 1 );
-		const a3 = builder.addVertex( [ - rightX * planeRadius, height, - rightZ * planeRadius ], normal, [ tileStart, 1 ], color, 1 );
-
-		builder.addTriangle( a0, a1, a2 );
-		builder.addTriangle( a0, a2, a3 );
-
-	}
-
-	return builder.build();
-
-}
-
 function buildCollider( layout: TreeLayout ): ColliderData {
 
 	const fractions = [ 0, 0.425, 0.85 ];
@@ -919,7 +889,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	updateCrownAtlas( textures.leaf, silhouette, leafColor );
 	padTextureEdges( textures.leaf );
 
-	const lod3 = buildLod3( height, lod0Bounds.radius, parts.length - 2 );
+	const lod3 = buildSixPlaneImpostor( height, lod0Bounds.radius, parts.length - 2 );
 	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ), getBoundsRadius( lod3 ) ), height };
 	const data: VegetationData = {
 		kind: 'tree',

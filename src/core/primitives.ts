@@ -345,6 +345,16 @@ export function addRockShell(
 	const smoothPoints = new Map<string, RockPoint>();
 	const smoothNormals = new Map<string, Vec3>();
 	const smoothTriangles: [ RockPoint, RockPoint, RockPoint ][] = [];
+	const seamIndices = new Map<string, number>();
+	const triangleUvs = ( points: [ RockPoint, RockPoint, RockPoint ] ): [ [ number, number ], [ number, number ], [ number, number ] ] => {
+
+		const minimumU = Math.min( points[ 0 ].uv[ 0 ], points[ 1 ].uv[ 0 ], points[ 2 ].uv[ 0 ] );
+		const maximumU = Math.max( points[ 0 ].uv[ 0 ], points[ 1 ].uv[ 0 ], points[ 2 ].uv[ 0 ] );
+		const crossesSeam = maximumU - minimumU > 0.5;
+
+		return points.map( ( point ) => [ crossesSeam && point.uv[ 0 ] < 0.5 ? point.uv[ 0 ] + 1 : point.uv[ 0 ], point.uv[ 1 ] ] ) as [ [ number, number ], [ number, number ], [ number, number ] ];
+
+	};
 
 	// 各面を重心座標で分割し、変位後の面積法線を共有点へ加算する。
 
@@ -418,12 +428,15 @@ export function addRockShell(
 
 		const emitTriangle = ( first: RockPoint, second: RockPoint, third: RockPoint ): void => {
 
+			const points: [ RockPoint, RockPoint, RockPoint ] = [ first, second, third ];
+			const uvs = triangleUvs( points );
+
 			if ( opts.flat ) {
 
 				const faceNormal = normalize( cross( subtract( second.position, first.position ), subtract( third.position, first.position ) ) );
-				const firstVertex = b.addVertex( first.position, faceNormal, first.uv, first.color, 0 );
-				const secondVertex = b.addVertex( second.position, faceNormal, second.uv, second.color, 0 );
-				const thirdVertex = b.addVertex( third.position, faceNormal, third.uv, third.color, 0 );
+				const firstVertex = b.addVertex( first.position, faceNormal, uvs[ 0 ], first.color, 0 );
+				const secondVertex = b.addVertex( second.position, faceNormal, uvs[ 1 ], second.color, 0 );
+				const thirdVertex = b.addVertex( third.position, faceNormal, uvs[ 2 ], third.color, 0 );
 
 				b.addTriangle( firstVertex, secondVertex, thirdVertex );
 
@@ -475,7 +488,27 @@ export function addRockShell(
 
 		for ( const [ first, second, third ] of smoothTriangles ) {
 
-			b.addTriangle( first.index!, second.index!, third.index! );
+			const points: [ RockPoint, RockPoint, RockPoint ] = [ first, second, third ];
+			const uvs = triangleUvs( points );
+			const indices = points.map( ( point, index ) => {
+
+				if ( uvs[ index ]![ 0 ] === point.uv[ 0 ] ) return point.index!;
+
+				const key = `${ point.geometryKey }:${ uvs[ index ]![ 0 ].toFixed( 10 ) }:${ uvs[ index ]![ 1 ].toFixed( 10 ) }`;
+				let vertexIndex = seamIndices.get( key );
+
+				if ( vertexIndex === undefined ) {
+
+					vertexIndex = b.addVertex( point.position, normalize( smoothNormals.get( point.geometryKey )! ), uvs[ index ]!, point.color, 0 );
+					seamIndices.set( key, vertexIndex );
+
+				}
+
+				return vertexIndex;
+
+			} );
+
+			b.addTriangle( indices[ 0 ]!, indices[ 1 ]!, indices[ 2 ]! );
 
 		}
 

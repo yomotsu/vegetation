@@ -61,6 +61,36 @@ export function buildBillboard( bounds: { radius: number; height: number }, impo
 
 }
 
+export function buildSixPlaneImpostor( height: number, radius: number, partIndex: number ): MeshData {
+
+	const builder = new MeshBuilder();
+	const normalWeight = Math.SQRT1_2;
+	const color: Color3 = [ 1, 1, 1 ];
+	const planeRadius = radius * 0.995;
+	builder.beginGroup( partIndex );
+
+	for ( let view = 0; view < LOD3_IMPOSTOR_YAW_ANGLES.length; view ++ ) {
+
+		const yaw = LOD3_IMPOSTOR_YAW_ANGLES[ view ]!;
+		const rightX = Math.cos( yaw );
+		const rightZ = - Math.sin( yaw );
+		const normal: [ number, number, number ] = [ Math.sin( yaw ) * normalWeight, normalWeight, Math.cos( yaw ) * normalWeight ];
+		const tileStart = view / LOD3_IMPOSTOR_YAW_ANGLES.length;
+		const tileEnd = ( view + 1 ) / LOD3_IMPOSTOR_YAW_ANGLES.length;
+		const a0 = builder.addVertex( [ - rightX * planeRadius, 0, - rightZ * planeRadius ], normal, [ tileStart, 0 ], color, 0 );
+		const a1 = builder.addVertex( [ rightX * planeRadius, 0, rightZ * planeRadius ], normal, [ tileEnd, 0 ], color, 0 );
+		const a2 = builder.addVertex( [ rightX * planeRadius, height, rightZ * planeRadius ], normal, [ tileEnd, 1 ], color, 1 );
+		const a3 = builder.addVertex( [ - rightX * planeRadius, height, - rightZ * planeRadius ], normal, [ tileStart, 1 ], color, 1 );
+
+		builder.addTriangle( a0, a1, a2 );
+		builder.addTriangle( a0, a2, a3 );
+
+	}
+
+	return builder.build();
+
+}
+
 /** 指定した yaw ごとの画像を横に並べたアトラスを作ります。 */
 export function bakeImpostor( data: VegetationData, colors: Color3[], size: number, viewYawAngles: readonly number[] = [ 0, Math.PI / 2 ] ): TextureData {
 

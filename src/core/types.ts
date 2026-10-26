@@ -22,6 +22,7 @@ export interface PartDef {
 	name: string; // 'bark' | 'leaf' | 'rock' | 'impostor' など
 	defaultColor: number; // sRGB hex（0x5a8f3a）
 	texture: string | null; // VegetationData.textures のキー（impostor は three 層で焼く）
+	normalTexture?: string; // tangent-space normal map のキー
 	colorizesTexture?: boolean;
 	roughness?: number;
 	/** 誘電体の鏡面反射強度。指定時は MeshPhysicalMaterial を使用する。 */
@@ -48,7 +49,9 @@ export interface TextureData {
 	colorFactors?: Float32Array;
 	colorPixelIndices?: Uint32Array;
 	wrap?: 'repeat' | 'clamp';
-} // RGBA8, sRGB。row 0 は v=0（画像下端）。three.js DataTexture は flipY=false で使う。
+	wrapS?: 'repeat' | 'clamp';
+	wrapT?: 'repeat' | 'clamp';
+} // RGBA8。色マップは sRGB、法線マップは linear。row 0 は v=0（画像下端）。
 
 export interface ColliderData {
 	positions: Float32Array;
