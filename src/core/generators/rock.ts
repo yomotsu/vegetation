@@ -10,6 +10,8 @@ export interface RockOptions {
 	size?: number;
 	roughness?: number;
 	flatness?: number;
+	/** 地中に沈める全体高の割合（0〜1）。 */
+	burial?: number;
 	rockColor?: number;
 }
 
@@ -74,9 +76,19 @@ function getTargetAspect( seed: number, flatness: number ): number {
 	const seedBand = Math.floor( Math.abs( seed ) );
 	const seedHash = Math.sin( seedBand * 78.233 + 12.9898 ) * 43758.5453;
 	const variation = ( seedHash - Math.floor( seedHash ) - 0.5 ) * 0.03;
-	const styleAspect = seedBand % 2 === 0 ? 0.37 : 0.85;
+	const visibleAspect = seedBand % 2 === 0 ? 0.37 : 0.65;
+	const styleAspect = visibleAspect / 0.55;
 
 	return ( styleAspect + variation ) * ( 1 - flatness * 0.15 );
+
+}
+
+function getDefaultBurial( seed: number ): number {
+
+	const seedHash = Math.sin( Math.abs( seed ) * 127.1 + 311.7 ) * 43758.5453;
+	const variation = seedHash - Math.floor( seedHash );
+
+	return 0.4 + variation * 0.15;
 
 }
 
@@ -97,18 +109,49 @@ function getMinimumY( positions: Float32Array ): number {
 function getBounds( mesh: MeshData ): { radius: number; height: number } {
 
 	let radius = 0;
-	let minimumY = Infinity;
-	let maximumY = - Infinity;
+	let height = 0;
+	const includePoint = ( x: number, y: number, z: number ): void => {
 
-	for ( let index = 0; index < mesh.positions.length; index += 3 ) {
+		if ( y < 0 ) return;
 
-		radius = Math.max( radius, Math.hypot( mesh.positions[ index ]!, mesh.positions[ index + 2 ]! ) );
-		minimumY = Math.min( minimumY, mesh.positions[ index + 1 ]! );
-		maximumY = Math.max( maximumY, mesh.positions[ index + 1 ]! );
+		radius = Math.max( radius, Math.hypot( x, z ) );
+		height = Math.max( height, y );
+
+	};
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ];
+
+		for ( let edge = 0; edge < 3; edge ++ ) {
+
+			const firstOffset = triangle[ edge ]! * 3;
+			const secondOffset = triangle[ ( edge + 1 ) % 3 ]! * 3;
+			const firstX = mesh.positions[ firstOffset ]!;
+			const firstY = mesh.positions[ firstOffset + 1 ]!;
+			const firstZ = mesh.positions[ firstOffset + 2 ]!;
+			const secondX = mesh.positions[ secondOffset ]!;
+			const secondY = mesh.positions[ secondOffset + 1 ]!;
+			const secondZ = mesh.positions[ secondOffset + 2 ]!;
+
+			includePoint( firstX, firstY, firstZ );
+
+			if ( ( firstY < 0 && secondY > 0 ) || ( firstY > 0 && secondY < 0 ) ) {
+
+				const amount = - firstY / ( secondY - firstY );
+				includePoint(
+					firstX + ( secondX - firstX ) * amount,
+					0,
+					firstZ + ( secondZ - firstZ ) * amount,
+				);
+
+			}
+
+		}
 
 	}
 
-	return { radius, height: maximumY - minimumY };
+	return { radius, height };
 
 }
 
@@ -135,6 +178,16 @@ function liftMesh( mesh: MeshData, offset: number ): void {
 	for ( let index = 1; index < mesh.positions.length; index += 3 ) {
 
 		mesh.positions[ index ] = mesh.positions[ index ]! + offset;
+
+	}
+
+}
+
+function sinkMesh( mesh: MeshData, offset: number, skirtFloor: number ): void {
+
+	for ( let index = 1; index < mesh.positions.length; index += 3 ) {
+
+		mesh.positions[ index ] = Math.max( mesh.positions[ index ]! - offset, skirtFloor );
 
 	}
 
@@ -198,9 +251,11 @@ function buildShell( frequency: number, radiusAt: ( direction: Vec3 ) => number,
 export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	const seed = options.seed ?? 1;
-	const size = options.size ?? 6.4;
+	const seedBand = Math.floor( Math.abs( seed ) );
+	const size = options.size ?? ( seedBand % 2 === 0 ? 12.3 : 6.4 );
 	const roughnessInput = options.roughness ?? 1.2;
 	const flatnessInput = options.flatness ?? 0.04;
+	const burial = options.burial ?? getDefaultBurial( seed );
 	const rockColor = options.rockColor ?? 0xffffff;
 
 	if ( ! Number.isFinite( seed ) ) {
@@ -217,6 +272,10 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	if ( ! Number.isFinite( flatnessInput ) ) {
 		throw new RangeError( 'Rock flatness must be finite' );
+	}
+
+	if ( ! Number.isFinite( burial ) || burial < 0 || burial > 1 ) {
+		throw new RangeError( 'Rock burial must be a finite value from 0 to 1' );
 	}
 
 	if ( ! Number.isInteger( rockColor ) || rockColor < 0 || rockColor > 0xffffff ) {
@@ -272,6 +331,12 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	scaleHeight( lod0, heightScale );
 	scaleHeight( lod1, heightScale );
 	scaleHeight( lod2, heightScale );
+	const fullHeight = getBounds( lod0 ).height;
+	const skirtFloor = - Math.min( burial, 0.15 ) * fullHeight;
+
+	sinkMesh( lod0, burial * fullHeight, skirtFloor );
+	sinkMesh( lod1, burial * fullHeight, skirtFloor );
+	sinkMesh( lod2, burial * fullHeight, skirtFloor );
 
 	const bounds = getBounds( lod0 );
 	const parts: PartDef[] = [

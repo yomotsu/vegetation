@@ -39,6 +39,69 @@ function getDimensions( mesh: MeshData ): { width: number; height: number; depth
 
 }
 
+function getAboveGroundDimensions( mesh: MeshData ): { width: number; height: number; depth: number; minimumY: number } {
+
+	const points: [ number, number, number ][] = [];
+	const addPoint = ( index: number ): void => {
+
+		const offset = index * 3;
+		points.push( [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ] );
+
+	};
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ];
+
+		for ( let edge = 0; edge < 3; edge ++ ) {
+
+			const first = triangle[ edge ]!;
+			const second = triangle[ ( edge + 1 ) % 3 ]!;
+			const firstOffset = first * 3;
+			const secondOffset = second * 3;
+			const firstY = mesh.positions[ firstOffset + 1 ]!;
+			const secondY = mesh.positions[ secondOffset + 1 ]!;
+
+			if ( firstY >= 0 ) addPoint( first );
+
+			if ( ( firstY < 0 && secondY > 0 ) || ( firstY > 0 && secondY < 0 ) ) {
+
+				const amount = - firstY / ( secondY - firstY );
+				points.push( [
+					mesh.positions[ firstOffset ]! + ( mesh.positions[ secondOffset ]! - mesh.positions[ firstOffset ]! ) * amount,
+					0,
+					mesh.positions[ firstOffset + 2 ]! + ( mesh.positions[ secondOffset + 2 ]! - mesh.positions[ firstOffset + 2 ]! ) * amount,
+				] );
+
+			}
+
+		}
+
+	}
+
+	const minimum = [ Infinity, Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity, - Infinity ];
+
+	for ( const point of points ) {
+
+		for ( let axis = 0; axis < 3; axis ++ ) {
+
+			minimum[ axis ] = Math.min( minimum[ axis ]!, point[ axis ]! );
+			maximum[ axis ] = Math.max( maximum[ axis ]!, point[ axis ]! );
+
+		}
+
+	}
+
+	return {
+		width: maximum[ 0 ]! - minimum[ 0 ]!,
+		height: maximum[ 1 ]!,
+		depth: maximum[ 2 ]! - minimum[ 2 ]!,
+		minimumY: minimum[ 1 ]!,
+	};
+
+}
+
 function meanRgb( data: Uint8Array ): [ number, number, number ] {
 
 	const mean: [ number, number, number ] = [ 0, 0, 0 ];
@@ -98,6 +161,39 @@ function meanNeighborDelta( data: Uint8Array, width: number, height: number ): n
 	}
 
 	return delta / samples;
+
+}
+
+function rowStripeAmplitude( data: Uint8Array, width: number, height: number, cycles: number ): number {
+
+	const rows = new Float64Array( height );
+	let overall = 0;
+
+	for ( let y = 0; y < height; y ++ ) {
+
+		for ( let x = 0; x < width; x ++ ) {
+
+			const offset = ( y * width + x ) * 4;
+			const luminance = ( data[ offset ]! + data[ offset + 1 ]! + data[ offset + 2 ]! ) / 3;
+			rows[ y ] = rows[ y ]! + luminance / width;
+			overall += luminance / ( width * height );
+
+		}
+
+	}
+
+	let cosine = 0;
+	let sine = 0;
+
+	for ( let y = 0; y < rows.length; y ++ ) {
+
+		const angle = y / height * Math.PI * 2 * cycles;
+		cosine += ( rows[ y ]! - overall ) * Math.cos( angle );
+		sine += ( rows[ y ]! - overall ) * Math.sin( angle );
+
+	}
+
+	return Math.hypot( cosine, sine ) * 2 / height;
 
 }
 
@@ -270,6 +366,56 @@ describe( 'procedural rock data', () => {
 
 	} );
 
+	it( 'sinks a seeded lower section below ground while keeping a shallow skirt', () => {
+
+		for ( const seed of [ 1, 2, 7, 12 ] ) {
+
+			const buried = generateRockData( { seed } );
+			const full = generateRockData( { seed, burial: 0 } );
+			const visible = getAboveGroundDimensions( buried.lods[ 0 ]! );
+			const minimumY = Math.min( ...Array.from( buried.lods[ 0 ]!.positions ).filter( ( _, index ) => index % 3 === 1 ) );
+			const burialRatio = 1 - buried.bounds.height / full.bounds.height;
+
+			expect( burialRatio ).toBeGreaterThanOrEqual( 0.4 );
+			expect( burialRatio ).toBeLessThanOrEqual( 0.55 );
+			expect( visible.minimumY ).toBe( 0 );
+			expect( buried.bounds.height ).toBeCloseTo( visible.height, 5 );
+			expect( minimumY ).toBeGreaterThanOrEqual( - full.bounds.height * 0.151 );
+			expect( minimumY ).toBeLessThan( 0 );
+			expect( Math.min( ...Array.from( buried.collider!.positions ).filter( ( _, index ) => index % 3 === 1 ) ) ).toBeGreaterThanOrEqual( - full.bounds.height * 0.151 );
+
+		}
+
+		const unburied = generateRockData( { seed: 1, burial: 0 } );
+		const quarterBuried = generateRockData( { seed: 1, burial: 0.2 } );
+		expect( quarterBuried.bounds.height / unburied.bounds.height ).toBeCloseTo( 0.8, 1 );
+
+	} );
+
+	it( 'matches the reference above-ground size profiles and validates burial', () => {
+
+		const rockOne = generateRockData( { seed: 1 } );
+		const rockTwo = generateRockData( { seed: 2 } );
+		const rockOneBounds = getAboveGroundDimensions( rockOne.lods[ 0 ]! );
+		const rockTwoBounds = getAboveGroundDimensions( rockTwo.lods[ 0 ]! );
+
+		expect( rockOneBounds.width ).toBeGreaterThanOrEqual( 5.4 );
+		expect( rockOneBounds.width ).toBeLessThanOrEqual( 7.2 );
+		expect( rockOneBounds.depth ).toBeGreaterThanOrEqual( 5.5 );
+		expect( rockOneBounds.height ).toBeGreaterThanOrEqual( 3.3 );
+		expect( rockOneBounds.height ).toBeLessThanOrEqual( 4.9 );
+		expect( rockTwoBounds.width ).toBeGreaterThanOrEqual( 8.2 );
+		expect( rockTwoBounds.width ).toBeLessThanOrEqual( 10.5 );
+		expect( rockTwoBounds.depth ).toBeGreaterThanOrEqual( 7.9 );
+		expect( rockTwoBounds.depth ).toBeLessThanOrEqual( 10.9 );
+		expect( rockTwoBounds.height ).toBeGreaterThanOrEqual( 2.8 );
+		expect( rockTwoBounds.height ).toBeLessThanOrEqual( 4.2 );
+		expect( () => generateRockData( { burial: - 0.01 } ) ).toThrow( RangeError );
+		expect( () => generateRockData( { burial: 1.01 } ) ).toThrow( RangeError );
+		expect( () => generateRockData( { burial: Number.NaN } ) ).toThrow( RangeError );
+
+	} );
+
 	it( 'unwraps longitude seams so shell triangles use a short U interval', () => {
 
 		const data = generateRockData( { seed: 5 } );
@@ -344,10 +490,12 @@ describe( 'procedural rock data', () => {
 		expect( Math.abs( albedoMean[ 1 ] - 95.08 ) ).toBeLessThanOrEqual( 8 );
 		expect( Math.abs( albedoMean[ 2 ] - 102.47 ) ).toBeLessThanOrEqual( 8 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeLessThan( 2 );
+		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 2.5 );
 		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 72 );
 		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 88 );
 		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 35 );
-		expect( normalMean[ 2 ] ).toBeGreaterThan( 232 );
+		expect( normalMean[ 2 ] ).toBeGreaterThan( 220 );
+		expect( normalMean[ 2 ] ).toBeLessThan( 246 );
 
 		let averageRed = 0;
 		let averageGreen = 0;
