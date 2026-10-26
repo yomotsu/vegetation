@@ -6,6 +6,8 @@ import type { TreeOptions } from '../core/generators/tree';
 import { generateTreeData } from '../core/generators/tree';
 import type { RockOptions } from '../core/generators/rock';
 import { generateRockData } from '../core/generators/rock';
+import type { PebblesOptions } from '../core/generators/pebbles';
+import { generatePebblesData } from '../core/generators/pebbles';
 import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
 import type { LodLevel } from '../core/types';
 
@@ -18,6 +20,11 @@ export type TreeMeshOptions = Omit<TreeOptions, 'leafColor'> & {
 export type RockMeshOptions = Omit<RockOptions, 'rockColor'> & {
 	lod?: number;
 	rockColor?: ColorRepresentation;
+};
+
+export type PebblesMeshOptions = Omit<PebblesOptions, 'stoneColor'> & {
+	lod?: number;
+	stoneColor?: ColorRepresentation;
 };
 
 function colorsFromOptions(
@@ -97,4 +104,33 @@ export class RockMesh extends VegetationMesh {
 
 }
 
-export type { LodLevel, RockOptions, TreeOptions };
+export function generatePebbles( options: PebblesMeshOptions = {} ): VegetationAsset {
+
+	const stoneColor = options.stoneColor ?? 0xffffff;
+	const color = new Color( stoneColor );
+	const data = generatePebblesData( { ...options, stoneColor: color.getHex() } );
+
+	return new VegetationAsset( data, { stone: color } );
+
+}
+
+export class PebblesMesh extends VegetationMesh {
+
+	constructor( options: PebblesMeshOptions = {} ) {
+
+		super( generatePebbles( options ), options.lod, true );
+
+	}
+
+	static createLOD( options: PebblesMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
+
+		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * ( options.spread ?? 1.6 ) / 1.6 );
+		const asset = generatePebbles( options );
+
+		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances, true );
+
+	}
+
+}
+
+export type { LodLevel, PebblesOptions, RockOptions, TreeOptions };
