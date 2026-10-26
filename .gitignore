@@ -5,3 +5,4 @@ coverage/
 .DS_Store
 .vitest/
 .playwright-mcp/
+renders/
