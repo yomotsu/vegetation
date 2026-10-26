@@ -7,6 +7,14 @@ function clamp( value: number, minimum: number, maximum: number ): number {
 
 }
 
+function smoothstep( minimum: number, maximum: number, value: number ): number {
+
+	const amount = clamp( ( value - minimum ) / ( maximum - minimum ), 0, 1 );
+
+	return amount * amount * ( 3 - 2 * amount );
+
+}
+
 function getRockDirection( u: number, v: number ): [ number, number, number ] {
 
 	const theta = u * Math.PI * 2;
@@ -20,6 +28,7 @@ function getRockDirection( u: number, v: number ): [ number, number, number ] {
 export function createRockTextures( seed: number, size = 256 ): { albedo: TextureData; normal: TextureData } {
 
 	const noise = createNoise3D( seed + 419 );
+	const noiseOffset = [ ( seed * 13.7 ) % 61, ( seed * 27.1 ) % 73, ( seed * 41.9 ) % 89 ];
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
 	const normalData = new Uint8Array( size * size * 4 );
@@ -29,18 +38,20 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 		for ( let x = 0; x < size; x ++ ) {
 
 			const direction = getRockDirection( x / size, y / size );
-			const broad = noise( direction[ 0 ] * 4, direction[ 1 ] * 4, direction[ 2 ] * 4 );
-			const medium = noise( direction[ 0 ] * 15, direction[ 1 ] * 15, direction[ 2 ] * 15 );
-			const grain = noise( direction[ 0 ] * 43, direction[ 1 ] * 43, direction[ 2 ] * 43 );
-			const height = broad * 0.024 + medium * 0.01 + grain * 0.003;
+			const broad = noise( direction[ 0 ] * 2.2 + noiseOffset[ 0 ]!, direction[ 1 ] * 2.2 + noiseOffset[ 1 ]!, direction[ 2 ] * 2.2 + noiseOffset[ 2 ]! );
+			const flow = noise( direction[ 0 ] * 2.9 - noiseOffset[ 2 ]!, direction[ 1 ] * 2.9 + noiseOffset[ 0 ]!, direction[ 2 ] * 2.9 - noiseOffset[ 1 ]! );
+			const brush = noise( direction[ 0 ] * 5.4 + noiseOffset[ 1 ]!, direction[ 1 ] * 5.4 - noiseOffset[ 2 ]!, direction[ 2 ] * 5.4 + noiseOffset[ 0 ]! );
+			const phase = ( direction[ 1 ] * 4.35 + flow * 0.68 + broad * 0.16 ) * Math.PI * 2;
+			const strata = Math.sin( phase * 0.58 + broad * 0.16 );
+			const crack = 1 - smoothstep( 0.008, 0.035, Math.abs( Math.sin( phase * 0.5 ) ) );
+			const tone = 0.5 + broad * 0.27 + brush * 0.15 + strata * 0.34 - crack * 0.34;
 			const index = y * size + x;
-			const colorNoise = broad * 0.58 + medium * 0.3 + grain * 0.12;
-			const base = 94 + colorNoise * 25;
+			const colorTone = clamp( tone, 0, 1 );
 
-			heightMap[ index ] = height;
-			albedoData[ index * 4 ] = Math.round( clamp( base - 14, 0, 255 ) );
-			albedoData[ index * 4 + 1 ] = Math.round( clamp( base - 1, 0, 255 ) );
-			albedoData[ index * 4 + 2 ] = Math.round( clamp( base + 6, 0, 255 ) );
+			heightMap[ index ] = broad * 0.012 + strata * 0.014 + brush * 0.003 - crack * 0.0025;
+			albedoData[ index * 4 ] = Math.round( clamp( 64 + colorTone * 32, 0, 255 ) );
+			albedoData[ index * 4 + 1 ] = Math.round( clamp( 79 + colorTone * 32, 0, 255 ) );
+			albedoData[ index * 4 + 2 ] = Math.round( clamp( 86 + colorTone * 32, 0, 255 ) );
 			albedoData[ index * 4 + 3 ] = 255;
 
 		}

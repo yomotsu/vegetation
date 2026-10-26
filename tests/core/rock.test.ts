@@ -15,6 +15,92 @@ function vertexCount( mesh: MeshData ): number {
 
 }
 
+function getDimensions( mesh: MeshData ): { width: number; height: number; depth: number } {
+
+	const minimum = [ Infinity, Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity, - Infinity ];
+
+	for ( let index = 0; index < mesh.positions.length; index += 3 ) {
+
+		for ( let axis = 0; axis < 3; axis ++ ) {
+
+			minimum[ axis ] = Math.min( minimum[ axis ]!, mesh.positions[ index + axis ]! );
+			maximum[ axis ] = Math.max( maximum[ axis ]!, mesh.positions[ index + axis ]! );
+
+		}
+
+	}
+
+	return {
+		width: maximum[ 0 ]! - minimum[ 0 ]!,
+		height: maximum[ 1 ]! - minimum[ 1 ]!,
+		depth: maximum[ 2 ]! - minimum[ 2 ]!,
+	};
+
+}
+
+function meanRgb( data: Uint8Array ): [ number, number, number ] {
+
+	const mean: [ number, number, number ] = [ 0, 0, 0 ];
+	const pixelCount = data.length / 4;
+
+	for ( let offset = 0; offset < data.length; offset += 4 ) {
+
+		mean[ 0 ] += data[ offset ]!;
+		mean[ 1 ] += data[ offset + 1 ]!;
+		mean[ 2 ] += data[ offset + 2 ]!;
+
+	}
+
+	return mean.map( ( value ) => value / pixelCount ) as [ number, number, number ];
+
+}
+
+function percentile( data: Uint8Array, channel: number, amount: number ): number {
+
+	const values: number[] = [];
+
+	for ( let offset = channel; offset < data.length; offset += 4 ) {
+
+		values.push( data[ offset ]! );
+
+	}
+
+	values.sort( ( a, b ) => a - b );
+
+	return values[ Math.floor( ( values.length - 1 ) * amount ) ]!;
+
+}
+
+function meanNeighborDelta( data: Uint8Array, width: number, height: number ): number {
+
+	let delta = 0;
+	let samples = 0;
+
+	for ( let y = 0; y < height; y ++ ) {
+
+		for ( let x = 0; x < width; x ++ ) {
+
+			const index = ( y * width + x ) * 4;
+			const right = ( y * width + ( x + 1 ) % width ) * 4;
+			const down = Math.min( y + 1, height - 1 ) * width * 4 + x * 4;
+
+			for ( let channel = 0; channel < 3; channel ++ ) {
+
+				delta += Math.abs( data[ index + channel ]! - data[ right + channel ]! );
+				delta += Math.abs( data[ index + channel ]! - data[ down + channel ]! );
+				samples += 2;
+
+			}
+
+		}
+
+	}
+
+	return delta / samples;
+
+}
+
 function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): number {
 
 	const edges = new Map<string, number>();
@@ -140,6 +226,50 @@ describe( 'procedural rock data', () => {
 
 	} );
 
+	it( 'uses reference-like chunky and low silhouettes across default seeds', () => {
+
+		const samples = Array.from( { length: 12 }, ( _, index ) => {
+
+			const data = generateRockData( { seed: index + 1 } );
+			const dimensions = getDimensions( data.lods[ 0 ]! );
+
+			return {
+				data,
+				dimensions,
+				ratio: dimensions.height / Math.max( dimensions.width, dimensions.depth ),
+			};
+
+		} );
+		const chunky = samples.filter( ( sample ) => sample.ratio > 0.65 );
+		const low = samples.filter( ( sample ) => sample.ratio < 0.55 );
+		const seedOne = samples[ 0 ]!;
+		const seedTwo = samples[ 1 ]!;
+		let groundVertices = 0;
+
+		for ( let index = 1; index < seedTwo.data.lods[ 0 ]!.positions.length; index += 3 ) {
+
+			if ( seedTwo.data.lods[ 0 ]!.positions[ index ]! <= 0.01 ) groundVertices ++;
+
+		}
+
+		expect( seedOne.ratio ).toBeGreaterThan( 0.65 );
+		expect( seedOne.ratio ).toBeLessThan( 1 );
+		expect( seedTwo.ratio ).toBeGreaterThan( 0.3 );
+		expect( seedTwo.ratio ).toBeLessThan( 0.55 );
+		expect( chunky.length ).toBeGreaterThanOrEqual( 4 );
+		expect( low.length ).toBeGreaterThanOrEqual( 4 );
+		expect( groundVertices ).toBeGreaterThanOrEqual( 8 );
+
+		for ( const sample of samples ) {
+
+			const horizontalAspect = Math.max( sample.dimensions.width, sample.dimensions.depth ) / Math.min( sample.dimensions.width, sample.dimensions.depth );
+			expect( sample.ratio ).toBeLessThan( 1 );
+			expect( horizontalAspect ).toBeLessThan( 1.3 );
+
+		}
+
+	} );
+
 	it( 'unwraps longitude seams so shell triangles use a short U interval', () => {
 
 		const data = generateRockData( { seed: 5 } );
@@ -207,6 +337,17 @@ describe( 'procedural rock data', () => {
 		expect( part.ior ).toBeCloseTo( 1.05 );
 		expect( albedo.width ).toBeGreaterThanOrEqual( 64 );
 		expect( normal.data ).toHaveLength( normal.width * normal.height * 4 );
+		const albedoMean = meanRgb( albedo.data );
+		const normalMean = meanRgb( normal.data );
+
+		expect( Math.abs( albedoMean[ 0 ] - 80.31 ) ).toBeLessThanOrEqual( 8 );
+		expect( Math.abs( albedoMean[ 1 ] - 95.08 ) ).toBeLessThanOrEqual( 8 );
+		expect( Math.abs( albedoMean[ 2 ] - 102.47 ) ).toBeLessThanOrEqual( 8 );
+		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeLessThan( 2 );
+		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 72 );
+		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 88 );
+		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 35 );
+		expect( normalMean[ 2 ] ).toBeGreaterThan( 232 );
 
 		let averageRed = 0;
 		let averageGreen = 0;

@@ -19,6 +19,67 @@ function clamp( value: number, minimum: number, maximum: number ): number {
 
 }
 
+function createRandom( seed: number ): () => number {
+
+	let state = ( Math.floor( Math.abs( seed ) * 1000 ) + 0x6d2b79f5 ) >>> 0;
+
+	return () => {
+
+		state = ( state + 0x6d2b79f5 ) >>> 0;
+		let value = state;
+		value = Math.imul( value ^ value >>> 15, value | 1 );
+		value ^= value + Math.imul( value ^ value >>> 7, value | 61 );
+
+		return ( ( value ^ value >>> 14 ) >>> 0 ) / 4294967296;
+
+	};
+
+}
+
+function createCuttingPlanes( seed: number, radius: number ): { normal: Vec3; distance: number }[] {
+
+	const random = createRandom( seed );
+	const planes: { normal: Vec3; distance: number }[] = [];
+
+	for ( let index = 0; index < 7; index ++ ) {
+
+		const vertical = random() * 2 - 1;
+		const angle = random() * Math.PI * 2;
+		const horizontal = Math.sqrt( 1 - vertical * vertical );
+
+		planes.push( {
+			normal: [ horizontal * Math.cos( angle ), vertical, horizontal * Math.sin( angle ) ],
+			distance: radius * ( 0.63 + random() * 0.15 ),
+		} );
+
+	}
+
+	return planes;
+
+}
+
+function getVerticalScale( seed: number, flatness: number ): number {
+
+	const seedBand = Math.floor( Math.abs( seed ) );
+	const seedHash = Math.sin( seedBand * 78.233 + 12.9898 ) * 43758.5453;
+	const variation = ( seedHash - Math.floor( seedHash ) - 0.5 ) * 0.1;
+	const styleScale = ( seedBand % 2 === 0 ? 0.49 : 1.12 ) + variation;
+
+	return styleScale * ( 1 - flatness ) + 0.34 * flatness;
+
+}
+
+function getTargetAspect( seed: number, flatness: number ): number {
+
+	const seedBand = Math.floor( Math.abs( seed ) );
+	const seedHash = Math.sin( seedBand * 78.233 + 12.9898 ) * 43758.5453;
+	const variation = ( seedHash - Math.floor( seedHash ) - 0.5 ) * 0.03;
+	const styleAspect = seedBand % 2 === 0 ? 0.37 : 0.85;
+
+	return ( styleAspect + variation ) * ( 1 - flatness * 0.15 );
+
+}
+
 function getMinimumY( positions: Float32Array ): number {
 
 	let minimum = Infinity;
@@ -51,11 +112,39 @@ function getBounds( mesh: MeshData ): { radius: number; height: number } {
 
 }
 
+function getHorizontalSpan( mesh: MeshData ): number {
+
+	const minimum = [ Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity ];
+
+	for ( let index = 0; index < mesh.positions.length; index += 3 ) {
+
+		minimum[ 0 ] = Math.min( minimum[ 0 ]!, mesh.positions[ index ]! );
+		minimum[ 1 ] = Math.min( minimum[ 1 ]!, mesh.positions[ index + 2 ]! );
+		maximum[ 0 ] = Math.max( maximum[ 0 ]!, mesh.positions[ index ]! );
+		maximum[ 1 ] = Math.max( maximum[ 1 ]!, mesh.positions[ index + 2 ]! );
+
+	}
+
+	return Math.max( maximum[ 0 ]! - minimum[ 0 ]!, maximum[ 1 ]! - minimum[ 1 ]! );
+
+}
+
 function liftMesh( mesh: MeshData, offset: number ): void {
 
 	for ( let index = 1; index < mesh.positions.length; index += 3 ) {
 
 		mesh.positions[ index ] = mesh.positions[ index ]! + offset;
+
+	}
+
+}
+
+function scaleHeight( mesh: MeshData, scale: number ): void {
+
+	for ( let index = 1; index < mesh.positions.length; index += 3 ) {
+
+		mesh.positions[ index ] = mesh.positions[ index ]! * scale;
 
 	}
 
@@ -137,17 +226,36 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const roughness = clamp( roughnessInput, 0, 1.5 );
 	const flatness = clamp( flatnessInput, 0, 1 );
 	const radius = size * 0.5;
-	const verticalScale = 0.9 - flatness * 0.52;
+	const verticalScale = getVerticalScale( seed, flatness );
 	const noise = createNoise3D( seed + 71 );
 	const noiseOffset = [ ( seed * 17.13 ) % 71, ( seed * 31.7 ) % 89, ( seed * 53.9 ) % 97 ];
+	const cuttingPlanes = createCuttingPlanes( seed, radius );
 	const radiusAt = ( direction: Vec3 ): number => {
 
-		const coarse = noise( direction[ 0 ] * 1.4 + noiseOffset[ 0 ]!, direction[ 1 ] * 1.4 + noiseOffset[ 1 ]!, direction[ 2 ] * 1.4 + noiseOffset[ 2 ]! );
-		const detail = noise( direction[ 0 ] * 2.8 - noiseOffset[ 2 ]!, direction[ 1 ] * 2.8 + noiseOffset[ 0 ]!, direction[ 2 ] * 2.8 - noiseOffset[ 1 ]! );
+		const coarse = noise( direction[ 0 ] * 1.05 + noiseOffset[ 0 ]!, direction[ 1 ] * 1.05 + noiseOffset[ 1 ]!, direction[ 2 ] * 1.05 + noiseOffset[ 2 ]! );
+		const medium = noise( direction[ 0 ] * 2.65 - noiseOffset[ 2 ]!, direction[ 1 ] * 2.65 + noiseOffset[ 0 ]!, direction[ 2 ] * 2.65 - noiseOffset[ 1 ]! );
+		const detail = noise( direction[ 0 ] * 5.1 + noiseOffset[ 1 ]!, direction[ 1 ] * 5.1 - noiseOffset[ 2 ]!, direction[ 2 ] * 5.1 + noiseOffset[ 0 ]! );
 		const angle = Math.atan2( direction[ 2 ], direction[ 0 ] );
-		const lobes = Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.07 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.025;
+		const lobes = Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.075 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.035;
+		let deformedRadius = radius * clamp( 0.97 + ( coarse * 0.25 + medium * 0.075 + detail * 0.012 + lobes ) * roughness, 0.62, 1.34 );
 
-		return radius * ( 0.94 + ( coarse * 0.11 + detail * 0.025 + lobes ) * roughness );
+		for ( const plane of cuttingPlanes ) {
+
+			const projection = direction[ 0 ] * plane.normal[ 0 ] + direction[ 1 ] * plane.normal[ 1 ] + direction[ 2 ] * plane.normal[ 2 ];
+
+			if ( projection > 0 ) deformedRadius = Math.min( deformedRadius, plane.distance / projection );
+
+		}
+
+		const floorHeight = - radius * verticalScale * 0.55;
+
+		if ( direction[ 1 ] < 0 && direction[ 1 ] * deformedRadius * verticalScale < floorHeight ) {
+
+			deformedRadius = floorHeight / ( direction[ 1 ] * verticalScale );
+
+		}
+
+		return deformedRadius;
 
 	};
 	const lod0 = buildShell( 4, radiusAt, verticalScale );
@@ -158,6 +266,12 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	liftMesh( lod0, groundOffset );
 	liftMesh( lod1, groundOffset );
 	liftMesh( lod2, groundOffset );
+	const targetHeight = getHorizontalSpan( lod0 ) * getTargetAspect( seed, flatness );
+	const heightScale = targetHeight / getBounds( lod0 ).height;
+
+	scaleHeight( lod0, heightScale );
+	scaleHeight( lod1, heightScale );
+	scaleHeight( lod2, heightScale );
 
 	const bounds = getBounds( lod0 );
 	const parts: PartDef[] = [
