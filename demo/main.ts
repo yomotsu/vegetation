@@ -125,6 +125,31 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 		return [ 0, 999999, 1 ];
 
 	}
+	if ( activeKind.name === 'Pebbles' && name === 'count' ) {
+
+		return [ 4, 30, 1 ];
+
+	}
+	if ( activeKind.name === 'Pebbles' && name === 'spread' ) {
+
+		return [ 0.2, 4, 0.05 ];
+
+	}
+	if ( activeKind.name === 'Pebbles' && name === 'size' ) {
+
+		return [ 0.1, 0.8, 0.01 ];
+
+	}
+	if ( activeKind.name === 'Pebbles' && name === 'sizeVariation' ) {
+
+		return [ 0, 0.9, 0.01 ];
+
+	}
+	if ( activeKind.name === 'Pebbles' && name === 'burial' ) {
+
+		return [ 0, 1, 0.01 ];
+
+	}
 	if ( name === 'height' ) {
 
 		return [ 2, 14, 0.1 ];
