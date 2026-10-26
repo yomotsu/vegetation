@@ -713,7 +713,7 @@ export function createFirSprigTexture( seed: number, size = 256, padEdges = true
 		throw new RangeError( 'Texture size must be a positive integer' );
 	}
 
-	const width = size * 3;
+	const width = size;
 	const data = new Uint8Array( width * size * 4 );
 
 	for ( let i = 0; i < data.length; i += 4 ) {

@@ -1,9 +1,9 @@
-import { bakeImpostor, buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
+import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
 import { createBarkTexture } from '../barkTexture';
-import { composeFirSprigTexture, createFirSprigTexture, DEFAULT_LEAF_COLOR, padTextureEdges } from '../leafTexture';
+import { composeFirSprigTexture, createFirSprigTexture, DEFAULT_LEAF_COLOR } from '../leafTexture';
 import { registerTextureRegenerator } from '../textureRegenerator';
 import type { Color3, ColliderData, MeshData, PartDef, TextureData, TextureGeneratorDef, Vec3, VegetationData } from '../types';
 
@@ -45,6 +45,10 @@ const leafBrightness = 0.75;
 const leafVertexColor: Color3 = [ 0.95 * leafBrightness, 0.95 * leafBrightness, 0.95 * leafBrightness ];
 const referenceTreeHeight = 7.55;
 const trunkTopFraction = 6.6 / referenceTreeHeight;
+const barkPartIndex = 0;
+const leafPartIndex = 1;
+const impostorLod3PartIndex = 2;
+const impostorPartIndex = 3;
 const frondsPerTier = 5;
 const lodFrondFoldRatio = 0.16;
 const trunkProfile = [
@@ -414,7 +418,7 @@ function getFrondAverageLine( frond: Frond ): [ Vec3, Vec3 ] {
 
 function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: number[] ): void {
 
-	const inset = 1 / 1536;
+	const inset = 1 / 512;
 	const grid: number[][] = [];
 	const lateralSamples = [ 0, 0.5, 1 ];
 
@@ -430,7 +434,7 @@ function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: numb
 			const widthOffset = ( u - 0.5 ) * frond.width;
 			const foldOffset = Math.abs( u * 2 - 1 ) * frond.width * frond.fold;
 			const point = add( add( center, multiply( frond.widthDirection, widthOffset ) ), [ 0, foldOffset, 0 ] );
-			const uv: [ number, number ] = [ inset + ( 1 / 3 - inset * 2 ) * u, t ];
+			const uv: [ number, number ] = [ inset + ( 1 - inset * 2 ) * u, t ];
 
 			indices.push( builder.addVertex( point, [ 0, 1, 0 ], uv, getFrondVertexColor( frond.radius, u ), getFrondWind( point, frond ) ) );
 
@@ -460,7 +464,7 @@ function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: numb
 
 function addFronds( builder: MeshBuilder, layout: TreeLayout, longitudinalSamples: number[] ): void {
 
-	builder.beginGroup( 1 );
+	builder.beginGroup( leafPartIndex );
 
 	for ( const tier of layout.tiers ) {
 
@@ -476,15 +480,15 @@ function addFronds( builder: MeshBuilder, layout: TreeLayout, longitudinalSample
 
 function getFrondUv( lateral: number, longitudinal: number ): [ number, number ] {
 
-	const inset = 1 / 1536;
+	const inset = 1 / 512;
 
-	return [ inset + ( 1 / 3 - inset * 2 ) * lateral, longitudinal ];
+	return [ inset + ( 1 - inset * 2 ) * lateral, longitudinal ];
 
 }
 
 function addFoldedFrondsLod1( builder: MeshBuilder, layout: TreeLayout ): void {
 
-	builder.beginGroup( 1 );
+	builder.beginGroup( leafPartIndex );
 
 	for ( const tier of layout.tiers ) {
 
@@ -532,7 +536,7 @@ function addFoldedFrondsLod1( builder: MeshBuilder, layout: TreeLayout ): void {
 
 function addFoldedFrondsLod2( builder: MeshBuilder, layout: TreeLayout ): void {
 
-	builder.beginGroup( 1 );
+	builder.beginGroup( leafPartIndex );
 
 	for ( const tier of layout.tiers ) {
 
@@ -679,7 +683,7 @@ function buildLod0( layout: TreeLayout ): MeshData {
 	const builder = new MeshBuilder();
 	const trunk = selectTrunkRings( layout, [ 0, 1, 2, 3, 7, 10, 12 ] );
 	const extendedTrunk = addRootRing( trunk.spine, trunk.radii, layout.rootDepth );
-	builder.beginGroup( 0 );
+	builder.beginGroup( barkPartIndex );
 	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 7, layout.rootDepth );
 	addFronds( builder, layout, [ 0, 0.4, 1 ] );
 	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 7, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
@@ -695,7 +699,7 @@ function buildLod1( layout: TreeLayout ): MeshData {
 	const builder = new MeshBuilder();
 	const trunk = selectTrunkRings( layout, [ 0, 1, 3, 7, 10, 12 ] );
 	const extendedTrunk = addRootRing( trunk.spine, trunk.radii, layout.rootDepth );
-	builder.beginGroup( 0 );
+	builder.beginGroup( barkPartIndex );
 	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 6, layout.rootDepth );
 	addFoldedFrondsLod1( builder, layout );
 	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 6, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
@@ -712,7 +716,7 @@ function buildLod2( layout: TreeLayout ): MeshData {
 	const trunk = selectTrunkRings( layout, [ 0, 2, 6, 10, 12 ] );
 	const extendedTrunk = addRootRing( trunk.spine, trunk.radii, layout.rootDepth );
 
-	builder.beginGroup( 0 );
+	builder.beginGroup( barkPartIndex );
 	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 4, layout.rootDepth );
 	addFoldedFrondsLod2( builder, layout );
 	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 4, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
@@ -720,70 +724,6 @@ function buildLod2( layout: TreeLayout ): MeshData {
 	scaleTrunkV( mesh, trunkVertexCount );
 
 	return mesh;
-
-}
-
-function bakeLeafSilhouette( lod0: MeshData, texture: TextureData, parts: PartDef[], bounds: { radius: number; height: number } ): TextureData {
-
-	const leafGroup = lod0.groups.find( ( group ) => group.partIndex === 1 );
-
-	if ( leafGroup === undefined ) {
-		throw new Error( 'Expected an LOD0 leaf group' );
-	}
-
-	const leafOnlyMesh = { ...lod0, groups: [ leafGroup ] };
-	const data: VegetationData = {
-		kind: 'tree',
-		parts,
-		lods: [ leafOnlyMesh ],
-		collider: null,
-		textures: { leaf: texture },
-		bounds,
-	};
-
-	return bakeImpostor( data, parts.map( () => [ 1, 1, 1 ] ), Math.max( 1, Math.floor( texture.height / 2 ) ) );
-
-}
-
-function updateCrownAtlas( texture: TextureData, silhouette: TextureData | null, color: number, previousTexture?: TextureData ): void {
-
-	const tileSize = texture.height;
-	const inputColor = [ ( color >>> 16 ) & 0xff, ( color >>> 8 ) & 0xff, color & 0xff ];
-	const crownColor = color === DEFAULT_LEAF_COLOR ? [ 0, 83, 0 ] : inputColor;
-
-	for ( let view = 0; view < 2; view ++ ) {
-
-		for ( let y = 0; y < tileSize; y ++ ) {
-
-			for ( let x = 0; x < tileSize; x ++ ) {
-
-				const target = ( y * texture.width + ( view + 1 ) * tileSize + x ) * 4;
-				let alpha: number;
-
-				if ( previousTexture !== undefined ) {
-
-					alpha = previousTexture.data[ target + 3 ]!;
-
-				} else {
-
-					const sourceSize = silhouette!.height;
-					const sourceX = Math.floor( x / tileSize * sourceSize );
-					const sourceY = Math.floor( y / tileSize * sourceSize );
-					const source = ( sourceY * silhouette!.width + view * sourceSize + sourceX ) * 4;
-					alpha = silhouette!.data[ source + 3 ]!;
-
-				}
-
-				texture.data[ target ] = crownColor[ 0 ]!;
-				texture.data[ target + 1 ] = crownColor[ 1 ]!;
-				texture.data[ target + 2 ] = crownColor[ 2 ]!;
-				texture.data[ target + 3 ] = alpha >= 128 ? 255 : 0;
-
-			}
-
-		}
-
-	}
 
 }
 
@@ -796,7 +736,7 @@ function buildCollider( layout: TreeLayout ): ColliderData {
 	if ( layout.rootDepth > 0 ) radii.unshift( radii[ 0 ]! );
 	const builder = new MeshBuilder();
 
-	builder.beginGroup( 0 );
+	builder.beginGroup( barkPartIndex );
 	addTube( builder, spine, radii, 8, { color: barkColor, wind: () => 0, capEnd: false } );
 
 	const mesh = builder.build();
@@ -882,21 +822,16 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	];
 	const textures = {
 		bark: { ...createBarkTexture( seed ), wrap: 'repeat' as const },
-		leaf: createFirSprigTexture( seed, 256, false, leafColor ),
+		leaf: createFirSprigTexture( seed, 256, true, leafColor ),
 	};
 	const lod0Bounds = { radius: getBoundsRadius( lod0 ), height };
-	const silhouette = bakeLeafSilhouette( lod0, textures.leaf, parts, lod0Bounds );
 
-	updateCrownAtlas( textures.leaf, silhouette, leafColor );
-	padTextureEdges( textures.leaf );
-	textures.leaf = composeFirSprigTexture( textures.leaf, leafColor );
-
-	const lod3 = buildSixPlaneImpostor( height, lod0Bounds.radius, parts.length - 2 );
+	const lod3 = buildSixPlaneImpostor( height, lod0Bounds.radius, impostorLod3PartIndex );
 	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ), getBoundsRadius( lod3 ) ), height };
 	const data: VegetationData = {
 		kind: 'tree',
 		parts: [ ...parts ],
-		lods: [ lod0, lod1, lod2, lod3, buildBillboard( bounds, parts.length - 1 ) ],
+		lods: [ lod0, lod1, lod2, lod3, buildBillboard( bounds, impostorPartIndex ) ],
 		collider: buildCollider( layout ),
 		textures,
 		textureGenerators: { leaf: { type: 'tree-leaf', seed, size: 256 } },
@@ -913,10 +848,7 @@ function regenerateTreeLeafTextureData( existing: TextureData, generator: Textur
 		throw new Error( 'Tree leaf texture cannot be regenerated' );
 	}
 
-	const composed = composeFirSprigTexture( existing, color );
-	updateCrownAtlas( composed, null, color, existing );
-
-	return composed;
+	return composeFirSprigTexture( existing, color );
 
 }
 

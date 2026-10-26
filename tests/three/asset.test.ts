@@ -16,14 +16,14 @@ import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { registerTextureRegenerator } from '../../src/core/textureRegenerator';
 import { generateTreeData } from '../../src/core/generators/tree';
 
-function meanTextureColorInTile( texture: { width: number; height: number; data: Uint8Array }, tile: number ): [ number, number, number ] {
+function meanTextureColor( texture: { width: number; height: number; data: Uint8Array } ): [ number, number, number ] {
 
 	const channels = [ 0, 0, 0 ];
 	let count = 0;
 
 	for ( let y = 0; y < texture.height; y ++ ) {
 
-		for ( let x = tile * texture.height; x < ( tile + 1 ) * texture.height; x ++ ) {
+		for ( let x = 0; x < texture.width; x ++ ) {
 
 			const offset = ( y * texture.width + x ) * 4;
 			if ( texture.data[ offset + 3 ]! < 128 ) continue;
@@ -155,6 +155,8 @@ describe( 'VegetationAsset', () => {
 
 		expect( barkTexture ).toBeInstanceOf( DataTexture );
 		expect( leafTexture ).toBeInstanceOf( DataTexture );
+		expect( leafTexture.image.width ).toBe( 256 );
+		expect( leafTexture.image.height ).toBe( 256 );
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
 		expect( impostorTexture.image.width ).toBe( 128 );
 		expect( impostorTexture.image.height ).toBe( 128 );
@@ -244,7 +246,7 @@ describe( 'VegetationAsset', () => {
 		expect( asset.materials[ 1 ]!.color.getHex() ).toBe( 0xffffff );
 		expect( leafTexture.image.data ).not.toBe( originalLeafData );
 		expect( leafTexture.image.data ).not.toEqual( originalLeafPixels );
-		expect( meanTextureColorInTile( asset.data.textures.leaf!, 1 )[ 0 ] ).toBeGreaterThan( meanTextureColorInTile( asset.data.textures.leaf!, 1 )[ 1 ] );
+		expect( meanTextureColor( asset.data.textures.leaf! )[ 0 ] ).toBeGreaterThan( meanTextureColor( asset.data.textures.leaf! )[ 1 ] );
 		expect( impostorLod3Texture.image.data ).not.toEqual( originalLod3Pixels );
 		expect( lod3Impostor.material.map ).toBe( impostorLod3Texture );
 		expect( impostorTexture.image.data ).not.toEqual( originalImpostorPixels );

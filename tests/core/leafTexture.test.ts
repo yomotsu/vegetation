@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createBarkTexture, createFirSprigTexture } from '../../src/core';
+import * as publicCore from '../../src/core';
 import { generateTreeData } from '../../src/core/generators/tree';
 import { getFirSprigNeedleGeometry } from '../../src/core/leafTexture';
 import { regenerateTreeLeafTexture } from '../../src/core/generators/tree';
@@ -108,7 +109,7 @@ function meanLeafColorAtV( texture: { width: number; height: number; data: Uint8
 
 function meanNeedleDirectionAngle( texture: { width: number; height: number; data: Uint8Array }, startY: number, endY: number ): number {
 
-	const tileWidth = texture.width / 3;
+	const tileWidth = texture.width;
 	const center = tileWidth * 0.5;
 	let horizontalGradientEnergy = 0;
 	let verticalGradientEnergy = 0;
@@ -165,7 +166,7 @@ function rowWidth( texture: { width: number; data: Uint8Array }, xOffset: number
 
 function opaqueChannelValues( texture: { width: number; height: number; data: Uint8Array }, channel: number ): number[] {
 
-	const tileWidth = texture.width / 3;
+	const tileWidth = texture.width;
 	const values: number[] = [];
 
 	for ( let y = 0; y < texture.height; y ++ ) {
@@ -189,7 +190,7 @@ function opaqueChannelValues( texture: { width: number; height: number; data: Ui
 
 function opaqueNeighborGradientValues( texture: { width: number; height: number; data: Uint8Array } ): number[] {
 
-	const tileWidth = texture.width / 3;
+	const tileWidth = texture.width;
 	const values: number[] = [];
 
 	for ( let y = 0; y < texture.height; y ++ ) {
@@ -279,7 +280,7 @@ function meanGreenRowColor( texture: { width: number; height: number; data: Uint
 
 	for ( let y = firstY; y <= lastY; y ++ ) {
 
-		for ( let x = 0; x < texture.width / 3; x ++ ) {
+		for ( let x = 0; x < texture.width; x ++ ) {
 
 			const offset = ( y * texture.width + x ) * 4;
 			const red = texture.data[ offset ]!;
@@ -308,6 +309,13 @@ function percentile( values: number[], fraction: number ): number {
 }
 
 describe( 'fir sprig texture', () => {
+
+	it( 'keeps test and composition helpers out of the public core barrel', () => {
+
+		expect( publicCore ).not.toHaveProperty( 'getFirSprigNeedleGeometry' );
+		expect( publicCore ).not.toHaveProperty( 'composeFirSprigTexture' );
+
+	} );
 
 	it( 'keeps stem pixels brown at antialiased edges for every leaf tint', () => {
 
@@ -379,12 +387,12 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'creates a deterministic atlas with a fir sprig, needles, and a green midrib', () => {
+	it( 'creates a deterministic square sprig with needles and a green midrib', () => {
 
 		const first = createFirSprigTexture( 42 );
 		const second = createFirSprigTexture( 42 );
 		const otherSeed = createFirSprigTexture( 43 );
-		const tileWidth = first.width / 3;
+		const tileWidth = first.width;
 		let opaquePixels = 0;
 		let sprigOpaquePixels = 0;
 		let greenPixels = 0;
@@ -394,7 +402,7 @@ describe( 'fir sprig texture', () => {
 		let blueTotal = 0;
 		let invalidAlphaPixels = 0;
 
-		expect( first.width ).toBe( 768 );
+		expect( first.width ).toBe( 256 );
 		expect( first.height ).toBe( 256 );
 		expect( first.data ).toEqual( second.data );
 		expect( first.data ).not.toEqual( otherSeed.data );
@@ -438,8 +446,7 @@ describe( 'fir sprig texture', () => {
 		expect( brownPixels ).toBeGreaterThan( 50 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeGreaterThan( 0.18 );
 		expect( alphaCoverage( first, 0, tileWidth ) ).toBeLessThan( 0.5 );
-		expect( alphaCoverage( first, tileWidth, tileWidth ) ).toBe( 0 );
-		expect( alphaCoverage( first, tileWidth * 2, tileWidth ) ).toBe( 0 );
+		expect( first.width ).toBe( first.height );
 		expect( greenTotal ).toBeGreaterThan( redTotal * 3 );
 		expect( greenTotal ).toBeGreaterThan( blueTotal * 3 );
 
@@ -448,7 +455,7 @@ describe( 'fir sprig texture', () => {
 	it( 'stores the sprig base at v=0 and narrows toward its tip', () => {
 
 		const texture = createFirSprigTexture( 7 );
-		const tileWidth = texture.width / 3;
+		const tileWidth = texture.width;
 		const baseRow = rowWidth( texture, 0, 13, tileWidth );
 		const middleRow = rowWidth( texture, 0, 128, tileWidth );
 		const tipRow = rowWidth( texture, 0, 3, tileWidth );
@@ -556,7 +563,7 @@ describe( 'fir sprig texture', () => {
 
 		expect( brownTipPixels ).toBe( 0 );
 		expect( needleTipPixels ).toBeGreaterThan( 0 );
-		expect( rowWidth( texture, 0, texture.height - tipEnd + 4, texture.width / 3 ) ).toBeGreaterThan( 0 );
+		expect( rowWidth( texture, 0, texture.height - tipEnd + 4, texture.width ) ).toBeGreaterThan( 0 );
 
 	} );
 
@@ -623,7 +630,7 @@ describe( 'fir sprig texture', () => {
 	it( 'keeps a dense needle mask similar to the Tree01 albedo', () => {
 
 		const texture = createFirSprigTexture( 1 );
-		const tileWidth = texture.width / 3;
+		const tileWidth = texture.width;
 		const coverage = alphaCoverage( texture, 0, tileWidth );
 
 		expect( coverage ).toBeGreaterThan( 0.26 );
@@ -777,7 +784,7 @@ describe( 'fir sprig texture', () => {
 
 		for ( let y = tipStart; y < texture.height; y ++ ) {
 
-			for ( let x = 0; x < texture.width / 3; x ++ ) {
+			for ( let x = 0; x < texture.width; x ++ ) {
 
 				const offset = ( y * texture.width + x ) * 4;
 				const red = texture.data[ offset ]!;
@@ -861,7 +868,7 @@ describe( 'fir sprig texture', () => {
 	it( 'uses broad, connected needle strokes instead of a hairy edge', () => {
 
 		const texture = createFirSprigTexture( 1 );
-		const tileWidth = texture.width / 3;
+		const tileWidth = texture.width;
 		let opaquePixels = 0;
 		let perimeter = 0;
 
@@ -892,10 +899,10 @@ describe( 'fir sprig texture', () => {
 
 	} );
 
-	it( 'pads transparent RGB with colors from covered texels in its own atlas region', () => {
+	it( 'pads transparent RGB with colors from covered sprig texels', () => {
 
 		const texture = createFirSprigTexture( 31 );
-		const tileWidth = texture.width / 3;
+		const tileWidth = texture.width;
 
 		for ( let tile = 0; tile < 1; tile ++ ) {
 
@@ -944,7 +951,7 @@ describe( 'fir sprig texture', () => {
 	it( 'keeps intermediate alpha coverage on needle and stem edges', () => {
 
 		const texture = createFirSprigTexture( 1 );
-		const tileWidth = texture.width / 3;
+		const tileWidth = texture.width;
 		const values = new Set<number>();
 		let partialPixels = 0;
 		let partialNeedlePixels = 0;
@@ -988,9 +995,9 @@ describe( 'fir sprig texture', () => {
 
 		const texture = createFirSprigTexture( 7, 64 );
 
-		expect( texture.width ).toBe( 192 );
+		expect( texture.width ).toBe( 64 );
 		expect( texture.height ).toBe( 64 );
-		expect( texture.data.length ).toBe( 192 * 64 * 4 );
+		expect( texture.data.length ).toBe( 64 * 64 * 4 );
 		expect( () => createFirSprigTexture( 7, 0 ) ).toThrow( RangeError );
 
 	} );

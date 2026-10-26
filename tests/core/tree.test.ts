@@ -258,7 +258,7 @@ function meanOpaqueColorDifference( first: { width: number; data: Uint8Array }, 
 
 function brownStemWidthAtRow( texture: { width: number; height: number; data: Uint8Array }, y: number ): number {
 
-	const center = texture.width / 6;
+	const center = texture.width / 2;
 	let width = 0;
 
 	for ( let x = Math.floor( center ) - 8; x <= Math.ceil( center ) + 8; x ++ ) {
@@ -284,7 +284,7 @@ function sampleFrondLuminance( texture: { width: number; height: number; data: U
 
 	for ( let y = Math.max( 0, centerY - 1 ); y <= Math.min( texture.height - 1, centerY + 1 ); y ++ ) {
 
-		for ( let x = 0; x < texture.width / 3; x ++ ) {
+		for ( let x = 0; x < texture.width; x ++ ) {
 
 			const offset = ( y * texture.width + x ) * 4;
 			const red = texture.data[ offset ]!;
@@ -537,6 +537,16 @@ function meanFrondLengthAtTier( mesh: MeshData, tierIndex: number ): number {
 
 describe( 'conifer tree data', () => {
 
+	it( 'stores the leaf sprig in one square 256-pixel texture', () => {
+
+		const texture = generateTreeData( { seed: 1 } ).textures.leaf!;
+
+		expect( texture.width ).toBe( 256 );
+		expect( texture.height ).toBe( 256 );
+		expect( texture.data.length ).toBe( 256 * 256 * 4 );
+
+	} );
+
 	it( 'defaults to ten branch whorls', () => {
 
 		const defaultTree = generateTreeData( { seed: 1 } );
@@ -735,33 +745,13 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps the calibrated mean green in both LOD3 top-down crown atlas tiles', () => {
+	it( 'keeps the leaf texture limited to the square sprig', () => {
 
 		const texture = generateTreeData( { seed: 1 } ).textures.leaf!;
 
-		for ( const tile of [ 1, 2 ] ) {
-
-			let total = 0;
-			let count = 0;
-
-			for ( let y = 0; y < texture.height; y ++ ) {
-
-				for ( let x = 0; x < texture.height; x ++ ) {
-
-					const offset = ( y * texture.width + tile * texture.height + x ) * 4;
-
-					if ( texture.data[ offset + 3 ]! < 128 ) continue;
-
-					total += texture.data[ offset + 1 ]!;
-					count ++;
-
-				}
-
-			}
-
-			expect( total / count ).toBe( 83 );
-
-		}
+		expect( texture.width ).toBe( texture.height );
+		expect( texture.width ).toBe( 256 );
+		expect( texture.data.length ).toBe( texture.width * texture.height * 4 );
 
 	} );
 
@@ -1012,7 +1002,7 @@ describe( 'conifer tree data', () => {
 					expect( mesh.normals[ offset ] ).toBeCloseTo( 0 );
 					expect( mesh.normals[ offset + 1 ] ).toBeCloseTo( 1 );
 					expect( mesh.normals[ offset + 2 ] ).toBeCloseTo( 0 );
-					expect( mesh.uvs[ uvOffset ]! * 3 ).toBeCloseTo( column * 0.5, 2 );
+				expect( mesh.uvs[ uvOffset ]! ).toBeCloseTo( column * 0.5, 2 );
 					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( [ 0, 0.4, 1 ][ row ]! );
 
 				}
@@ -1289,7 +1279,7 @@ describe( 'conifer tree data', () => {
 					expect( candidate.normals[ colorOffset ] ).toBeCloseTo( 0, 5 );
 					expect( candidate.normals[ colorOffset + 1 ] ).toBeCloseTo( 1, 5 );
 					expect( candidate.normals[ colorOffset + 2 ] ).toBeCloseTo( 0, 5 );
-					expect( candidate.uvs[ uvOffset ]! * 3 ).toBeCloseTo( lateral, 2 );
+				expect( candidate.uvs[ uvOffset ]! ).toBeCloseTo( lateral, 2 );
 					expect( candidate.uvs[ uvOffset + 1 ] ).toBeCloseTo( vertexLongitudinal[ vertex ]!, 5 );
 
 					for ( let channel = 0; channel < 3; channel ++ ) {
