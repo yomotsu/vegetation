@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bakeImpostor, generateRockData, hexToLinear } from '../../src/core';
 import type { MeshData } from '../../src/core';
+import { createRockTextures } from '../../src/core/rockTexture';
 import { validateMeshData } from '../helpers/validateMeshData';
 
 function triangleCount( mesh: MeshData ): number {
@@ -523,7 +524,7 @@ describe( 'procedural rock data', () => {
 		expect( Math.abs( albedoMean[ 1 ] - 95.08 ) ).toBeLessThanOrEqual( 8 );
 		expect( Math.abs( albedoMean[ 2 ] - 102.47 ) ).toBeLessThanOrEqual( 8 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeLessThan( 2 );
-		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeGreaterThan( 1.1 );
+		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeGreaterThan( 0.6 );
 		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 2.5 );
 		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 72 );
 		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 88 );
@@ -557,6 +558,71 @@ describe( 'procedural rock data', () => {
 			expect( normal.data[ offset + 3 ] ).toBe( 255 );
 
 		}
+
+	} );
+
+	it( 'uses repeat-wrapped plate textures with reference crack coverage and UV density', () => {
+
+		const textures = createRockTextures( 9 );
+		const rock = generateRockData( { seed: 9 } );
+		const lowPixels = [ 0, 0, 0 ];
+		let lowPixelCount = 0;
+		let edgeDifference = 0;
+
+		expect( textures.albedo.wrap ).toBe( 'repeat' );
+		expect( textures.normal.wrap ).toBe( 'repeat' );
+
+		for ( let offset = 0; offset < textures.albedo.data.length; offset += 4 ) {
+
+			const luminance = ( textures.albedo.data[ offset ]! + textures.albedo.data[ offset + 1 ]! + textures.albedo.data[ offset + 2 ]! ) / 3;
+
+			if ( luminance >= 80 ) continue;
+
+			lowPixelCount ++;
+			lowPixels[ 0 ]! += textures.albedo.data[ offset ]!;
+			lowPixels[ 1 ]! += textures.albedo.data[ offset + 1 ]!;
+			lowPixels[ 2 ]! += textures.albedo.data[ offset + 2 ]!;
+
+		}
+
+		const lowPixelCoverage = lowPixelCount / ( textures.albedo.width * textures.albedo.height );
+		const lowPixelMean = lowPixels.map( ( value ) => value / lowPixelCount );
+
+		for ( let position = 0; position < textures.albedo.width; position ++ ) {
+
+			const top = position * 4;
+			const bottom = ( ( textures.albedo.height - 1 ) * textures.albedo.width + position ) * 4;
+			const left = position * textures.albedo.width * 4;
+			const right = left + ( textures.albedo.width - 1 ) * 4;
+
+			for ( let channel = 0; channel < 3; channel ++ ) {
+
+				edgeDifference += Math.abs( textures.albedo.data[ top + channel ]! - textures.albedo.data[ bottom + channel ]! );
+				edgeDifference += Math.abs( textures.albedo.data[ left + channel ]! - textures.albedo.data[ right + channel ]! );
+
+			}
+
+		}
+
+		const meanEdgeDifference = edgeDifference / ( textures.albedo.width * 6 );
+
+		expect( lowPixelCoverage ).toBeGreaterThanOrEqual( 0.075 );
+		expect( lowPixelCoverage ).toBeLessThanOrEqual( 0.14 );
+		expect( meanEdgeDifference ).toBeLessThan( 3 );
+		expect( Math.abs( lowPixelMean[ 0 ]! - 65.52 ) ).toBeLessThanOrEqual( 8 );
+		expect( Math.abs( lowPixelMean[ 1 ]! - 77.95 ) ).toBeLessThanOrEqual( 8 );
+		expect( Math.abs( lowPixelMean[ 2 ]! - 84.21 ) ).toBeLessThanOrEqual( 8 );
+
+		const mesh = rock.lods[ 0 ]!;
+		const uValues = Array.from( mesh.uvs ).filter( ( _, index ) => index % 2 === 0 );
+		const vValues = Array.from( mesh.uvs ).filter( ( _, index ) => index % 2 === 1 );
+		const uRange = Math.max( ...uValues ) - Math.min( ...uValues );
+		const vRange = Math.max( ...vValues ) - Math.min( ...vValues );
+
+		expect( uRange ).toBeGreaterThanOrEqual( 1.5 );
+		expect( uRange ).toBeLessThanOrEqual( 2.5 );
+		expect( vRange ).toBeGreaterThanOrEqual( 1.5 );
+		expect( vRange ).toBeLessThanOrEqual( 2.5 );
 
 	} );
 

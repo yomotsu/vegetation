@@ -299,8 +299,15 @@ function buildShell( frequency: number, radiusAt: ( direction: Vec3 ) => number,
 		scale: [ 1, verticalScale, 1 ],
 		flat: false,
 	} );
+	const mesh = builder.build();
 
-	return builder.build();
+	for ( let index = 0; index < mesh.uvs.length; index ++ ) {
+
+		mesh.uvs[ index ] = mesh.uvs[ index ]! * 2;
+
+	}
+
+	return mesh;
 
 }
 

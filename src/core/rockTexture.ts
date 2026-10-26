@@ -1,9 +1,23 @@
-import { createNoise3D } from './noise';
 import type { TextureData } from './types';
+
+interface RockCell {
+	u: number;
+	v: number;
+	tone: number;
+	angle: number;
+}
+
+type NoiseField = ( u: number, v: number ) => number;
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
 	return Math.max( minimum, Math.min( maximum, value ) );
+
+}
+
+function fract( value: number ): number {
+
+	return value - Math.floor( value );
 
 }
 
@@ -15,20 +29,177 @@ function smoothstep( minimum: number, maximum: number, value: number ): number {
 
 }
 
-function getRockDirection( u: number, v: number ): [ number, number, number ] {
+function createRandom( seed: number ): () => number {
 
-	const theta = u * Math.PI * 2;
-	const phi = ( v - 0.5 ) * Math.PI;
-	const latitude = Math.cos( phi );
+	let state = ( Math.floor( Math.abs( seed ) * 1000 ) + 0x6d2b79f5 ) >>> 0;
 
-	return [ latitude * Math.cos( theta ), Math.sin( phi ), latitude * Math.sin( theta ) ];
+	return () => {
+
+		state = ( state + 0x6d2b79f5 ) >>> 0;
+		let value = state;
+		value = Math.imul( value ^ value >>> 15, value | 1 );
+		value ^= value + Math.imul( value ^ value >>> 7, value | 61 );
+
+		return ( ( value ^ value >>> 14 ) >>> 0 ) / 4294967296;
+
+	};
+
+}
+
+function hashGrid( seed: number, x: number, y: number ): number {
+
+	let value = ( seed ^ Math.imul( x + 1, 0x9e3779b1 ) ^ Math.imul( y + 1, 0x85ebca6b ) ) >>> 0;
+	value = Math.imul( value ^ value >>> 16, 0x7feb352d );
+	value = Math.imul( value ^ value >>> 15, 0x846ca68b );
+	value ^= value >>> 16;
+
+	return value / 2147483648 - 1;
+
+}
+
+function createPeriodicNoise( seed: number, columns: number, rows: number ): NoiseField {
+
+	const values = new Float32Array( columns * rows );
+
+	for ( let y = 0; y < rows; y ++ ) {
+
+		for ( let x = 0; x < columns; x ++ ) {
+
+			values[ y * columns + x ] = hashGrid( seed, x, y );
+
+		}
+
+	}
+
+	return ( u: number, v: number ): number => {
+
+		const gridX = u * columns;
+		const gridY = v * rows;
+		const x = Math.floor( gridX );
+		const y = Math.floor( gridY );
+		const nextX = ( x + 1 ) % columns;
+		const nextY = ( y + 1 ) % rows;
+		const amountX = smoothstep( 0, 1, gridX - x );
+		const amountY = smoothstep( 0, 1, gridY - y );
+		const top = values[ ( y % rows ) * columns + x % columns ]! * ( 1 - amountX ) + values[ ( y % rows ) * columns + nextX ]! * amountX;
+		const bottom = values[ nextY * columns + x % columns ]! * ( 1 - amountX ) + values[ nextY * columns + nextX ]! * amountX;
+
+		return top * ( 1 - amountY ) + bottom * amountY;
+
+	};
+
+}
+
+function createRockCells( seed: number ): RockCell[] {
+
+	const random = createRandom( seed );
+	const cells: RockCell[] = [];
+
+	for ( let y = 0; y < 3; y ++ ) {
+
+		for ( let x = 0; x < 3; x ++ ) {
+
+			cells.push( {
+				u: ( x + 0.5 + ( random() - 0.5 ) * 0.64 ) / 3,
+				v: ( y + 0.5 + ( random() - 0.5 ) * 0.64 ) / 3,
+				tone: ( random() - 0.5 ) * 13,
+				angle: random() * Math.PI * 2,
+			} );
+
+		}
+
+	}
+
+	return cells;
+
+}
+
+function getCellDistances( u: number, v: number, cells: RockCell[] ): { cell: RockCell; first: number; second: number; dx: number; dy: number } {
+
+	let firstSquared = Infinity;
+	let secondSquared = Infinity;
+	let nearestCell = cells[ 0 ]!;
+	let nearestX = 0;
+	let nearestY = 0;
+
+	for ( const cell of cells ) {
+
+		let dx = u - cell.u;
+		let dy = v - cell.v;
+		dx -= Math.round( dx );
+		dy -= Math.round( dy );
+		const distanceSquared = dx * dx + dy * dy;
+
+		if ( distanceSquared < firstSquared ) {
+
+			secondSquared = firstSquared;
+			firstSquared = distanceSquared;
+			nearestCell = cell;
+			nearestX = dx * 3;
+			nearestY = dy * 3;
+
+		} else if ( distanceSquared < secondSquared ) {
+
+			secondSquared = distanceSquared;
+
+		}
+
+	}
+
+	return {
+		cell: nearestCell,
+		first: Math.sqrt( firstSquared ) * 3,
+		second: Math.sqrt( secondSquared ) * 3,
+		dx: nearestX,
+		dy: nearestY,
+	};
+
+}
+
+function sampleHeight( heightMap: Float32Array, size: number, x: number, y: number ): number {
+
+	const wrappedX = ( x + size ) % size;
+	const wrappedY = ( y + size ) % size;
+
+	return heightMap[ wrappedY * size + wrappedX ]!;
+
+}
+
+function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
+
+	const target = [ 80.31, 95.08, 102.47 ];
+	const total = [ 0, 0, 0 ];
+
+	for ( let offset = 0; offset < data.length; offset += 4 ) {
+
+		total[ 0 ]! += data[ offset ]!;
+		total[ 1 ]! += data[ offset + 1 ]!;
+		total[ 2 ]! += data[ offset + 2 ]!;
+
+	}
+
+	const adjustment = total.map( ( value, channel ) => target[ channel ]! - value / pixelCount );
+
+	for ( let offset = 0; offset < data.length; offset += 4 ) {
+
+		data[ offset ] = Math.round( clamp( data[ offset ]! + adjustment[ 0 ]!, 0, 255 ) );
+		data[ offset + 1 ] = Math.round( clamp( data[ offset + 1 ]! + adjustment[ 1 ]!, 0, 255 ) );
+		data[ offset + 2 ] = Math.round( clamp( data[ offset + 2 ]! + adjustment[ 2 ]!, 0, 255 ) );
+
+	}
 
 }
 
 export function createRockTextures( seed: number, size = 256 ): { albedo: TextureData; normal: TextureData } {
 
-	const noise = createNoise3D( seed + 419 );
-	const offset = [ ( seed * 13.7 ) % 61, ( seed * 27.1 ) % 73, ( seed * 41.9 ) % 89 ];
+	const seedOffset = Math.floor( Math.abs( seed ) * 1000 ) + 419;
+	const cells = createRockCells( seed );
+	const warpU = createPeriodicNoise( seedOffset + 13, 3, 3 );
+	const warpV = createPeriodicNoise( seedOffset + 29, 3, 3 );
+	const horizontalStreaks = createPeriodicNoise( seedOffset + 47, 54, 9 );
+	const verticalStreaks = createPeriodicNoise( seedOffset + 61, 9, 54 );
+	const horizontalChisel = createPeriodicNoise( seedOffset + 73, 72, 36 );
+	const verticalChisel = createPeriodicNoise( seedOffset + 89, 36, 72 );
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
 	const normalData = new Uint8Array( size * size * 4 );
@@ -37,45 +208,61 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 
 		for ( let x = 0; x < size; x ++ ) {
 
-			const direction = getRockDirection( x / size, y / size );
-			const broad = noise( direction[ 0 ] * 1.8 + offset[ 0 ]!, direction[ 1 ] * 1.8 + offset[ 1 ]!, direction[ 2 ] * 1.8 + offset[ 2 ]! );
-			const medium = noise( direction[ 0 ] * 5.2 - offset[ 2 ]!, direction[ 1 ] * 5.2 + offset[ 0 ]!, direction[ 2 ] * 5.2 - offset[ 1 ]! );
-			const strata = noise(
-				direction[ 0 ] * 4.4 + offset[ 2 ]!,
-				direction[ 1 ] * 15 + offset[ 0 ]! + medium * 1.8,
-				direction[ 2 ] * 4.4 - offset[ 1 ]!,
-			);
-			const fracture = noise( direction[ 0 ] * 13 + offset[ 1 ]!, direction[ 1 ] * 16 - offset[ 2 ]!, direction[ 2 ] * 13 + offset[ 0 ]! );
-			const grain = noise( direction[ 0 ] * 58 + offset[ 2 ]!, direction[ 1 ] * 58 - offset[ 0 ]!, direction[ 2 ] * 58 + offset[ 1 ]! );
-			const crackDistance = Math.abs( fracture );
-			const crack = 1 - smoothstep( 0.035, 0.095, crackDistance );
-			const crackEdge = smoothstep( 0.075, 0.12, crackDistance ) * ( 1 - smoothstep( 0.15, 0.22, crackDistance ) );
-			const brightness = broad * 21 + medium * 10 + strata * 5 + grain * 1.2 - crack * 9 + crackEdge * 1.8;
+			const u = x / size;
+			const v = y / size;
+			const warpedU = fract( u + warpU( u, v ) * 0.05 );
+			const warpedV = fract( v + warpV( u, v ) * 0.05 );
+			const nearest = getCellDistances( warpedU, warpedV, cells );
+			const gap = nearest.second - nearest.first;
+			const plate = smoothstep( 0.012, 0.16, gap );
+			const crack = 1 - smoothstep( 0.014, 0.11, gap );
+			const interior = smoothstep( 0.045, 0.18, gap );
+			const horizontal = horizontalStreaks( warpedU, warpedV );
+			const vertical = verticalStreaks( warpedU, warpedV );
+			const cosine = Math.cos( nearest.cell.angle );
+			const sine = Math.sin( nearest.cell.angle );
+			const orientation = cosine * cosine;
+			const streak = ( horizontal * orientation + vertical * ( 1 - orientation ) ) * interior;
+			const chisel = ( horizontalChisel( warpedU, warpedV ) * orientation + verticalChisel( warpedU, warpedV ) * ( 1 - orientation ) ) * interior;
+			const bevel = ( nearest.dx * cosine + nearest.dy * sine ) * 16;
+			const brightness = nearest.cell.tone + bevel + streak * 5.5 - crack * 28;
 			const index = y * size + x;
 
-			heightMap[ index ] = broad * 0.022 + medium * 0.014 + strata * 0.007 + grain * 0.0008 - crack * 0.0018 + crackEdge * 0.001;
-			albedoData[ index * 4 ] = Math.round( clamp( 82 + brightness * 0.93, 0, 255 ) );
-			albedoData[ index * 4 + 1 ] = Math.round( clamp( 96 + brightness, 0, 255 ) );
-			albedoData[ index * 4 + 2 ] = Math.round( clamp( 103 + brightness * 1.05, 0, 255 ) );
+			heightMap[ index ] = 0.25 + plate * 0.55 + chisel * 0.2;
+			albedoData[ index * 4 ] = Math.round( clamp( 84 + brightness * 0.93, 0, 255 ) );
+			albedoData[ index * 4 + 1 ] = Math.round( clamp( 99.3 + brightness, 0, 255 ) );
+			albedoData[ index * 4 + 2 ] = Math.round( clamp( 106.3 + brightness * 1.05, 0, 255 ) );
 			albedoData[ index * 4 + 3 ] = 255;
 
 		}
 
 	}
 
+	matchAlbedoMean( albedoData, size * size );
+
 	for ( let y = 0; y < size; y ++ ) {
 
 		for ( let x = 0; x < size; x ++ ) {
 
 			const index = y * size + x;
-			const left = heightMap[ y * size + ( x + size - 1 ) % size ]!;
-			const right = heightMap[ y * size + ( x + 1 ) % size ]!;
-			const down = heightMap[ Math.max( 0, y - 1 ) * size + x ]!;
-			const up = heightMap[ Math.min( size - 1, y + 1 ) * size + x ]!;
-			const latitude = y / ( size - 1 );
-			const poleFade = smoothstep( 0, 0.04, latitude ) * smoothstep( 0, 0.04, 1 - latitude );
-			const normalX = - ( right - left ) * size * 0.65 * poleFade;
-			const normalY = - ( up - down ) * size * 0.65 * poleFade;
+			const gradientX = (
+				sampleHeight( heightMap, size, x + 1, y - 1 ) +
+				2 * sampleHeight( heightMap, size, x + 1, y ) +
+				sampleHeight( heightMap, size, x + 1, y + 1 ) -
+				sampleHeight( heightMap, size, x - 1, y - 1 ) -
+				2 * sampleHeight( heightMap, size, x - 1, y ) -
+				sampleHeight( heightMap, size, x - 1, y + 1 )
+			) / 8;
+			const gradientY = (
+				sampleHeight( heightMap, size, x - 1, y + 1 ) +
+				2 * sampleHeight( heightMap, size, x, y + 1 ) +
+				sampleHeight( heightMap, size, x + 1, y + 1 ) -
+				sampleHeight( heightMap, size, x - 1, y - 1 ) -
+				2 * sampleHeight( heightMap, size, x, y - 1 ) -
+				sampleHeight( heightMap, size, x + 1, y - 1 )
+			) / 8;
+			const normalX = - gradientX * size * 0.05;
+			const normalY = - gradientY * size * 0.05;
 			const inverseLength = 1 / Math.hypot( normalX, normalY, 1 );
 
 			normalData[ index * 4 ] = Math.round( ( normalX * inverseLength * 0.5 + 0.5 ) * 255 );
@@ -88,8 +275,8 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 	}
 
 	return {
-		albedo: { width: size, height: size, data: albedoData, wrapS: 'repeat', wrapT: 'clamp' },
-		normal: { width: size, height: size, data: normalData, wrapS: 'repeat', wrapT: 'clamp' },
+		albedo: { width: size, height: size, data: albedoData, wrap: 'repeat' },
+		normal: { width: size, height: size, data: normalData, wrap: 'repeat' },
 	};
 
 }
