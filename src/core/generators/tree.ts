@@ -642,6 +642,7 @@ function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNor
 	const uvs: number[] = [];
 	const colors: number[] = [];
 	const windWeight: number[] = [];
+	const impostorCard: number[] = [];
 
 	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
 
@@ -657,6 +658,7 @@ function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNor
 		uvs.push( mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! );
 		colors.push( mesh.colors[ vertex * 3 ]!, mesh.colors[ vertex * 3 + 1 ]!, mesh.colors[ vertex * 3 + 2 ]! );
 		windWeight.push( mesh.windWeight[ vertex ]! );
+		impostorCard.push( mesh.impostorCard[ vertex ]! );
 
 	}
 
@@ -666,6 +668,7 @@ function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNor
 		uvs: new Float32Array( uvs ),
 		colors: new Float32Array( colors ),
 		windWeight: new Float32Array( windWeight ),
+		impostorCard: new Float32Array( impostorCard ),
 		indices: new Uint32Array( indices.map( ( vertex ) => vertexMap.get( vertex )! ) ),
 		groups,
 	};
@@ -858,8 +861,8 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	};
 	const lod0Bounds = { radius: getBoundsRadius( lod0 ), height };
 
-	const lod3 = buildSixPlaneImpostor( height, lod0Bounds.radius, impostorLod3PartIndex );
-	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ), getBoundsRadius( lod3 ) ), height };
+	const lod3 = buildSixPlaneImpostor( height, lod0Bounds.radius, impostorLod3PartIndex, lod0, height * 0.25 );
+	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ) ), height };
 	const data: VegetationData = {
 		kind: 'tree',
 		parts: [ ...parts ],

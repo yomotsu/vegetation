@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES, LOD4_IMPOSTOR_VIEWS } from '../../src/core';
+import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES, LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS } from '../../src/core';
 import { generateTreeData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -33,6 +33,7 @@ function billboardPlane( mesh: MeshData, planeIndex: number, partIndex: number )
 		uvs: mesh.uvs.slice( vertexStart * 2, ( vertexStart + 4 ) * 2 ),
 		colors: mesh.colors.slice( vertexStart * 3, ( vertexStart + 4 ) * 3 ),
 		windWeight: mesh.windWeight.slice( vertexStart, vertexStart + 4 ),
+		impostorCard: mesh.impostorCard.slice( vertexStart, vertexStart + 4 ),
 		indices: Uint32Array.from( mesh.indices.slice( indexStart, indexStart + 6 ), ( index ) => index - vertexStart ),
 		groups: [ { start: 0, count: 6, partIndex } ],
 	};
@@ -679,7 +680,7 @@ describe( 'conifer tree data', () => {
 			name: 'impostor-lod3',
 			defaultColor: 0xffffff,
 			texture: 'impostor-lod3',
-			impostorYawAngles: LOD3_IMPOSTOR_YAW_ANGLES,
+			impostorViews: LOD3_IMPOSTOR_VIEWS,
 			alphaTest: 0.5,
 			doubleSided: true,
 			flatShading: false,
@@ -700,7 +701,7 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 2 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.3 );
 		expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
-		expect( data.lods[ 3 ]!.groups ).toEqual( [ { start: 0, count: 36, partIndex: LOD3_IMPOSTOR_PART_INDEX } ] );
+		expect( data.lods[ 3 ]!.groups ).toEqual( [ { start: 0, count: 42, partIndex: LOD3_IMPOSTOR_PART_INDEX } ] );
 		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, IMPOSTOR_PART_INDEX, data.lods[ 0 ]!, data.bounds.height * 0.25 ) );
 
 	} );
@@ -720,7 +721,7 @@ describe( 'conifer tree data', () => {
 			expect( counts[ 1 ] ).toBeLessThanOrEqual( 513 );
 			expect( triangles[ 3 ] ).toBeLessThanOrEqual( 40 );
 			expect( triangles[ 4 ] ).toBeLessThanOrEqual( 12 );
-			expect( counts[ 3 ] ).toBe( 24 );
+			expect( counts[ 3 ] ).toBe( 28 );
 			expect( counts[ 4 ] ).toBe( 8 );
 			expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 			expect( counts[ 4 ] ).toBeLessThan( counts[ 2 ]! );
@@ -1620,7 +1621,7 @@ describe( 'conifer tree data', () => {
 
 			const data = generateTreeData( { seed } );
 			const colors = defaultColors( data );
-			const lod3Texture = bakeImpostor( data, colors, 128, LOD3_IMPOSTOR_YAW_ANGLES );
+			const lod3Texture = bakeImpostor( data, colors, 128, LOD3_IMPOSTOR_VIEWS );
 			for ( const yaw of [ 0, Math.PI / 6, Math.PI / 3 ] ) {
 
 				const planeIndex = Math.round( yaw / ( Math.PI / 6 ) );
@@ -1670,7 +1671,7 @@ describe( 'conifer tree data', () => {
 
 			const data = generateTreeData( { seed } );
 			const colors = defaultColors( data );
-			const lod3Texture = bakeImpostor( data, colors, 128, LOD3_IMPOSTOR_YAW_ANGLES );
+			const lod3Texture = bakeImpostor( data, colors, 128, LOD3_IMPOSTOR_VIEWS );
 			const lod3Data = {
 				...data,
 				lods: [ data.lods[ 3 ]!, ...data.lods.slice( 1 ) ],

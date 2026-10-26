@@ -164,7 +164,7 @@ describe( 'VegetationAsset', () => {
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
 		expect( impostorTexture.image.width ).toBe( 128 * 2 );
 		expect( impostorTexture.image.height ).toBe( 128 );
-		expect( impostorLod3Texture.image.width ).toBe( 128 * 6 );
+		expect( impostorLod3Texture.image.width ).toBe( 128 * 7 );
 		expect( impostorLod3Texture.image.height ).toBe( 128 );
 		expect( asset.data.parts[ 0 ]!.texture ).toBe( 'bark' );
 		expect( asset.data.parts[ 0 ]!.defaultColor ).toBe( 0x6b4c32 );

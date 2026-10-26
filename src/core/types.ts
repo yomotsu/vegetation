@@ -19,6 +19,7 @@ export interface MeshData {
 	uvs: Float32Array; // uv
 	colors: Float32Array; // rgb（明度・色相のゆらぎ。マテリアル色と乗算される）
 	windWeight: Float32Array; // 1 頂点 1 値、0〜1
+	impostorCard: Float32Array; // 0 = 縦カード、1 = 水平カード
 	indices: Uint32Array;
 	groups: MeshGroup[]; // index 範囲ごとの partIndex。start/count は index 単位
 }

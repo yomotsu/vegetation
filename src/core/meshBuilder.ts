@@ -7,11 +7,12 @@ export class MeshBuilder {
 	private _uvs: number[] = [];
 	private _colors: number[] = [];
 	private _windWeights: number[] = [];
+	private _impostorCards: number[] = [];
 	private _indices: number[] = [];
 	private _groups: MeshGroup[] = [];
 	private _currentPartIndex = 0;
 
-	addVertex( p: Vec3, n: Vec3, uv: [ number, number ], color: Color3, wind: number ): number {
+	addVertex( p: Vec3, n: Vec3, uv: [ number, number ], color: Color3, wind: number, impostorCard = 0 ): number {
 
 		const index = this._positions.length / 3;
 
@@ -20,6 +21,7 @@ export class MeshBuilder {
 		this._uvs.push( uv[ 0 ], uv[ 1 ] );
 		this._colors.push( color[ 0 ], color[ 1 ], color[ 2 ] );
 		this._windWeights.push( wind );
+		this._impostorCards.push( impostorCard );
 
 		return index;
 
@@ -65,6 +67,7 @@ export class MeshBuilder {
 			uvs: new Float32Array( this._uvs ),
 			colors: new Float32Array( this._colors ),
 			windWeight: new Float32Array( this._windWeights ),
+			impostorCard: new Float32Array( this._impostorCards ),
 			indices: new Uint32Array( this._indices ),
 			groups: this._groups.map( ( group ) => ( { ...group } ) ),
 		};
