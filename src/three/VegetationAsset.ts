@@ -10,6 +10,7 @@ import {
 	LinearMipmapLinearFilter,
 	MeshPhysicalMaterial,
 	MeshStandardMaterial,
+	NoColorSpace,
 	RGBAFormat,
 	RepeatWrapping,
 	SRGBColorSpace,
@@ -20,16 +21,17 @@ import { bakeImpostor, LOD3_IMPOSTOR_YAW_ANGLES } from '../core/impostor';
 import { regenerateTreeLeafTexture } from '../core/generators/tree';
 import type { LodLevel, MeshData, TextureData, VegetationData } from '../core/types';
 
-function createTexture( data: TextureData ): DataTexture {
+function createTexture( data: TextureData, normalMap = false ): DataTexture {
 
 	const texture = new DataTexture( data.data, data.width, data.height, RGBAFormat, UnsignedByteType );
 	texture.flipY = false;
-	texture.colorSpace = SRGBColorSpace;
+	texture.colorSpace = normalMap ? NoColorSpace : SRGBColorSpace;
 	texture.magFilter = LinearFilter;
 	texture.minFilter = LinearMipmapLinearFilter;
-	const wrapping = data.wrap === 'repeat' ? RepeatWrapping : ClampToEdgeWrapping;
-	texture.wrapS = wrapping;
-	texture.wrapT = wrapping;
+	const wrapS = data.wrapS ?? data.wrap;
+	const wrapT = data.wrapT ?? data.wrap;
+	texture.wrapS = wrapS === 'repeat' ? RepeatWrapping : ClampToEdgeWrapping;
+	texture.wrapT = wrapT === 'repeat' ? RepeatWrapping : ClampToEdgeWrapping;
 	texture.generateMipmaps = true;
 	texture.needsUpdate = true;
 
@@ -108,9 +110,11 @@ export class VegetationAsset {
 
 			const isImpostor = part.texture === 'impostor' || part.texture === 'impostor-lod3';
 			const texture = isImpostor ? this.impostorTextures.get( part.texture! )! : part.texture === null ? null : data.textures[ part.texture ] === undefined ? null : createTexture( data.textures[ part.texture ]! );
+			const normalTexture = part.normalTexture === undefined ? null : data.textures[ part.normalTexture ] === undefined ? null : createTexture( data.textures[ part.normalTexture ]!, true );
 			const materialParameters = {
 				color: materialColors[ index ]!,
 				map: texture,
+				normalMap: normalTexture,
 				vertexColors: ! isImpostor,
 				side: part.doubleSided ? DoubleSide : FrontSide,
 				flatShading: part.flatShading,
@@ -253,6 +257,7 @@ export class VegetationAsset {
 		for ( const material of this.materials ) {
 
 			if ( material.map !== null ) textures.add( material.map );
+			if ( material.normalMap !== null ) textures.add( material.normalMap );
 			material.dispose();
 
 		}

@@ -4,7 +4,7 @@ export { createRandom } from './core/random';
 export type { Random } from './core/random';
 export { VegetationAsset } from './three/VegetationAsset';
 export { orientBillboardInstances, VegetationMesh } from './three/VegetationMesh';
-export { TreeMesh, generateTree } from './three/meshes';
+export { RockMesh, TreeMesh, generateRock, generateTree } from './three/meshes';
 export type {
 	ColliderData,
 	Color3,
@@ -16,4 +16,4 @@ export type {
 	TextureGeneratorDef,
 	VegetationData,
 } from './core/types';
-export type { TreeMeshOptions, TreeOptions } from './three/meshes';
+export type { RockMeshOptions, RockOptions, TreeMeshOptions, TreeOptions } from './three/meshes';
