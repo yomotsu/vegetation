@@ -7,7 +7,10 @@ export default defineConfig( ( { mode } ) => ( {
 	cacheDir: new URL( './node_modules/.vite-' + mode, import.meta.url ).pathname,
 	resolve: {
 		alias: [
-			...( mode === 'webgpu' ? [ { find: /^three$/, replacement: 'three/webgpu' } ] : [] ),
+			{ find: /^vegetation\/webgpu$/, replacement: new URL( './src/webgpu/index.ts', import.meta.url ).pathname },
+			...( mode === 'webgpu' ? [
+				{ find: /^three$/, replacement: 'three/webgpu' },
+			] : [] ),
 			{ find: 'vegetation', replacement: new URL( './src/index.ts', import.meta.url ).pathname },
 		],
 	},

@@ -19,6 +19,12 @@ import type { ScatterController } from './scatter';
 import { createPreviewScene, setPreviewShadowFlags } from './rendering';
 import type { PreviewRenderer } from './rendering';
 
+if ( import.meta.env.MODE === 'webgpu' ) {
+
+	await import( 'vegetation/webgpu' );
+
+}
+
 type ViewMode = 'single' | 'compare' | 'scatter';
 
 interface DemoState {
