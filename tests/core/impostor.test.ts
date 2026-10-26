@@ -93,6 +93,33 @@ function createUpperCornerMesh(): MeshData {
 
 }
 
+function createSteppedFootprintMesh(): MeshData {
+
+	const builder = new MeshBuilder();
+	builder.beginGroup( 0 );
+
+	const low = [
+		builder.addVertex( [ - 1, 0.1, - 1 ], [ 0, 1, 0 ], [ 0, 0 ], white, 0 ),
+		builder.addVertex( [ 1, 0.1, - 1 ], [ 0, 1, 0 ], [ 1, 0 ], white, 0 ),
+		builder.addVertex( [ 1, 0.1, 1 ], [ 0, 1, 0 ], [ 1, 1 ], white, 0 ),
+		builder.addVertex( [ - 1, 0.1, 1 ], [ 0, 1, 0 ], [ 0, 1 ], white, 0 ),
+	];
+	builder.addTriangle( low[ 0 ]!, low[ 1 ]!, low[ 2 ]! );
+	builder.addTriangle( low[ 0 ]!, low[ 2 ]!, low[ 3 ]! );
+
+	const upper = [
+		builder.addVertex( [ - 0.25, 0.75, - 0.3 ], [ 0, 1, 0 ], [ 0, 0 ], white, 0 ),
+		builder.addVertex( [ 0.25, 0.75, - 0.3 ], [ 0, 1, 0 ], [ 1, 0 ], white, 0 ),
+		builder.addVertex( [ 0.25, 0.75, 0.3 ], [ 0, 1, 0 ], [ 1, 1 ], white, 0 ),
+		builder.addVertex( [ - 0.25, 0.75, 0.3 ], [ 0, 1, 0 ], [ 0, 1 ], white, 0 ),
+	];
+	builder.addTriangle( upper[ 0 ]!, upper[ 1 ]!, upper[ 2 ]! );
+	builder.addTriangle( upper[ 0 ]!, upper[ 2 ]!, upper[ 3 ]! );
+
+	return builder.build();
+
+}
+
 function createTexturedQuadMesh(): MeshData {
 
 	const builder = new MeshBuilder();
@@ -177,6 +204,19 @@ describe( 'impostor generation', () => {
 			expect( mesh.positions[ i ] ).toBeLessThanOrEqual( 1 );
 
 		}
+
+	} );
+
+	it( 'sizes the top card from the LOD0 footprint at its height', () => {
+
+		const mesh = buildBillboard( { radius: 1, height: 1 }, 2, createSteppedFootprintMesh(), 0.5 );
+
+		expect( mesh.positions.slice( 12, 24 ) ).toEqual( new Float32Array( [
+			- 0.25, 0.5, 0.3,
+			0.25, 0.5, 0.3,
+			0.25, 0.5, - 0.3,
+			- 0.25, 0.5, - 0.3,
+		] ) );
 
 	} );
 

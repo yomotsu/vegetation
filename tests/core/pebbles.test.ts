@@ -259,6 +259,7 @@ describe( 'procedural pebbles data', () => {
 
 			expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 4 );
 			expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
+			expect( data.lods[ 4 ]!.positions[ 13 ] ).toBeCloseTo( data.bounds.height * 0.25, 5 );
 			expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
 			expect( topCardCoverageIou( data ) ).toBeGreaterThanOrEqual( 0.6 );
 

@@ -64,7 +64,7 @@ export function impostorViewsForPart( part: PartDef ): readonly ImpostorView[] |
 
 }
 
-function getFootprint( mesh: MeshData | undefined, fallbackRadius: number ): { minX: number; maxX: number; minZ: number; maxZ: number } {
+function getFootprint( mesh: MeshData | undefined, fallbackRadius: number, minimumHeight: number ): { minX: number; maxX: number; minZ: number; maxZ: number } {
 
 	if ( mesh === undefined || mesh.positions.length === 0 ) {
 
@@ -77,14 +77,49 @@ function getFootprint( mesh: MeshData | undefined, fallbackRadius: number ): { m
 	let minZ = Infinity;
 	let maxZ = - Infinity;
 
-	for ( let index = 0; index < mesh.positions.length; index += 3 ) {
+	const includePoint = ( x: number, z: number ): void => {
 
-		minX = Math.min( minX, mesh.positions[ index ]! );
-		maxX = Math.max( maxX, mesh.positions[ index ]! );
-		minZ = Math.min( minZ, mesh.positions[ index + 2 ]! );
-		maxZ = Math.max( maxZ, mesh.positions[ index + 2 ]! );
+		minX = Math.min( minX, x );
+		maxX = Math.max( maxX, x );
+		minZ = Math.min( minZ, z );
+		maxZ = Math.max( maxZ, z );
+
+	};
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ];
+
+		for ( let edge = 0; edge < 3; edge ++ ) {
+
+			const firstOffset = triangle[ edge ]! * 3;
+			const secondOffset = triangle[ ( edge + 1 ) % 3 ]! * 3;
+			const firstY = mesh.positions[ firstOffset + 1 ]!;
+			const secondY = mesh.positions[ secondOffset + 1 ]!;
+
+			if ( firstY >= minimumHeight ) includePoint( mesh.positions[ firstOffset ]!, mesh.positions[ firstOffset + 2 ]! );
+
+			if ( ( firstY < minimumHeight && secondY > minimumHeight ) || ( firstY > minimumHeight && secondY < minimumHeight ) ) {
+
+				const amount = ( minimumHeight - firstY ) / ( secondY - firstY );
+				includePoint(
+					mesh.positions[ firstOffset ]! + ( mesh.positions[ secondOffset ]! - mesh.positions[ firstOffset ]! ) * amount,
+					mesh.positions[ firstOffset + 2 ]! + ( mesh.positions[ secondOffset + 2 ]! - mesh.positions[ firstOffset + 2 ]! ) * amount,
+				);
+
+			}
+
+		}
 
 	}
+
+	if ( ! Number.isFinite( minX ) ) {
+
+		for ( let index = 0; index < mesh.positions.length; index += 3 ) includePoint( mesh.positions[ index ]!, mesh.positions[ index + 2 ]! );
+
+	}
+
+	if ( ! Number.isFinite( minX ) ) return { minX: - fallbackRadius, maxX: fallbackRadius, minZ: - fallbackRadius, maxZ: fallbackRadius };
 
 	return { minX, maxX, minZ, maxZ };
 
@@ -97,7 +132,7 @@ export function buildBillboard( bounds: { radius: number; height: number }, impo
 	const height = bounds.height;
 	const normalWeight = Math.SQRT1_2;
 	const color: Color3 = [ 1, 1, 1 ];
-	const footprint = getFootprint( lod0, radius );
+	const footprint = getFootprint( lod0, radius, topHeight );
 
 	builder.beginGroup( impostorPartIndex );
 

@@ -1004,3 +1004,18 @@ At the default pebble count, LOD3 keeps 15 of 16 stones: five-vertex shapes fell
 - `npm test -- --no-file-parallelism tests/core/pebbles.test.ts` — 12 passed.
 - `npm run typecheck` — passed.
 - Chrome: compared Rock seeds 1–5, opened Rock02 with `seed=2`, and inspected the Pebbles compare view.
+
+## Lower LOD4 top cards — 2026-10-26
+
+### Changes
+
+- Moved the horizontal LOD4 card to 25% of above-ground height for Trees, Rocks, and Pebbles.
+- Sized the card to the LOD0 footprint clipped at the card's height, including edge intersections with that height plane.
+- Kept the LOD4 card at 8 vertices and 4 triangles.
+
+### Validation
+
+- `npm test -- --no-file-parallelism tests/core/impostor.test.ts tests/core/rock.test.ts tests/core/pebbles.test.ts tests/core/tree.test.ts` — 90 passed.
+- `npm test -- --no-file-parallelism` — 203 passed, 1 skipped.
+- `npm run typecheck` and `npm run build` — passed.
+- Chrome: checked the compare view and direct overhead for Tree, Rock, and Pebbles. The top-down coverage tests passed for all three.

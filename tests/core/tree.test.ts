@@ -701,7 +701,7 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
 		expect( data.lods[ 3 ]!.groups ).toEqual( [ { start: 0, count: 36, partIndex: LOD3_IMPOSTOR_PART_INDEX } ] );
-		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, IMPOSTOR_PART_INDEX, data.lods[ 0 ]!, data.bounds.height * 0.58 ) );
+		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, IMPOSTOR_PART_INDEX, data.lods[ 0 ]!, data.bounds.height * 0.25 ) );
 
 	} );
 
@@ -1773,6 +1773,7 @@ describe( 'conifer tree data', () => {
 
 			expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 4 );
 			expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
+			expect( data.lods[ 4 ]!.positions[ 13 ] ).toBeCloseTo( data.bounds.height * 0.25, 5 );
 			expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
 			expect( topCardCoverageIou( data ) ).toBeGreaterThanOrEqual( 0.6 );
 

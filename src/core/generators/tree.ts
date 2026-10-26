@@ -863,7 +863,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	const data: VegetationData = {
 		kind: 'tree',
 		parts: [ ...parts ],
-		lods: [ lod0, lod1, lod2, lod3, buildBillboard( bounds, impostorPartIndex, lod0, height * 0.58 ) ],
+		lods: [ lod0, lod1, lod2, lod3, buildBillboard( bounds, impostorPartIndex, lod0, height * 0.25 ) ],
 		collider: buildCollider( layout ),
 		textures,
 		textureGenerators: { leaf: { type: 'tree-leaf', seed, size: 256 } },
