@@ -30,9 +30,69 @@ function boundaryEdgeCount( mesh: Pick<MeshData, 'positions' | 'indices'> ): num
 
 }
 
-function vertexCount( mesh: MeshData ): number {
+function vertexCount( mesh: Pick<MeshData, 'positions'> ): number {
 
 	return mesh.positions.length / 3;
+
+}
+
+function shapeMetrics( mesh: MeshData ): { flattening: number[]; elongation: number[]; ellipsoidRms: number[]; embeddedFraction: number[] } {
+
+	const components = splitConnectedComponents( mesh );
+	const flattening: number[] = [];
+	const elongation: number[] = [];
+	const ellipsoidRms: number[] = [];
+	const embeddedFraction: number[] = [];
+
+	for ( const component of components ) {
+
+		const minimum = [ Infinity, Infinity, Infinity ];
+		const maximum = [ - Infinity, - Infinity, - Infinity ];
+
+		for ( let offset = 0; offset < component.positions.length; offset += 3 ) {
+
+			for ( let axis = 0; axis < 3; axis ++ ) {
+
+				minimum[ axis ] = Math.min( minimum[ axis ]!, component.positions[ offset + axis ]! );
+				maximum[ axis ] = Math.max( maximum[ axis ]!, component.positions[ offset + axis ]! );
+			}
+
+		}
+
+		const width = maximum[ 0 ]! - minimum[ 0 ]!;
+		const height = maximum[ 1 ]! - minimum[ 1 ]!;
+		const depth = maximum[ 2 ]! - minimum[ 2 ]!;
+		const longSide = Math.max( width, depth );
+		const shortSide = Math.min( width, depth );
+		const center = minimum.map( ( value, axis ) => ( value + maximum[ axis ]! ) * 0.5 );
+		const radii = minimum.map( ( value, axis ) => ( maximum[ axis ]! - value ) * 0.5 || 1 );
+		let squaredDeviation = 0;
+
+		for ( let offset = 0; offset < component.positions.length; offset += 3 ) {
+
+			const radius = Math.sqrt( [ 0, 1, 2 ].reduce( ( sum, axis ) => sum + ( ( component.positions[ offset + axis ]! - center[ axis ]! ) / radii[ axis ]! ) ** 2, 0 ) );
+			squaredDeviation += ( radius - 1 ) ** 2;
+
+		}
+
+		flattening.push( height / longSide );
+		elongation.push( longSide / shortSide );
+		ellipsoidRms.push( Math.sqrt( squaredDeviation / ( component.positions.length / 3 ) ) );
+		embeddedFraction.push( Math.max( 0, - minimum[ 1 ]! ) / height );
+
+	}
+
+	return { flattening, elongation, ellipsoidRms, embeddedFraction };
+
+}
+
+function median( values: number[] ): number {
+
+	const sorted = values.slice().sort( ( first, second ) => first - second );
+	const middle = Math.floor( sorted.length / 2 );
+	if ( sorted.length % 2 === 1 ) return sorted[ middle ]!;
+
+	return ( sorted[ middle - 1 ]! + sorted[ middle ]! ) * 0.5;
 
 }
 
@@ -223,6 +283,55 @@ describe( 'procedural pebbles data', () => {
 
 	} );
 
+	it( 'uses rounded ellipsoid stones with the reference proportions at LOD0', () => {
+
+		const data = generatePebblesData( { seed: 1 } );
+		const components = splitConnectedComponents( data.lods[ 0 ]! );
+		const metrics = shapeMetrics( data.lods[ 0 ]! );
+
+		expect( components ).toHaveLength( 16 );
+		expect( components.map( vertexCount ) ).toEqual( Array.from( { length: 16 }, () => 12 ) );
+		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 200 );
+		expect( median( metrics.flattening ) ).toBeGreaterThanOrEqual( 0.6 );
+		expect( median( metrics.flattening ) ).toBeLessThanOrEqual( 0.75 );
+		expect( median( metrics.elongation ) ).toBeLessThanOrEqual( 1.2 );
+		expect( Math.max( ...metrics.elongation ) ).toBeLessThanOrEqual( 1.5 );
+		expect( median( metrics.ellipsoidRms ) ).toBeLessThanOrEqual( 0.4 );
+		expect( Math.max( ...metrics.ellipsoidRms ) ).toBeLessThanOrEqual( 0.56 );
+		for ( const fraction of metrics.embeddedFraction ) {
+
+			expect( fraction ).toBeGreaterThan( 0.19 );
+			expect( fraction ).toBeLessThan( 0.22 );
+
+		}
+
+	} );
+
+	it( 'keeps rounded LOD1 and LOD2 within side and top coverage of LOD0', () => {
+
+		const data = generatePebblesData( { seed: 7 } );
+
+		for ( const [ lod, expectedVertices ] of [ [ 1, 8 ], [ 2, 6 ] ] as const ) {
+
+			const components = splitConnectedComponents( data.lods[ lod ]! );
+			expect( components ).toHaveLength( 16 );
+			expect( components.map( vertexCount ) ).toEqual( Array.from( { length: 16 }, () => expectedVertices ) );
+
+		}
+
+		for ( const topDown of [ false, true ] ) {
+
+			for ( const lod of [ 1, 2 ] ) {
+
+				const coverage = coverageIou( renderCoverage( data, 0, topDown ), renderCoverage( data, lod, topDown ), 1 );
+				expect( coverage, `LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThanOrEqual( 0.7 );
+
+			}
+
+		}
+
+	} );
+
 	it( 'builds mesh LOD0–3 with an open far mesh and keeps LOD4 as a billboard', () => {
 
 		const data = generatePebblesData( { seed: 4 } );
@@ -237,7 +346,7 @@ describe( 'procedural pebbles data', () => {
 		expect( data.textures.albedo!.width ).toBe( 1024 );
 		expect( data.textures.albedo!.height ).toBe( 1024 );
 		expect( data.textures.normal!.width ).toBe( 1024 );
-		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 128 );
+		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 200 );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeGreaterThan( vertexCount( data.lods[ 4 ]! ) );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeLessThanOrEqual( 90 );
 		expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 8 );
@@ -297,12 +406,12 @@ describe( 'procedural pebbles data', () => {
 			const allVertices = data.lods.map( vertexCount );
 			const triangles = data.lods.map( triangleCount );
 
-			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 128 );
-			expect( vertices[ 1 ] ).toBeGreaterThanOrEqual( 88 );
-			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 104 );
-			expect( vertices[ 2 ] ).toBeGreaterThanOrEqual( 80 );
+			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 200 );
+			expect( vertices[ 1 ] ).toBeGreaterThanOrEqual( 120 );
+			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 136 );
+			expect( vertices[ 2 ] ).toBeGreaterThanOrEqual( 88 );
 			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 104 );
-			if ( seed === 1 ) expect( vertices ).toEqual( [ 128, 104, 96 ] );
+			if ( seed === 1 ) expect( vertices ).toEqual( [ 192, 128, 96 ] );
 			for ( let lod = 0; lod < allVertices.length - 1; lod ++ ) {
 
 				expect( allVertices[ lod ] ).toBeGreaterThan( allVertices[ lod + 1 ]! );
@@ -317,9 +426,7 @@ describe( 'procedural pebbles data', () => {
 		}
 
 		const maximumCount = generatePebblesData( { count: 30 } );
-		expect( vertexCount( maximumCount.lods[ 0 ]! ) ).toBeLessThanOrEqual( 240 );
-		expect( vertexCount( maximumCount.lods[ 1 ]! ) ).toBeLessThanOrEqual( 210 );
-		expect( vertexCount( maximumCount.lods[ 2 ]! ) ).toBeLessThanOrEqual( 180 );
+		expect( maximumCount.lods.slice( 0, 3 ).map( vertexCount ) ).toEqual( [ 240, 210, 180 ] );
 
 	} );
 
@@ -329,20 +436,20 @@ describe( 'procedural pebbles data', () => {
 
 		for ( const topDown of [ false, true ] ) {
 
-			const lod0 = renderCoverage( data, 0, topDown );
-			for ( const lod of [ 3 ] ) {
+			for ( const lod of [ 1, 2, 3 ] ) {
 
-				const lodCoverage = renderCoverage( data, lod, topDown );
-				const coverage = coverageIou( lod0, lodCoverage, 1 );
-				expect( coverage, `LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThanOrEqual( 0.55 );
+				const previous = renderCoverage( data, lod - 1, topDown );
+				const current = renderCoverage( data, lod, topDown );
+				const coverage = coverageIou( previous, current, 1 );
+				expect( coverage, `LOD${ lod - 1 } to LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThanOrEqual( 0.5 );
 
-				if ( ! topDown ) {
+				if ( ! topDown && lod === 3 ) {
 
-					const sourceColor = meanOpaqueRgb( lod0.data );
-					const farColor = meanOpaqueRgb( lodCoverage.data );
+					const sourceColor = meanOpaqueRgb( renderCoverage( data, 0, topDown ).data );
+					const farColor = meanOpaqueRgb( current.data );
 
 					for ( let channel = 0; channel < 3; channel ++ ) {
-						expect( Math.abs( sourceColor[ channel ]! - farColor[ channel ]! ), `LOD3 channel ${ channel } mean color: ${ sourceColor[ channel ] } vs ${ farColor[ channel ] }` ).toBeLessThanOrEqual( 8 );
+						expect( Math.abs( sourceColor[ channel ]! - farColor[ channel ]! ), `LOD${ lod } channel ${ channel } mean color: ${ sourceColor[ channel ] } vs ${ farColor[ channel ] }` ).toBeLessThanOrEqual( 8 );
 					}
 
 				}

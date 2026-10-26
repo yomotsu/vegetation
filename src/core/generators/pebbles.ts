@@ -1,11 +1,13 @@
 import { buildBillboard, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
-import { applyRockSurfaceShading, buildOpenConvexRockMesh, buildRockMeshFromFaces, buildRockShell, createRockRadiusFunction, createRockRandom, getBounds, getProjectedMeshOutline, liftMesh, limitRockPeakSharpness, recomputeSmoothNormals, sinkMesh } from '../rockGeometry';
+import { createNoise3D } from '../noise';
+import { applyRockSurfaceShading, buildConvexRockMesh, buildRockMeshFromFaces, buildRockShell, createRockRadiusFunction, createRockRandom, getBounds, getProjectedMeshOutline, liftMesh, limitRockPeakSharpness, recomputeSmoothNormals, sinkMesh } from '../rockGeometry';
 import { createRockTextures } from '../rockTexture';
 import type { Color3, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
 const DEFAULT_COUNT = 16;
 const MAX_COUNT = 30;
+const MAX_LOD0_VERTICES = 240;
 const FAR_PEBBLE_COLOR_FACTOR = 0.735;
 const PEBBLES_SEED_SALT = 173;
 
@@ -193,9 +195,20 @@ function selectPebbleVertices( mesh: MeshData, count: number, prioritizeFootprin
 
 }
 
-function buildLowPolyPebble( positions: Vec3[] ): MeshData {
+function createPebbleRadiusFunction( seed: number, roughness: number, detailScale: number ): ( direction: Vec3 ) => number {
 
-	return buildOpenConvexRockMesh( positions );
+	const noise = createNoise3D( seed + 431 );
+	const random = createRockRandom( seed + 967 );
+	const offset = [ random() * 97, random() * 97, random() * 97 ];
+
+	return ( direction: Vec3 ): number => {
+
+		const coarse = noise( direction[ 0 ] * 1.6 + offset[ 0 ]!, direction[ 1 ] * 1.6 + offset[ 1 ]!, direction[ 2 ] * 1.6 + offset[ 2 ]! );
+		const broad = noise( direction[ 0 ] * 2.4 + offset[ 2 ]!, direction[ 1 ] * 2.4 - offset[ 0 ]!, direction[ 2 ] * 2.4 + offset[ 1 ]! );
+
+		return Math.max( 0.86, Math.min( 1.14, 1 + ( coarse * 0.14 + broad * 0.04 ) * roughness * detailScale ) );
+
+	};
 
 }
 
@@ -271,18 +284,17 @@ function createPlacements( seed: number, count: number, spread: number, size: nu
 function buildStoneLod( placements: PebblePlacement[], burial: number, level: 0 | 1 | 2 ): MeshData {
 
 	const builder = new MeshBuilder();
-	const sizePriority = placements.slice().sort( ( first, second ) => second.size - first.size );
-	const refinedLod1 = new Set( sizePriority.slice( 0, Math.ceil( placements.length / 2 ) ) );
+	const lod0VertexLimit = Math.min( 12, Math.floor( MAX_LOD0_VERTICES / placements.length ) );
 
 	for ( const placement of placements ) {
 
-		const detailScale = level === 0 ? 0.15 : level === 1 ? 0.08 : 0.03;
-		const radiusAt = createRockRadiusFunction( placement.seed, 1, placement.roughness, 1, detailScale );
+		const detailScale = level === 0 ? 1 : level === 1 ? 0.8 : 0.6;
+		const radiusAt = createPebbleRadiusFunction( placement.seed, placement.roughness, detailScale );
 		const reference = buildRockShell( 1, radiusAt, 1 );
 		scaleMesh( reference, [ placement.size * 0.5 * placement.aspect, placement.size * 0.5 * placement.verticalAspect, placement.size * 0.5 * placement.depthAspect ] );
 		rotateMesh( reference, placement.yaw );
-		const vertexLimit = level === 0 ? 8 : level === 1 ? refinedLod1.has( placement ) ? 7 : 6 : 6;
-		const stone = buildLowPolyPebble( selectPebbleVertices( reference, vertexLimit, level === 2 ) );
+		const vertexLimit = level === 0 ? lod0VertexLimit : level === 1 ? Math.min( 8, lod0VertexLimit - 1 ) : 6;
+		const stone = buildConvexRockMesh( selectPebbleVertices( reference, vertexLimit, level === 2 ) );
 
 		appendPebble( builder, stone, placement, burial, false, 0.025 );
 
