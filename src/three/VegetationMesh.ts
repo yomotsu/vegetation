@@ -18,7 +18,7 @@ function createEmptyGeometry( source: BufferGeometry ): BufferGeometry {
 function createBillboardPlaneGeometry( source: BufferGeometry, planeIndex: number ): BufferGeometry {
 
 	const geometry = new BufferGeometry();
-	const attributes = [ 'position', 'normal', 'uv', 'color', 'windWeight' ];
+	const attributes = [ 'position', 'normal', 'uv', 'color', 'windWeight', 'impostorCard' ];
 
 	for ( const name of attributes ) {
 
@@ -35,6 +35,44 @@ function createBillboardPlaneGeometry( source: BufferGeometry, planeIndex: numbe
 	const index = source.getIndex()!;
 	const start = planeIndex * 6;
 	geometry.setIndex( new BufferAttribute( index.array.slice( start, start + 6 ), 1 ) );
+	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
+
+	return geometry;
+
+}
+
+function createImpostorCardGeometry( source: BufferGeometry, cardId: number ): BufferGeometry {
+
+	const geometry = new BufferGeometry();
+	const attributes = [ 'position', 'normal', 'uv', 'color', 'windWeight', 'impostorCard' ];
+
+	for ( const name of attributes ) {
+
+		const attribute = source.getAttribute( name );
+
+		if ( attribute !== undefined ) {
+
+			geometry.setAttribute( name, attribute );
+
+		}
+
+	}
+
+	const cards = source.getAttribute( 'impostorCard' );
+	const indices = source.getIndex()!;
+	const selected: number[] = [];
+
+	for ( let index = 0; index < indices.count; index += 3 ) {
+
+		if ( cards.getX( indices.getX( index ) ) === cardId ) {
+
+			selected.push( indices.getX( index ), indices.getX( index + 1 ), indices.getX( index + 2 ) );
+
+		}
+
+	}
+
+	geometry.setIndex( new BufferAttribute( new Uint32Array( selected ), 1 ) );
 	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
 
 	return geometry;
@@ -94,12 +132,15 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 			throw new Error( `Vegetation LOD ${ level } has no parts` );
 		}
 
-		const rootGeometry = level === 4 ? createEmptyGeometry( first.geometry ) : first.geometry;
+		const cardAttribute = first.geometry.getAttribute( 'impostorCard' );
+		const hasHorizontalCard = level === 3 && cardAttribute !== undefined && Array.from( cardAttribute.array ).some( ( card ) => card === 1 );
+		const splitCards = level === 4 || hasHorizontalCard;
+		const rootGeometry = splitCards ? createEmptyGeometry( first.geometry ) : first.geometry;
 		super( rootGeometry, first.material );
 		this.asset = asset;
 		this.lod = level;
 		this.ownsAsset = ownsAsset;
-		this.emptyGeometry = level === 4 ? rootGeometry : null;
+		this.emptyGeometry = splitCards ? rootGeometry : null;
 		this.name = first.part;
 		const castShadow = this.castShadow;
 		const receiveShadow = this.receiveShadow;
@@ -112,7 +153,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 				set: ( value: boolean ) => {
 					this.shadowCast = value;
 					for ( const mesh of this.partMeshes ) {
-						if ( mesh !== this ) mesh.castShadow = value;
+						if ( mesh !== this ) mesh.castShadow = value && mesh.userData.impostorCard !== 1;
 					}
 				},
 			},
@@ -131,45 +172,52 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 		this.castShadow = castShadow;
 		this.receiveShadow = receiveShadow;
-		if ( level === 4 ) {
+		if ( splitCards ) {
 
 			const part = parts[ 0 ]!;
-			const billboardGeometry = createBillboardPlaneGeometry( part.geometry, 0 );
-			const topCardGeometry = createBillboardPlaneGeometry( part.geometry, 1 );
+			const billboardGeometry = level === 4 ? createBillboardPlaneGeometry( part.geometry, 0 ) : createImpostorCardGeometry( part.geometry, 0 );
+			const topCardGeometry = level === 4 ? createBillboardPlaneGeometry( part.geometry, 1 ) : createImpostorCardGeometry( part.geometry, 1 );
 			const billboard = new Mesh( billboardGeometry, part.material );
 			const topCard = new Mesh( topCardGeometry, part.material );
 			const cameraPosition = new Vector3();
 			billboard.name = part.part;
 			topCard.name = part.part;
+			topCard.userData.impostorCard = 1;
 			billboard.castShadow = this.shadowCast;
 			billboard.receiveShadow = this.shadowReceive;
-			topCard.castShadow = this.shadowCast;
+			topCard.castShadow = false;
 			topCard.receiveShadow = this.shadowReceive;
 			const shadowCameras = new WeakSet<Camera>();
 			const inverseWorldMatrix = new Matrix4();
-			billboard.onBeforeShadow = ( renderer, object, camera, shadowCamera ) => {
+			if ( level === 4 ) {
 
-				shadowCameras.add( shadowCamera );
+				billboard.onBeforeShadow = ( renderer, object, camera, shadowCamera ) => {
 
-			};
-			billboard.onAfterShadow = ( renderer, object, camera, shadowCamera ) => {
+					shadowCameras.add( shadowCamera );
 
-				shadowCameras.delete( shadowCamera );
+				};
 
-			};
-			billboard.onBeforeRender = ( renderer, scene, camera ) => {
+				billboard.onAfterShadow = ( renderer, object, camera, shadowCamera ) => {
 
-				if ( shadowCameras.has( camera ) ) {
-					return;
-				}
+					shadowCameras.delete( shadowCamera );
 
-				cameraPosition.setFromMatrixPosition( camera.matrixWorld );
-				inverseWorldMatrix.copy( this.matrixWorld ).invert();
-				cameraPosition.applyMatrix4( inverseWorldMatrix );
-				billboard.rotation.set( 0, Math.atan2( cameraPosition.x, cameraPosition.z ), 0 );
-				billboard.updateMatrixWorld( true );
+				};
 
-			};
+				billboard.onBeforeRender = ( renderer, scene, camera ) => {
+
+					if ( shadowCameras.has( camera ) ) {
+						return;
+					}
+
+					cameraPosition.setFromMatrixPosition( camera.matrixWorld );
+					inverseWorldMatrix.copy( this.matrixWorld ).invert();
+					cameraPosition.applyMatrix4( inverseWorldMatrix );
+					billboard.rotation.set( 0, Math.atan2( cameraPosition.x, cameraPosition.z ), 0 );
+					billboard.updateMatrixWorld( true );
+
+				};
+
+			}
 			this.add( billboard );
 			this.add( topCard );
 			this.partMeshes.push( billboard, topCard );

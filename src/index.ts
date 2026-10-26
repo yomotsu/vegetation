@@ -4,6 +4,7 @@ export { createRandom } from './core/random';
 export type { Random } from './core/random';
 export { VegetationAsset } from './three/VegetationAsset';
 export { orientBillboardInstances, VegetationMesh } from './three/VegetationMesh';
+export { registerImpostorMaterialFactory } from './three/impostorMaterialFactory';
 export { PebblesMesh, RockMesh, TreeMesh, generatePebbles, generateRock, generateTree } from './three/meshes';
 export type {
 	ColliderData,

@@ -20,6 +20,8 @@ import type { ColorRepresentation, Texture } from 'three';
 import { bakeImpostor, impostorViewsForPart } from '../core/impostor';
 import { regenerateTexture } from '../core/textureRegenerator';
 import type { ImpostorView, LodLevel, MeshData, PartDef, TextureData, VegetationData } from '../core/types';
+import { addImpostorFade } from './impostorFadeMaterial';
+import { getImpostorMaterialFactory } from './impostorMaterialFactory';
 
 function createTexture( data: TextureData, normalMap = false ): DataTexture {
 
@@ -47,6 +49,7 @@ function createGeometry( data: MeshData ): BufferGeometry {
 	geometry.setAttribute( 'uv', new BufferAttribute( data.uvs, 2 ) );
 	geometry.setAttribute( 'color', new BufferAttribute( data.colors, 3 ) );
 	geometry.setAttribute( 'windWeight', new BufferAttribute( data.windWeight, 1 ) );
+	geometry.setAttribute( 'impostorCard', new BufferAttribute( data.impostorCard, 1 ) );
 	geometry.setIndex( new BufferAttribute( data.indices, 1 ) );
 
 	for ( const group of data.groups ) {
@@ -183,13 +186,22 @@ export class VegetationAsset {
 				roughness: part.roughness ?? 1,
 				metalness: 0,
 			};
-			const material = part.specularIntensity !== undefined || part.ior !== undefined
+			const impostorFactory = isImpostor ? getImpostorMaterialFactory() : null;
+			const material = impostorFactory !== null
+				? impostorFactory( materialParameters )
+				: part.specularIntensity !== undefined || part.ior !== undefined
 				? new MeshPhysicalMaterial( {
 					...materialParameters,
 					...( part.specularIntensity !== undefined ? { specularIntensity: part.specularIntensity } : {} ),
 					...( part.ior !== undefined ? { ior: part.ior } : {} ),
 				} )
 				: new MeshStandardMaterial( materialParameters );
+
+			if ( isImpostor && impostorFactory === null ) {
+
+				addImpostorFade( material );
+
+			}
 
 			return material;
 
@@ -225,6 +237,7 @@ export class VegetationAsset {
 			geometry.setAttribute( 'uv', source.getAttribute( 'uv' ) );
 			geometry.setAttribute( 'color', source.getAttribute( 'color' ) );
 			geometry.setAttribute( 'windWeight', source.getAttribute( 'windWeight' ) );
+			geometry.setAttribute( 'impostorCard', source.getAttribute( 'impostorCard' ) );
 			geometry.setIndex( new BufferAttribute( index.array.slice( group.start, group.start + group.count ), 1 ) );
 			geometry.addGroup( 0, group.count, group.partIndex );
 			geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
