@@ -43,7 +43,7 @@ function getDefaultBurial( seed: number ): number {
 	const seedHash = Math.sin( Math.abs( seed ) * 127.1 + 311.7 ) * 43758.5453;
 	const variation = seedHash - Math.floor( seedHash );
 
-	return 0.4 + variation * 0.15;
+	return 0.41 + variation * 0.14;
 
 }
 
@@ -338,7 +338,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const radiusAtLod1 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.3 );
 	const radiusAtLod2 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.08 );
 	const shapeReference = buildRockShell( 4, radiusAtLod0, verticalScale );
-	const lod0 = buildRockShell( 3, radiusAtLod0, verticalScale );
+	const lod0 = buildRockShell( 5, radiusAtLod0, verticalScale );
 	const lod1 = buildRockShell( 2, radiusAtLod1, verticalScale );
 	const lod2 = buildRockRingShell( radiusAtLod2, verticalScale );
 	const groundOffset = - getMinimumY( shapeReference.positions );
@@ -355,7 +355,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	scaleHeight( lod2, heightScale );
 	const fullHeight = getBounds( lod0 ).height;
 	const colliderLod2 = { ...lod2, positions: lod2.positions.slice() };
-	sinkMesh( colliderLod2, burial * fullHeight, - Math.min( burial, 0.15 ) * fullHeight );
+	sinkMesh( colliderLod2, burial * fullHeight, - Math.min( burial, 0.145 ) * fullHeight );
 	const collider = buildCollider( colliderLod2 );
 	const skirtFloor = - 0.03 * size;
 
@@ -363,12 +363,12 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
 	sinkMesh( lod2, burial * fullHeight, skirtFloor );
 
-	refineVisibleRockSurface( lod0, radiusAtLod0, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 130 );
-	refineVisibleRockSurface( lod1, radiusAtLod1, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
 	removeRockBottomCap( lod0, skirtFloor );
+	refineVisibleRockSurface( lod0, radiusAtLod0, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 200 );
+	refineVisibleRockSurface( lod1, radiusAtLod1, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
 	removeRockBottomCap( lod1, skirtFloor );
 	removeRockBottomCap( lod2, skirtFloor );
-	limitRockPeakSharpness( lod0, 0.04 );
+	limitRockPeakSharpness( lod0, 0.13 );
 	limitRockPeakSharpness( lod1, 0.04 );
 	limitRockPeakSharpness( lod2, 0.02 );
 	recomputeSmoothNormals( lod0 );

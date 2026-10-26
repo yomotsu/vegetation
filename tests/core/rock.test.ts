@@ -478,10 +478,10 @@ function getSurfaceStats( mesh: MeshData ): { relief: number; percentileRelief: 
 
 }
 
-// LOD0の隣接頂点平均からの距離を最大寸法で割って全頂点平均し、隣接辺長の中央値も測定した。
+// 参照GLBの隣接頂点平均からの距離を最大寸法で割り、隣接辺長の中央値も測定した。
 const ROCK_SURFACE_STATS = [
-	{ seed: 1, relief: 0.04701, spacing: 0.17087 },
-	{ seed: 2, relief: 0.03807, spacing: 0.16114 },
+	{ seed: 1, relief: 0.02405, spacing: 0.12071 },
+	{ seed: 2, relief: 0.02761, spacing: 0.07854 },
 ];
 
 function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): number {
@@ -724,7 +724,7 @@ describe( 'procedural rock data', () => {
 			const lods = generateRockData( { seed } ).lods;
 			const vertices = lods.slice( 0, 3 ).map( vertexCount );
 			const triangles = lods.map( triangleCount );
-			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 130 );
+			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 200 );
 			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 56 );
 			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 36 );
 			expect( vertices[ 0 ] ).toBeGreaterThan( vertices[ 1 ]! );
@@ -739,18 +739,26 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'matches tuned LOD0 relief and bump spacing', () => {
+	it( 'matches reference LOD0 relief and bump spacing', () => {
+
+		const results: { reference: typeof ROCK_SURFACE_STATS[number]; vertices: number; stats: ReturnType<typeof getSurfaceStats> }[] = [];
 
 		for ( const reference of ROCK_SURFACE_STATS ) {
 
 			const mesh = generateRockData( { seed: reference.seed } ).lods[ 0 ]!;
 			const stats = getSurfaceStats( mesh );
+			results.push( { reference, vertices: vertexCount( mesh ), stats } );
 
-			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 130 );
-			expect( stats.relief ).toBeGreaterThanOrEqual( reference.relief * 0.7 );
-			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.4 );
-			expect( stats.spacing ).toBeGreaterThanOrEqual( reference.spacing * 0.7 );
-			expect( stats.spacing ).toBeLessThanOrEqual( reference.spacing * 1.4 );
+		}
+
+		for ( const { reference, vertices, stats } of results ) {
+
+			expect( vertices ).toBeGreaterThan( 130 );
+			expect( vertices ).toBeLessThanOrEqual( 200 );
+			expect( stats.relief ).toBeGreaterThanOrEqual( reference.relief * 0.75 );
+			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.25 );
+			expect( stats.spacing ).toBeGreaterThanOrEqual( reference.spacing * 0.75 );
+			expect( stats.spacing ).toBeLessThanOrEqual( reference.spacing * 1.25 );
 
 		}
 
@@ -918,7 +926,7 @@ describe( 'procedural rock data', () => {
 			const minimumY = Math.min( ...Array.from( buried.lods[ 0 ]!.positions ).filter( ( _, index ) => index % 3 === 1 ) );
 			const burialRatio = 1 - buried.bounds.height / full.bounds.height;
 
-			expect( burialRatio ).toBeGreaterThanOrEqual( 0.4 );
+			expect( burialRatio, `seed ${ seed } burial ratio` ).toBeGreaterThanOrEqual( 0.4 );
 			expect( burialRatio ).toBeLessThanOrEqual( 0.55 );
 			expect( visible.minimumY ).toBe( 0 );
 			expect( buried.bounds.height ).toBeCloseTo( visible.height, 5 );
