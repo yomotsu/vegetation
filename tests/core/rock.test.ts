@@ -267,6 +267,106 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 
 }
 
+function getSurfaceStats( mesh: MeshData ): { relief: number; spacing: number } {
+
+	const groups = new Map<string, number>();
+	const vertexGroups = new Int32Array( vertexCount( mesh ) );
+	const positions: [ number, number, number ][] = [];
+	const neighbors: Set<number>[] = [];
+
+	for ( let vertex = 0; vertex < vertexGroups.length; vertex ++ ) {
+
+		const offset = vertex * 3;
+		const position: [ number, number, number ] = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+		const key = position.map( ( value ) => value.toFixed( 6 ) ).join( ',' );
+		let group = groups.get( key );
+
+		if ( group === undefined ) {
+
+			group = positions.length;
+			groups.set( key, group );
+			positions.push( position );
+			neighbors.push( new Set<number>() );
+
+		}
+
+		vertexGroups[ vertex ] = group;
+
+	}
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const first = vertexGroups[ mesh.indices[ index ]! ]!;
+		const second = vertexGroups[ mesh.indices[ index + 1 ]! ]!;
+		const third = vertexGroups[ mesh.indices[ index + 2 ]! ]!;
+		neighbors[ first ]!.add( second );
+		neighbors[ first ]!.add( third );
+		neighbors[ second ]!.add( first );
+		neighbors[ second ]!.add( third );
+		neighbors[ third ]!.add( first );
+		neighbors[ third ]!.add( second );
+
+	}
+
+	const minimum = [ Infinity, Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity, - Infinity ];
+
+	for ( const position of positions ) {
+
+		for ( let axis = 0; axis < 3; axis ++ ) {
+
+			minimum[ axis ] = Math.min( minimum[ axis ]!, position[ axis ]! );
+			maximum[ axis ] = Math.max( maximum[ axis ]!, position[ axis ]! );
+
+		}
+
+	}
+
+	const size = Math.max( maximum[ 0 ]! - minimum[ 0 ]!, maximum[ 1 ]! - minimum[ 1 ]!, maximum[ 2 ]! - minimum[ 2 ]! );
+	const deviations: number[] = [];
+	const spacings: number[] = [];
+
+	for ( let vertex = 0; vertex < positions.length; vertex ++ ) {
+
+		const adjacent = [ ...neighbors[ vertex ]! ];
+		const average: [ number, number, number ] = [ 0, 0, 0 ];
+
+		for ( const neighbor of adjacent ) {
+
+			average[ 0 ] += positions[ neighbor ]![ 0 ] / adjacent.length;
+			average[ 1 ] += positions[ neighbor ]![ 1 ] / adjacent.length;
+			average[ 2 ] += positions[ neighbor ]![ 2 ] / adjacent.length;
+			spacings.push( Math.hypot(
+				positions[ vertex ]![ 0 ] - positions[ neighbor ]![ 0 ],
+				positions[ vertex ]![ 1 ] - positions[ neighbor ]![ 1 ],
+				positions[ vertex ]![ 2 ] - positions[ neighbor ]![ 2 ],
+			) / size );
+
+		}
+
+		deviations.push( Math.hypot(
+			positions[ vertex ]![ 0 ] - average[ 0 ],
+			positions[ vertex ]![ 1 ] - average[ 1 ],
+			positions[ vertex ]![ 2 ] - average[ 2 ],
+		) / size );
+
+	}
+
+	spacings.sort( ( first, second ) => first - second );
+
+	return {
+		relief: deviations.reduce( ( total, value ) => total + value, 0 ) / deviations.length,
+		spacing: spacings[ Math.floor( spacings.length / 2 ) ]!,
+	};
+
+}
+
+// 参照LOD0の隣接頂点平均からの距離を最大寸法で割って全頂点平均し、隣接辺長の中央値も測定した。
+const REFERENCE_ROCK_SURFACE_STATS = [
+	{ seed: 1, relief: 0.03525, spacing: 0.12072 },
+	{ seed: 2, relief: 0.02761, spacing: 0.0785 },
+];
+
 function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): number {
 
 	const edges = new Map<string, number>();
@@ -389,6 +489,23 @@ describe( 'procedural rock data', () => {
 		expect( lods.map( vertexCount )[ 2 ] ).toBeLessThanOrEqual( 50 );
 		expect( triangleCount( lods[ 0 ]! ) ).toBeGreaterThan( triangleCount( lods[ 1 ]! ) );
 		expect( triangleCount( lods[ 1 ]! ) ).toBeGreaterThan( triangleCount( lods[ 2 ]! ) );
+
+	} );
+
+	it( 'matches reference LOD0 relief and bump spacing', () => {
+
+		for ( const reference of REFERENCE_ROCK_SURFACE_STATS ) {
+
+			const mesh = generateRockData( { seed: reference.seed } ).lods[ 0 ]!;
+			const stats = getSurfaceStats( mesh );
+
+			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 285 );
+			expect( stats.relief ).toBeGreaterThanOrEqual( reference.relief * 0.7 );
+			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.3 );
+			expect( stats.spacing ).toBeGreaterThanOrEqual( reference.spacing * 0.7 );
+			expect( stats.spacing ).toBeLessThanOrEqual( reference.spacing * 1.35 );
+
+		}
 
 	} );
 

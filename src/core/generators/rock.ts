@@ -369,6 +369,145 @@ function applyRockSurfaceShading( mesh: MeshData ): void {
 
 }
 
+function refineVisibleRockSurface(
+	mesh: MeshData,
+	radiusAt: ( direction: Vec3 ) => number,
+	verticalScale: number,
+	groundOffset: number,
+	heightScale: number,
+	burialHeight: number,
+	skirtFloor: number,
+	maximumVertices: number,
+): void {
+
+	const addedVertexLimit = maximumVertices - mesh.positions.length / 3;
+
+	if ( addedVertexLimit <= 0 ) return;
+
+	const bounds = getBounds( mesh );
+	const candidates: { offset: number; position: Vec3; priority: number }[] = [];
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		const vertices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
+		const offsets = vertices.map( ( vertex ) => vertex * 3 );
+
+		const center: Vec3 = [ 0, 0, 0 ];
+		const minimum = [ Infinity, Infinity, Infinity ];
+		const maximum = [ - Infinity, - Infinity, - Infinity ];
+
+		for ( const vertexOffset of offsets ) {
+
+			for ( let axis = 0; axis < 3; axis ++ ) {
+
+				const value = mesh.positions[ vertexOffset + axis ]!;
+				center[ axis ] = center[ axis ]! + value / 3;
+				minimum[ axis ] = Math.min( minimum[ axis ]!, value );
+				maximum[ axis ] = Math.max( maximum[ axis ]!, value );
+
+			}
+
+		}
+
+		if ( center[ 1 ] <= 0 ) continue;
+
+		if ( Math.hypot( center[ 0 ], center[ 2 ] ) > bounds.radius * 0.99 ) continue;
+
+		const unburiedY = ( center[ 1 ] + burialHeight ) / heightScale - groundOffset;
+		const direction: Vec3 = [ center[ 0 ], unburiedY / verticalScale, center[ 2 ] ];
+		const directionLength = Math.hypot( direction[ 0 ], direction[ 1 ], direction[ 2 ] ) || 1;
+		direction[ 0 ] /= directionLength;
+		direction[ 1 ] /= directionLength;
+		direction[ 2 ] /= directionLength;
+		const sampledRadius = radiusAt( direction );
+		const sampledPosition: Vec3 = [
+			direction[ 0 ] * sampledRadius,
+			Math.max( ( direction[ 1 ] * sampledRadius * verticalScale + groundOffset ) * heightScale - burialHeight, skirtFloor ),
+			direction[ 2 ] * sampledRadius,
+		];
+		const position = sampledPosition.map( ( value, axis ) => clamp( value, minimum[ axis ]!, maximum[ axis ]! ) ) as Vec3;
+
+		if ( position[ 1 ] <= 0 ) continue;
+
+		const hash = Math.sin( center[ 0 ] * 12.9898 + center[ 1 ] * 78.233 + center[ 2 ] * 37.719 ) * 43758.5453;
+
+		candidates.push( {
+			offset,
+			position,
+			priority: hash - Math.floor( hash ),
+		} );
+
+	}
+
+	candidates.sort( ( first, second ) => first.priority - second.priority );
+	const selected = new Map( candidates.slice( 0, addedVertexLimit ).map( ( candidate ) => [ candidate.offset, candidate.position ] ) );
+	const positions = Array.from( mesh.positions );
+	const normals = Array.from( mesh.normals );
+	const uvs = Array.from( mesh.uvs );
+	const colors = Array.from( mesh.colors );
+	const windWeights = Array.from( mesh.windWeight );
+	const indices: number[] = [];
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		const first = mesh.indices[ offset ]!;
+		const second = mesh.indices[ offset + 1 ]!;
+		const third = mesh.indices[ offset + 2 ]!;
+		const center = selected.get( offset );
+
+		if ( center === undefined ) {
+
+			indices.push( first, second, third );
+			continue;
+
+		}
+
+		const centerIndex = positions.length / 3;
+		positions.push( center[ 0 ], center[ 1 ], center[ 2 ] );
+
+		const centerNormal = [ 0, 0, 0 ];
+		const centerUv = [ 0, 0 ];
+		const centerColor = [ 0, 0, 0 ];
+		let centerWindWeight = 0;
+
+		for ( const vertex of [ first, second, third ] ) {
+
+			const positionOffset = vertex * 3;
+			const uvOffset = vertex * 2;
+
+			for ( let axis = 0; axis < 3; axis ++ ) {
+
+				centerNormal[ axis ]! += mesh.normals[ positionOffset + axis ]! / 3;
+				centerColor[ axis ]! += mesh.colors[ positionOffset + axis ]! / 3;
+
+			}
+
+			centerUv[ 0 ]! += mesh.uvs[ uvOffset ]! / 3;
+			centerUv[ 1 ]! += mesh.uvs[ uvOffset + 1 ]! / 3;
+			centerWindWeight += mesh.windWeight[ vertex ]! / 3;
+
+		}
+
+		const normalLength = Math.hypot( centerNormal[ 0 ]!, centerNormal[ 1 ]!, centerNormal[ 2 ]! ) || 1;
+
+		normals.push( centerNormal[ 0 ]! / normalLength, centerNormal[ 1 ]! / normalLength, centerNormal[ 2 ]! / normalLength );
+		uvs.push( centerUv[ 0 ]!, centerUv[ 1 ]! );
+		colors.push( centerColor[ 0 ]!, centerColor[ 1 ]!, centerColor[ 2 ]! );
+		windWeights.push( centerWindWeight );
+		indices.push( first, second, centerIndex, second, third, centerIndex, third, first, centerIndex );
+
+	}
+
+	mesh.positions = Float32Array.from( positions );
+	mesh.normals = Float32Array.from( normals );
+	mesh.uvs = Float32Array.from( uvs );
+	mesh.colors = Float32Array.from( colors );
+	mesh.windWeight = Float32Array.from( windWeights );
+	mesh.indices = Uint32Array.from( indices );
+	mesh.groups = [ { start: 0, count: indices.length, partIndex: 0 } ];
+
+}
+
 function buildCollider( mesh: MeshData ): ColliderData {
 
 	const vertices = new Map<string, number>();
@@ -461,6 +600,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		const coarse = noise( direction[ 0 ] * 1.05 + noiseOffset[ 0 ]!, direction[ 1 ] * 1.05 + noiseOffset[ 1 ]!, direction[ 2 ] * 1.05 + noiseOffset[ 2 ]! );
 		const medium = noise( direction[ 0 ] * 2.65 - noiseOffset[ 2 ]!, direction[ 1 ] * 2.65 + noiseOffset[ 0 ]!, direction[ 2 ] * 2.65 - noiseOffset[ 1 ]! );
 		const detail = noise( direction[ 0 ] * 5.1 + noiseOffset[ 1 ]!, direction[ 1 ] * 5.1 - noiseOffset[ 2 ]!, direction[ 2 ] * 5.1 + noiseOffset[ 0 ]! );
+		const relief = noise( direction[ 0 ] * 8.8 - noiseOffset[ 0 ]!, direction[ 1 ] * 8.8 + noiseOffset[ 2 ]!, direction[ 2 ] * 8.8 - noiseOffset[ 1 ]! );
 		const angle = Math.atan2( direction[ 2 ], direction[ 0 ] );
 		const lobes = Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.075 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.035;
 		let deformedRadius = radius * clamp( 0.97 + ( coarse * 0.25 + medium * 0.075 + detail * 0.012 + lobes ) * roughness, 0.62, 1.34 );
@@ -472,6 +612,9 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 			if ( projection > 0 ) deformedRadius = Math.min( deformedRadius, plane.distance / projection );
 
 		}
+
+		const reliefExposure = 0.35 + smoothstep( 0.08, 0.65, Math.abs( direction[ 1 ] ) ) * 0.65;
+		deformedRadius = clamp( deformedRadius + radius * relief * 0.08 * roughness * reliefExposure, radius * 0.62, radius * 1.34 );
 
 		const floorHeight = - radius * verticalScale * 0.55;
 
@@ -504,6 +647,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( lod0, burial * fullHeight, skirtFloor );
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
 	sinkMesh( lod2, burial * fullHeight, skirtFloor );
+	refineVisibleRockSurface( lod0, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 285 );
 	recomputeSmoothNormals( lod0 );
 	recomputeSmoothNormals( lod1 );
 	recomputeSmoothNormals( lod2 );
