@@ -16,6 +16,30 @@ function vertexCount( mesh: MeshData ): number {
 
 }
 
+function meshColorSpread( mesh: MeshData ): number {
+
+	let minimum = Infinity;
+	let maximum = - Infinity;
+
+	for ( const color of mesh.colors ) {
+
+		minimum = Math.min( minimum, color );
+		maximum = Math.max( maximum, color );
+
+	}
+
+	return maximum - minimum;
+
+}
+
+function hashBytes( data: Uint8Array ): number {
+
+	let hash = 2166136261;
+	for ( let index = 0; index < data.length; index ++ ) hash = Math.imul( hash ^ data[ index ]!, 16777619 );
+	return hash >>> 0;
+
+}
+
 function renderCoverage( data: ReturnType<typeof generatePebblesData>, lod: number, topDown = false ) {
 
 	const source = data.lods[ lod ]!;
@@ -87,10 +111,14 @@ describe( 'procedural pebbles data', () => {
 		expect( data.parts[ 0 ]!.normalTexture ).toBe( 'normal' );
 		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
 		expect( data.collider ).toBeNull();
+		expect( data.textures.albedo!.width ).toBe( 1024 );
+		expect( data.textures.albedo!.height ).toBe( 1024 );
+		expect( data.textures.normal!.width ).toBe( 1024 );
 		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 128 );
 		expect( triangleCount( data.lods[ 3 ]! ) ).toBe( 12 );
 		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 2 );
-		expect( data.textures.albedo!.data ).toEqual( createRockTextures( 4 ).albedo.data );
+		expect( hashBytes( data.textures.albedo!.data ) ).toBe( hashBytes( createRockTextures( 4 ).albedo.data ) );
+		expect( hashBytes( data.textures.normal!.data ) ).toBe( hashBytes( createRockTextures( 4 ).normal.data ) );
 		for ( const mesh of data.lods ) validateMeshData( mesh );
 
 	} );
@@ -103,8 +131,15 @@ describe( 'procedural pebbles data', () => {
 
 		expect( first.lods[ 0 ]!.positions ).toEqual( repeated.lods[ 0 ]!.positions );
 		expect( first.lods[ 0 ]!.indices ).toEqual( repeated.lods[ 0 ]!.indices );
-		expect( first.textures.albedo!.data ).toEqual( repeated.textures.albedo!.data );
+		expect( hashBytes( first.textures.albedo!.data ) ).toBe( hashBytes( repeated.textures.albedo!.data ) );
 		expect( first.lods[ 0 ]!.positions ).not.toEqual( different.lods[ 0 ]!.positions );
+
+	} );
+
+	it( 'keeps pebble vertex tint uniform to prevent diagonal interpolation bands', () => {
+
+		const data = generatePebblesData( { seed: 2 } );
+		expect( meshColorSpread( data.lods[ 0 ]! ) ).toBeLessThan( 0.001 );
 
 	} );
 

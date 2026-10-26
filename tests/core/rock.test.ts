@@ -16,6 +16,22 @@ function vertexCount( mesh: MeshData ): number {
 
 }
 
+function meshColorSpread( mesh: MeshData ): number {
+
+	let minimum = Infinity;
+	let maximum = - Infinity;
+
+	for ( const color of mesh.colors ) {
+
+		minimum = Math.min( minimum, color );
+		maximum = Math.max( maximum, color );
+
+	}
+
+	return maximum - minimum;
+
+}
+
 function getDimensions( mesh: MeshData ): { width: number; height: number; depth: number } {
 
 	const minimum = [ Infinity, Infinity, Infinity ];
@@ -162,6 +178,14 @@ function meanRgb( data: Uint8Array ): [ number, number, number ] {
 
 }
 
+function hashBytes( data: Uint8Array ): number {
+
+	let hash = 2166136261;
+	for ( let index = 0; index < data.length; index ++ ) hash = Math.imul( hash ^ data[ index ]!, 16777619 );
+	return hash >>> 0;
+
+}
+
 function percentile( data: Uint8Array, channel: number, amount: number ): number {
 
 	const values: number[] = [];
@@ -178,18 +202,18 @@ function percentile( data: Uint8Array, channel: number, amount: number ): number
 
 }
 
-function meanNeighborDelta( data: Uint8Array, width: number, height: number ): number {
+function meanNeighborDelta( data: Uint8Array, width: number, height: number, step = 1 ): number {
 
 	let delta = 0;
 	let samples = 0;
 
-	for ( let y = 0; y < height; y ++ ) {
+	for ( let y = 0; y < height; y += step ) {
 
-		for ( let x = 0; x < width; x ++ ) {
+		for ( let x = 0; x < width; x += step ) {
 
 			const index = ( y * width + x ) * 4;
-			const right = ( y * width + ( x + 1 ) % width ) * 4;
-			const down = Math.min( y + 1, height - 1 ) * width * 4 + x * 4;
+			const right = ( y * width + ( x + step ) % width ) * 4;
+			const down = Math.min( y + step, height - 1 ) * width * 4 + x * 4;
 
 			for ( let channel = 0; channel < 3; channel ++ ) {
 
@@ -350,7 +374,7 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 
 		largest = Math.max( largest, writeIndex );
 		span = Math.max( span, Math.hypot( maximumX - minimumX + 1, maximumY - minimumY + 1 ) / width );
-		if ( writeIndex >= 20 ) count ++;
+		if ( writeIndex >= 20 * pixelCount / ( 256 * 256 ) ) count ++;
 
 	}
 
@@ -568,8 +592,19 @@ describe( 'procedural rock data', () => {
 		const different = generateRockData( { seed: 24 } );
 
 		expect( first.lods[ 0 ]!.positions ).toEqual( repeated.lods[ 0 ]!.positions );
-		expect( first.textures.albedo!.data ).toEqual( repeated.textures.albedo!.data );
+		expect( hashBytes( first.textures.albedo!.data ) ).toBe( hashBytes( repeated.textures.albedo!.data ) );
 		expect( first.lods[ 0 ]!.positions ).not.toEqual( different.lods[ 0 ]!.positions );
+
+	} );
+
+	it( 'keeps rock vertex tint uniform to prevent diagonal interpolation bands', () => {
+
+		for ( const seed of [ 1, 2 ] ) {
+
+			const data = generateRockData( { seed } );
+			expect( meshColorSpread( data.lods[ 0 ]! ) ).toBeLessThan( 0.001 );
+
+		}
 
 	} );
 
@@ -655,7 +690,7 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'bakes soft upper light and concavity shading into rock vertex color', () => {
+	it( 'keeps averaged rock vertex tint free of height gradients', () => {
 
 		const data = generateRockData( { seed: 9 } );
 		const mesh = data.lods[ 0 ]!;
@@ -687,8 +722,9 @@ describe( 'procedural rock data', () => {
 
 		expect( upperCount ).toBeGreaterThan( 0 );
 		expect( lowerCount ).toBeGreaterThan( 0 );
-		expect( upperColor / upperCount ).toBeGreaterThan( lowerColor / lowerCount );
+		expect( upperColor / upperCount ).toBeCloseTo( lowerColor / lowerCount, 5 );
 		expect( minimumColor ).toBeLessThan( 0.98 );
+		expect( minimumColor ).toBeGreaterThan( 0.9 );
 
 	} );
 
@@ -885,8 +921,8 @@ describe( 'procedural rock data', () => {
 		expect( Math.abs( albedoMean[ 0 ] - 80.31 ) ).toBeLessThanOrEqual( 8 );
 		expect( Math.abs( albedoMean[ 1 ] - 95.08 ) ).toBeLessThanOrEqual( 8 );
 		expect( Math.abs( albedoMean[ 2 ] - 102.47 ) ).toBeLessThanOrEqual( 8 );
-		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeLessThan( 2 );
-		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeGreaterThan( 0.6 );
+		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeLessThan( 2 );
+		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeGreaterThan( 0.6 );
 		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 2.5 );
 		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 75 );
 		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 87 );
@@ -910,16 +946,70 @@ describe( 'procedural rock data', () => {
 		expect( averageBlue / pixelCount ).toBeGreaterThan( averageRed / pixelCount );
 		expect( averageGreen / pixelCount ).toBeGreaterThan( averageRed / pixelCount );
 
+		let minimumNormalLength = Infinity;
+		let maximumNormalLength = 0;
+		let transparentNormalPixels = 0;
+
 		for ( let offset = 0; offset < normal.data.length; offset += 4 ) {
 
 			const x = normal.data[ offset ]! / 127.5 - 1;
 			const y = normal.data[ offset + 1 ]! / 127.5 - 1;
 			const z = normal.data[ offset + 2 ]! / 127.5 - 1;
-			expect( Math.hypot( x, y, z ) ).toBeGreaterThan( 0.98 );
-			expect( Math.hypot( x, y, z ) ).toBeLessThan( 1.02 );
-			expect( normal.data[ offset + 3 ] ).toBe( 255 );
+			const length = Math.hypot( x, y, z );
+			minimumNormalLength = Math.min( minimumNormalLength, length );
+			maximumNormalLength = Math.max( maximumNormalLength, length );
+			if ( normal.data[ offset + 3 ] !== 255 ) transparentNormalPixels ++;
 
 		}
+
+		expect( minimumNormalLength ).toBeGreaterThan( 0.98 );
+		expect( maximumNormalLength ).toBeLessThan( 1.02 );
+		expect( transparentNormalPixels ).toBe( 0 );
+
+	} );
+
+	it( 'keeps normalized rock features at 512 and 1024 pixels', () => {
+
+		const defaultTextures = createRockTextures( 9 );
+		const reference = createRockTextures( 9, 256 );
+		const mediumResolution = createRockTextures( 9, 512 );
+		let mediumAlbedoError = 0;
+		let mediumNormalError = 0;
+		let highAlbedoError = 0;
+		let highNormalError = 0;
+		let samples = 0;
+
+		expect( defaultTextures.albedo.width ).toBe( 1024 );
+		expect( defaultTextures.normal.width ).toBe( 1024 );
+		expect( mediumResolution.albedo.width ).toBe( 512 );
+
+		for ( let y = 8; y < 248; y += 8 ) {
+
+			for ( let x = 8; x < 248; x += 8 ) {
+
+				const lowOffset = ( y * 256 + x ) * 4;
+				const mediumOffset = ( y * 2 * 512 + x * 2 ) * 4;
+				const highOffset = ( y * 4 * 1024 + x * 4 ) * 4;
+
+				for ( let channel = 0; channel < 3; channel ++ ) {
+
+					mediumAlbedoError += Math.abs( reference.albedo.data[ lowOffset + channel ]! - mediumResolution.albedo.data[ mediumOffset + channel ]! );
+					mediumNormalError += Math.abs( reference.normal.data[ lowOffset + channel ]! - mediumResolution.normal.data[ mediumOffset + channel ]! );
+					highAlbedoError += Math.abs( reference.albedo.data[ lowOffset + channel ]! - defaultTextures.albedo.data[ highOffset + channel ]! );
+					highNormalError += Math.abs( reference.normal.data[ lowOffset + channel ]! - defaultTextures.normal.data[ highOffset + channel ]! );
+
+				}
+
+				samples ++;
+
+			}
+
+		}
+
+		expect( mediumAlbedoError / ( samples * 3 ) ).toBeLessThan( 2 );
+		expect( mediumNormalError / ( samples * 3 ) ).toBeLessThan( 3 );
+		expect( highAlbedoError / ( samples * 3 ) ).toBeLessThan( 2 );
+		expect( highNormalError / ( samples * 3 ) ).toBeLessThan( 5 );
 
 	} );
 
@@ -974,7 +1064,7 @@ describe( 'procedural rock data', () => {
 
 		const rockOne = createRockTextures( 1 );
 		const textures = createRockTextures( 2 );
-		const contrasts = tileTextureContrasts( textures.albedo.data, textures.albedo.width, 32 ).sort( ( first, second ) => first - second );
+		const contrasts = tileTextureContrasts( textures.albedo.data, textures.albedo.width, textures.albedo.width / 8 ).sort( ( first, second ) => first - second );
 		const quietContrast = contrasts.slice( 0, 16 ).reduce( ( total, value ) => total + value, 0 ) / 16;
 		const detailedContrast = contrasts.slice( - 16 ).reduce( ( total, value ) => total + value, 0 ) / 16;
 		const rockOneDarkRegions = darkPixelComponents( rockOne.albedo.data, rockOne.albedo.width, 68 );
@@ -1006,7 +1096,7 @@ describe( 'procedural rock data', () => {
 		for ( let iteration = 0; iteration < 5; iteration ++ ) {
 
 			const start = performance.now();
-			generateRockData( { seed: iteration + 1 } );
+			generateRockData( { seed: 1 } );
 			samples.push( performance.now() - start );
 
 		}

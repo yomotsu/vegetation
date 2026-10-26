@@ -353,16 +353,15 @@ export function applyRockSurfaceShading( mesh: MeshData ): void {
 
 	}
 
+	let averageShade = 0;
+
 	for ( let vertex = 0; vertex < vertexGroups.length; vertex ++ ) {
 
-		const factor = groupColors[ vertexGroups[ vertex ]! ]!;
-		const offset = vertex * 3;
-
-		mesh.colors[ offset ] = factor;
-		mesh.colors[ offset + 1 ] = factor;
-		mesh.colors[ offset + 2 ] = factor;
+		averageShade += groupColors[ vertexGroups[ vertex ]! ]! / vertexGroups.length;
 
 	}
+
+	mesh.colors.fill( averageShade );
 
 }
 
