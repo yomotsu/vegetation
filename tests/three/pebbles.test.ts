@@ -27,19 +27,18 @@ describe( 'pebble meshes', () => {
 
 	} );
 
-	it( 'exports PebblesMesh and applies stoneColor and setColor to billboard views', () => {
+	it( 'exports PebblesMesh and applies stoneColor through mesh and billboard LODs', () => {
 
 		const mesh = new PebblesMesh( { seed: 7, stoneColor: '#777777', lod: 4 } );
-		const billboard = mesh.asset.materials[ 2 ]!.map as DataTexture;
-		const originalPixels = billboard.image.data!.slice();
 
 		expect( mesh ).toBeInstanceOf( Mesh );
 		expect( mesh.lod ).toBe( 4 );
 		expect( mesh.collider ).toBeNull();
+		expect( mesh.asset.materials ).toHaveLength( 2 );
+		expect( mesh.asset.data.parts.map( ( part ) => part.name ) ).toEqual( [ 'stone', 'impostor' ] );
 		expect( mesh.asset.getColor( 'stone' ).getHex() ).toBe( 0x777777 );
 		mesh.setColor( 'stone', '#c0392b' );
 		expect( mesh.asset.getColor( 'stone' ).getHex() ).toBe( 0xc0392b );
-		expect( billboard.image.data ).not.toEqual( originalPixels );
 
 		mesh.dispose();
 

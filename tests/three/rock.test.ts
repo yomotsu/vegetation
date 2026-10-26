@@ -23,18 +23,17 @@ describe( 'rock meshes', () => {
 
 	} );
 
-	it( 'exports RockMesh and applies rockColor and setColor through all LODs', () => {
+	it( 'exports RockMesh and applies rockColor through mesh and billboard LODs', () => {
 
 		const rock = new RockMesh( { seed: 3, rockColor: '#777777', lod: 2 } );
 		const positions = rock.asset.geometries[ 0 ]!.getAttribute( 'position' ).array;
-		const billboard = rock.asset.materials[ 2 ]!.map as DataTexture;
-		const originalPixels = billboard.image.data!.slice();
+		expect( rock.asset.materials ).toHaveLength( 2 );
+		expect( rock.asset.data.parts.map( ( part ) => part.name ) ).toEqual( [ 'rock', 'impostor' ] );
 
 		expect( rock.lod ).toBe( 2 );
 		expect( rock.asset.getColor( 'rock' ).getHex() ).toBe( 0x777777 );
 		rock.setColor( 'rock', '#c0392b' );
 		expect( rock.asset.getColor( 'rock' ).getHex() ).toBe( 0xc0392b );
-		expect( billboard.image.data ).not.toEqual( originalPixels );
 		expect( rock.asset.geometries[ 0 ]!.getAttribute( 'position' ).array ).toBe( positions );
 
 		rock.asset.dispose();

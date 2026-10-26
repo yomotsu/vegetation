@@ -64,8 +64,8 @@ export interface ColliderData {
 
 export interface VegetationData {
 	kind: string;
-	parts: PartDef[]; // 最後の要素は必ず impostor パート
-	lods: MeshData[]; // 長さ 5。lods[ 4 ] はビルボード
+	parts: PartDef[]; // 種別に応じて impostor パートを含む。
+	lods: MeshData[]; // 長さ 5。最遠 LOD はメッシュまたはビルボード。
 	collider: ColliderData | null;
 	textures: Record<string, TextureData>; // impostor 以外の生成テクスチャ
 	textureGenerators?: Record<string, TextureGeneratorDef>;

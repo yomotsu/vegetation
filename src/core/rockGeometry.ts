@@ -1,7 +1,7 @@
 import { MeshBuilder } from './meshBuilder';
 import { createNoise3D } from './noise';
 import { addRockShell } from './primitives';
-import type { MeshData, Vec3 } from './types';
+import type { Color3, MeshData, Vec3 } from './types';
 
 export function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -53,6 +53,390 @@ function createCuttingPlanes( seed: number, radius: number ): { normal: Vec3; di
 	}
 
 	return planes;
+
+}
+
+export function buildConvexHullFaces( positions: Vec3[] ): [ number, number, number ][] {
+
+	const planes = new Map<string, { indices: number[]; normal: Vec3 }>();
+	const center: Vec3 = [ 0, 0, 0 ];
+
+	for ( const position of positions ) {
+
+		center[ 0 ] += position[ 0 ] / positions.length;
+		center[ 1 ] += position[ 1 ] / positions.length;
+		center[ 2 ] += position[ 2 ] / positions.length;
+
+	}
+
+	for ( let first = 0; first < positions.length; first ++ ) {
+
+		for ( let second = first + 1; second < positions.length; second ++ ) {
+
+			for ( let third = second + 1; third < positions.length; third ++ ) {
+
+				const a = positions[ first ]!;
+				const b = positions[ second ]!;
+				const c = positions[ third ]!;
+				const ab: Vec3 = [ b[ 0 ] - a[ 0 ], b[ 1 ] - a[ 1 ], b[ 2 ] - a[ 2 ] ];
+				const ac: Vec3 = [ c[ 0 ] - a[ 0 ], c[ 1 ] - a[ 1 ], c[ 2 ] - a[ 2 ] ];
+				let normal: Vec3 = [
+					ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ],
+					ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ],
+					ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ],
+				];
+				const normalLength = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] );
+
+				if ( normalLength < 1e-8 ) continue;
+
+				normal = [ normal[ 0 ] / normalLength, normal[ 1 ] / normalLength, normal[ 2 ] / normalLength ];
+				const distances = positions.map( ( position ) => ( position[ 0 ] - a[ 0 ] ) * normal[ 0 ] + ( position[ 1 ] - a[ 1 ] ) * normal[ 1 ] + ( position[ 2 ] - a[ 2 ] ) * normal[ 2 ] );
+				const minimum = Math.min( ...distances );
+				const maximum = Math.max( ...distances );
+
+				if ( minimum < - 1e-7 && maximum > 1e-7 ) continue;
+
+				const indices = distances.map( ( distance, index ) => Math.abs( distance ) <= 1e-7 ? index : - 1 ).filter( ( index ) => index >= 0 );
+				if ( indices.length < 3 ) continue;
+
+				const key = indices.join( ',' );
+				if ( planes.has( key ) ) continue;
+
+				const faceCenter: Vec3 = [ 0, 0, 0 ];
+
+				for ( const index of indices ) {
+
+					faceCenter[ 0 ] += positions[ index ]![ 0 ] / indices.length;
+					faceCenter[ 1 ] += positions[ index ]![ 1 ] / indices.length;
+					faceCenter[ 2 ] += positions[ index ]![ 2 ] / indices.length;
+
+				}
+
+				if ( ( faceCenter[ 0 ] - center[ 0 ] ) * normal[ 0 ] + ( faceCenter[ 1 ] - center[ 1 ] ) * normal[ 1 ] + ( faceCenter[ 2 ] - center[ 2 ] ) * normal[ 2 ] < 0 ) {
+
+					normal = [ - normal[ 0 ], - normal[ 1 ], - normal[ 2 ] ];
+
+				}
+
+				planes.set( key, { indices, normal } );
+
+			}
+
+		}
+
+	}
+
+	const faces: [ number, number, number ][] = [];
+
+	for ( const plane of planes.values() ) {
+
+		const faceCenter: Vec3 = [ 0, 0, 0 ];
+
+		for ( const index of plane.indices ) {
+
+			faceCenter[ 0 ] += positions[ index ]![ 0 ] / plane.indices.length;
+			faceCenter[ 1 ] += positions[ index ]![ 1 ] / plane.indices.length;
+			faceCenter[ 2 ] += positions[ index ]![ 2 ] / plane.indices.length;
+
+		}
+
+		const reference: Vec3 = Math.abs( plane.normal[ 0 ] ) < 0.8 ? [ 1, 0, 0 ] : [ 0, 1, 0 ];
+		const u: Vec3 = [
+			plane.normal[ 1 ] * reference[ 2 ] - plane.normal[ 2 ] * reference[ 1 ],
+			plane.normal[ 2 ] * reference[ 0 ] - plane.normal[ 0 ] * reference[ 2 ],
+			plane.normal[ 0 ] * reference[ 1 ] - plane.normal[ 1 ] * reference[ 0 ],
+		];
+		const uLength = Math.hypot( u[ 0 ], u[ 1 ], u[ 2 ] ) || 1;
+		const tangent: Vec3 = [ u[ 0 ] / uLength, u[ 1 ] / uLength, u[ 2 ] / uLength ];
+		const v: Vec3 = [
+			plane.normal[ 1 ]! * tangent[ 2 ]! - plane.normal[ 2 ]! * tangent[ 1 ]!,
+			plane.normal[ 2 ]! * tangent[ 0 ]! - plane.normal[ 0 ]! * tangent[ 2 ]!,
+			plane.normal[ 0 ]! * tangent[ 1 ]! - plane.normal[ 1 ]! * tangent[ 0 ]!,
+		];
+		const ordered = plane.indices.slice().sort( ( first, second ) => {
+
+			const firstOffset: Vec3 = [ positions[ first ]![ 0 ] - faceCenter[ 0 ], positions[ first ]![ 1 ] - faceCenter[ 1 ], positions[ first ]![ 2 ] - faceCenter[ 2 ] ];
+			const secondOffset: Vec3 = [ positions[ second ]![ 0 ] - faceCenter[ 0 ], positions[ second ]![ 1 ] - faceCenter[ 1 ], positions[ second ]![ 2 ] - faceCenter[ 2 ] ];
+			const firstAngle = Math.atan2( firstOffset[ 0 ]! * v[ 0 ]! + firstOffset[ 1 ]! * v[ 1 ]! + firstOffset[ 2 ]! * v[ 2 ]!, firstOffset[ 0 ]! * tangent[ 0 ]! + firstOffset[ 1 ]! * tangent[ 1 ]! + firstOffset[ 2 ]! * tangent[ 2 ]! );
+			const secondAngle = Math.atan2( secondOffset[ 0 ]! * v[ 0 ]! + secondOffset[ 1 ]! * v[ 1 ]! + secondOffset[ 2 ]! * v[ 2 ]!, secondOffset[ 0 ]! * tangent[ 0 ]! + secondOffset[ 1 ]! * tangent[ 1 ]! + secondOffset[ 2 ]! * tangent[ 2 ]! );
+
+			return firstAngle - secondAngle;
+
+		} );
+
+		for ( let index = 1; index < ordered.length - 1; index ++ ) {
+
+			faces.push( [ ordered[ 0 ]!, ordered[ index ]!, ordered[ index + 1 ]! ] );
+
+		}
+
+	}
+
+	return faces;
+
+}
+
+export function buildRockMeshFromFaces( positions: Vec3[], faces: [ number, number, number ][], partIndex = 0 ): MeshData {
+
+	const builder = new MeshBuilder();
+	const center: Vec3 = [ 0, 0, 0 ];
+	const white: Color3 = [ 1, 1, 1 ];
+
+	for ( const position of positions ) {
+
+		center[ 0 ] += position[ 0 ] / positions.length;
+		center[ 1 ] += position[ 1 ] / positions.length;
+		center[ 2 ] += position[ 2 ] / positions.length;
+
+	}
+
+	builder.beginGroup( partIndex );
+
+	for ( const position of positions ) {
+
+		const direction: Vec3 = [ position[ 0 ] - center[ 0 ], position[ 1 ] - center[ 1 ], position[ 2 ] - center[ 2 ] ];
+		const length = Math.hypot( direction[ 0 ], direction[ 1 ], direction[ 2 ] ) || 1;
+		const normal: Vec3 = [ direction[ 0 ] / length, direction[ 1 ] / length, direction[ 2 ] / length ];
+		const uv: [ number, number ] = [
+			Math.atan2( normal[ 2 ], normal[ 0 ] ) / ( Math.PI * 2 ) + 0.5,
+			Math.asin( clamp( normal[ 1 ], - 1, 1 ) ) / Math.PI + 0.5,
+		];
+
+		builder.addVertex( position, normal, uv, white, 0 );
+
+	}
+
+	for ( const face of faces ) builder.addTriangle( face[ 0 ], face[ 1 ], face[ 2 ] );
+
+	return builder.build();
+
+}
+
+export function buildConvexRockMesh( positions: Vec3[], partIndex = 0 ): MeshData {
+
+	return buildRockMeshFromFaces( positions, buildConvexHullFaces( positions ), partIndex );
+
+}
+
+export function buildOpenConvexRockMesh( positions: Vec3[], partIndex = 0, bottomFraction = 0.24 ): MeshData {
+
+	const minimumY = Math.min( ...positions.map( ( position ) => position[ 1 ] ) );
+	const maximumY = Math.max( ...positions.map( ( position ) => position[ 1 ] ) );
+	const height = maximumY - minimumY || 1;
+	const faces = buildConvexHullFaces( positions ).filter( ( face ) => {
+
+		const first = positions[ face[ 0 ] ]!;
+		const second = positions[ face[ 1 ] ]!;
+		const third = positions[ face[ 2 ] ]!;
+		const centerY = ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3;
+
+		return centerY >= minimumY + height * bottomFraction;
+
+	} );
+
+	return buildRockMeshFromFaces( positions, faces, partIndex );
+
+}
+
+export function getHorizontalMeshOutline( mesh: MeshData, height: number, samples: number ): Vec3[] {
+
+	const segments: [ Vec3, Vec3 ][] = [];
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const points: Vec3[] = [];
+
+		for ( let edge = 0; edge < 3; edge ++ ) {
+
+			const first = mesh.indices[ index + edge ]! * 3;
+			const second = mesh.indices[ index + ( edge + 1 ) % 3 ]! * 3;
+			const firstY = mesh.positions[ first + 1 ]! - height;
+			const secondY = mesh.positions[ second + 1 ]! - height;
+
+			if ( Math.abs( firstY ) < 1e-7 ) points.push( [ mesh.positions[ first ]!, height, mesh.positions[ first + 2 ]! ] );
+			if ( ( firstY < 0 && secondY > 0 ) || ( firstY > 0 && secondY < 0 ) ) {
+
+				const amount = - firstY / ( secondY - firstY );
+				points.push( [
+					mesh.positions[ first ]! + ( mesh.positions[ second ]! - mesh.positions[ first ]! ) * amount,
+					height,
+					mesh.positions[ first + 2 ]! + ( mesh.positions[ second + 2 ]! - mesh.positions[ first + 2 ]! ) * amount,
+				] );
+
+			}
+
+		}
+
+		const unique = points.filter( ( point, pointIndex ) => points.findIndex( ( other ) => Math.hypot( point[ 0 ] - other[ 0 ], point[ 2 ] - other[ 2 ] ) < 1e-7 ) === pointIndex );
+		if ( unique.length < 2 ) continue;
+
+		let first = unique[ 0 ]!;
+		let second = unique[ 1 ]!;
+		let longest = 0;
+
+		for ( let firstIndex = 0; firstIndex < unique.length; firstIndex ++ ) {
+
+			for ( let secondIndex = firstIndex + 1; secondIndex < unique.length; secondIndex ++ ) {
+
+				const distance = Math.hypot( unique[ firstIndex ]![ 0 ] - unique[ secondIndex ]![ 0 ], unique[ firstIndex ]![ 2 ] - unique[ secondIndex ]![ 2 ] );
+				if ( distance > longest ) {
+					longest = distance;
+					first = unique[ firstIndex ]!;
+					second = unique[ secondIndex ]!;
+				}
+
+			}
+
+		}
+
+		segments.push( [ first, second ] );
+
+	}
+
+	const outline: Vec3[] = [];
+
+	for ( let sample = 0; sample < samples; sample ++ ) {
+
+		const angle = sample / samples * Math.PI * 2;
+		const direction: Vec3 = [ Math.cos( angle ), 0, Math.sin( angle ) ];
+		let maximum = - Infinity;
+
+		for ( const [ first, second ] of segments ) {
+
+			const edgeX = second[ 0 ] - first[ 0 ];
+			const edgeZ = second[ 2 ] - first[ 2 ];
+			const denominator = direction[ 0 ] * edgeZ - direction[ 2 ] * edgeX;
+
+			if ( Math.abs( denominator ) < 1e-8 ) continue;
+
+			const distance = ( first[ 0 ] * edgeZ - first[ 2 ] * edgeX ) / denominator;
+			const amount = ( first[ 0 ] * direction[ 2 ] - first[ 2 ] * direction[ 0 ] ) / denominator;
+			if ( distance >= 0 && amount >= - 1e-7 && amount <= 1 + 1e-7 ) maximum = Math.max( maximum, distance );
+
+		}
+
+		if ( ! Number.isFinite( maximum ) ) throw new RangeError( `Mesh has no horizontal outline at y=${ height }` );
+		outline.push( [ direction[ 0 ] * maximum, height, direction[ 2 ] * maximum ] );
+
+	}
+
+	return outline;
+
+}
+
+export function getProjectedMeshOutline( mesh: MeshData, samples: number, height: number ): Vec3[] {
+
+	const points = new Map<string, Vec3>();
+
+	for ( let offset = 0; offset < mesh.positions.length; offset += 3 ) {
+
+		const point: Vec3 = [ mesh.positions[ offset ]!, 0, mesh.positions[ offset + 2 ]! ];
+		points.set( `${ point[ 0 ].toFixed( 6 ) },${ point[ 2 ].toFixed( 6 ) }`, point );
+
+	}
+
+	const sorted = [ ...points.values() ].sort( ( first, second ) => first[ 0 ] - second[ 0 ] || first[ 2 ] - second[ 2 ] );
+	const cross = ( first: Vec3, second: Vec3, third: Vec3 ): number => ( second[ 0 ] - first[ 0 ] ) * ( third[ 2 ] - first[ 2 ] ) - ( second[ 2 ] - first[ 2 ] ) * ( third[ 0 ] - first[ 0 ] );
+	const lower: Vec3[] = [];
+	const upper: Vec3[] = [];
+
+	for ( const point of sorted ) {
+		while ( lower.length >= 2 && cross( lower[ lower.length - 2 ]!, lower[ lower.length - 1 ]!, point ) <= 0 ) lower.pop();
+		lower.push( point );
+	}
+
+	for ( const point of sorted.slice().reverse() ) {
+		while ( upper.length >= 2 && cross( upper[ upper.length - 2 ]!, upper[ upper.length - 1 ]!, point ) <= 0 ) upper.pop();
+		upper.push( point );
+	}
+
+	const hull = [ ...lower.slice( 0, - 1 ), ...upper.slice( 0, - 1 ) ];
+	if ( hull.length < 3 ) throw new RangeError( 'Mesh does not have a projected outline' );
+	const edgeLengths = hull.map( ( point, index ) => {
+
+		const next = hull[ ( index + 1 ) % hull.length ]!;
+		return Math.hypot( next[ 0 ] - point[ 0 ], next[ 2 ] - point[ 2 ] );
+
+	} );
+	const perimeter = edgeLengths.reduce( ( total, length ) => total + length, 0 );
+	const outline: Vec3[] = [];
+
+	for ( let sample = 0; sample < samples; sample ++ ) {
+
+		let distance = sample / samples * perimeter;
+		let edge = 0;
+
+		while ( distance > edgeLengths[ edge ]! && edge < hull.length - 1 ) {
+
+			distance -= edgeLengths[ edge ]!;
+			edge ++;
+
+		}
+
+		const first = hull[ edge ]!;
+		const second = hull[ ( edge + 1 ) % hull.length ]!;
+		const amount = edgeLengths[ edge ]! > 0 ? distance / edgeLengths[ edge ]! : 0;
+		outline.push( [ first[ 0 ] + ( second[ 0 ] - first[ 0 ] ) * amount, height, first[ 2 ] + ( second[ 2 ] - first[ 2 ] ) * amount ] );
+
+	}
+
+	return outline;
+
+}
+
+export function removeRockBottomCap( mesh: MeshData, floor: number ): void {
+
+	const indices: number[] = [];
+	const groups = [] as MeshData[ 'groups' ];
+
+	for ( const group of mesh.groups ) {
+
+		const start = indices.length;
+
+		for ( let index = group.start; index < group.start + group.count; index += 3 ) {
+
+			const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ];
+			const isBottomCap = triangle.every( ( vertex ) => mesh.positions[ vertex * 3 + 1 ]! <= floor + 1e-6 );
+			if ( isBottomCap ) continue;
+			indices.push( triangle[ 0 ]!, triangle[ 1 ]!, triangle[ 2 ]! );
+
+		}
+
+		if ( indices.length > start ) groups.push( { ...group, start, count: indices.length - start } );
+
+	}
+
+	mesh.indices = Uint32Array.from( indices );
+	mesh.groups = groups;
+
+	const used = new Uint8Array( mesh.positions.length / 3 );
+	for ( const index of mesh.indices ) used[ index ] = 1;
+	const remap = new Uint32Array( used.length );
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const uvs: number[] = [];
+	const colors: number[] = [];
+	const windWeight: number[] = [];
+
+	for ( let vertex = 0; vertex < used.length; vertex ++ ) {
+
+		if ( used[ vertex ] === 0 ) continue;
+
+		remap[ vertex ] = positions.length / 3;
+		positions.push( mesh.positions[ vertex * 3 ]!, mesh.positions[ vertex * 3 + 1 ]!, mesh.positions[ vertex * 3 + 2 ]! );
+		normals.push( mesh.normals[ vertex * 3 ]!, mesh.normals[ vertex * 3 + 1 ]!, mesh.normals[ vertex * 3 + 2 ]! );
+		uvs.push( mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! );
+		colors.push( mesh.colors[ vertex * 3 ]!, mesh.colors[ vertex * 3 + 1 ]!, mesh.colors[ vertex * 3 + 2 ]! );
+		windWeight.push( mesh.windWeight[ vertex ]! );
+
+	}
+
+	mesh.positions = Float32Array.from( positions );
+	mesh.normals = Float32Array.from( normals );
+	mesh.uvs = Float32Array.from( uvs );
+	mesh.colors = Float32Array.from( colors );
+	mesh.windWeight = Float32Array.from( windWeight );
+	mesh.indices = Uint32Array.from( mesh.indices, ( index ) => remap[ index ]! );
 
 }
 

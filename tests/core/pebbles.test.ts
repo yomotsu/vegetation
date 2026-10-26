@@ -3,10 +3,28 @@ import { bakeImpostor, generatePebblesData, hexToLinear } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { createRockTextures } from '../../src/core/rockTexture';
 import { validateMeshData } from '../helpers/validateMeshData';
+import { sampleOutlineRadius, splitConnectedComponents } from '../helpers/meshOutline';
+import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 
 function triangleCount( mesh: MeshData ): number {
 
 	return mesh.indices.length / 3;
+
+}
+
+function boundaryEdgeCount( mesh: Pick<MeshData, 'positions' | 'indices'> ): number {
+
+	const edges = new Map<string, number>();
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+		for ( let edge = 0; edge < 3; edge ++ ) {
+			const first = mesh.indices[ index + edge ]!;
+			const second = mesh.indices[ index + ( edge + 1 ) % 3 ]!;
+			const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
+			edges.set( key, ( edges.get( key ) ?? 0 ) + 1 );
+		}
+	}
+
+	return [ ...edges.values() ].filter( ( count ) => count === 1 ).length;
 
 }
 
@@ -40,14 +58,34 @@ function hashBytes( data: Uint8Array ): number {
 
 }
 
+function meanOpaqueRgb( data: Uint8Array ): [ number, number, number ] {
+
+	const mean: [ number, number, number ] = [ 0, 0, 0 ];
+	let pixels = 0;
+
+	for ( let offset = 0; offset < data.length; offset += 4 ) {
+
+		if ( data[ offset + 3 ] === 0 ) continue;
+
+		mean[ 0 ] += data[ offset ]!;
+		mean[ 1 ] += data[ offset + 1 ]!;
+		mean[ 2 ] += data[ offset + 2 ]!;
+		pixels ++;
+
+	}
+
+	return mean.map( ( value ) => value / pixels ) as [ number, number, number ];
+
+}
+
 function renderCoverage( data: ReturnType<typeof generatePebblesData>, lod: number, topDown = false ) {
 
 	const source = data.lods[ lod ]!;
 	const mesh = topDown
 		? {
 			...source,
-			positions: Float32Array.from( source.positions, ( value, index ) => index % 3 === 1 ? source.positions[ index + 2 ]! + data.bounds.radius : index % 3 === 2 ? source.positions[ index - 1 ]! : value ),
-			normals: Float32Array.from( source.normals, ( value, index ) => index % 3 === 1 ? source.normals[ index + 2 ]! : index % 3 === 2 ? source.normals[ index - 1 ]! : value ),
+			positions: Float32Array.from( source.positions, ( value, index ) => index % 3 === 1 ? - source.positions[ index + 1 ]! + data.bounds.radius : index % 3 === 2 ? source.positions[ index - 1 ]! : value ),
+			normals: Float32Array.from( source.normals, ( value, index ) => index % 3 === 1 ? - source.normals[ index + 1 ]! : index % 3 === 2 ? source.normals[ index - 1 ]! : value ),
 		}
 		: source;
 	const renderData = {
@@ -100,13 +138,69 @@ function coverageIou( first: { width: number; data: Uint8Array }, second: { widt
 
 describe( 'procedural pebbles data', () => {
 
-	it( 'builds five valid LODs with shared stone textures and no collider', () => {
+	it( 'keeps every far pebble grounded around its full footprint', () => {
+
+		withSharedRockTextures( () => {
+
+			const size = 0.32;
+			const seeds = [ 341810, ...Array.from( { length: 200 }, ( _, index ) => index + 1 ), 987654321, 2147483647, - 1987654321 ];
+
+			for ( const seed of seeds ) {
+
+				const mesh = generatePebblesData( { seed, size } ).lods[ 3 ]!;
+
+				for ( const [ componentIndex, component ] of splitConnectedComponents( mesh ).entries() ) {
+
+					const center: [ number, number ] = [ 0, 0 ];
+					for ( let offset = 0; offset < component.positions.length; offset += 3 ) {
+						center[ 0 ] += component.positions[ offset ]! / ( component.positions.length / 3 );
+						center[ 1 ] += component.positions[ offset + 2 ]! / ( component.positions.length / 3 );
+					}
+
+					for ( let sample = 0; sample < 36; sample ++ ) {
+
+						const angle = sample / 36 * Math.PI * 2;
+						const groundRadius = sampleOutlineRadius( component, 0, angle, center );
+						const skirtRadius = sampleOutlineRadius( component, - 0.02 * size, angle, center );
+						expect( groundRadius, `seed ${ seed } pebble ${ componentIndex } y=0 sample ${ sample }` ).toBeGreaterThan( 0 );
+						expect( skirtRadius, `seed ${ seed } pebble ${ componentIndex } below-ground sample ${ sample }` ).toBeGreaterThanOrEqual( groundRadius * 0.85 );
+
+					}
+
+				}
+
+			}
+
+		} );
+
+	}, 120000 );
+
+	it( 'uses a coverage-preserving subset of tiny stones for LOD3', () => {
+
+		const data = generatePebblesData( { seed: 7 } );
+		const components = splitConnectedComponents( data.lods[ 3 ]! );
+
+		expect( components.length ).toBe( 15 );
+		for ( const component of components ) {
+
+			const count = component.positions.length / 3;
+			expect( count ).toBeGreaterThanOrEqual( 4 );
+			expect( count ).toBeLessThanOrEqual( 6 );
+			expect( boundaryEdgeCount( component ) ).toBeGreaterThan( 0 );
+
+		}
+		expect( vertexCount( data.lods[ 2 ]! ) ).toBeGreaterThan( vertexCount( data.lods[ 3 ]! ) );
+		expect( triangleCount( data.lods[ 2 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 3 ]! ) );
+
+	} );
+
+	it( 'builds mesh LOD0–3 with an open far mesh and keeps LOD4 as a billboard', () => {
 
 		const data = generatePebblesData( { seed: 4 } );
 
 		expect( data.kind ).toBe( 'pebbles' );
 		expect( data.lods ).toHaveLength( 5 );
-		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'stone', 'impostor-lod3', 'impostor' ] );
+		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'stone', 'impostor' ] );
 		expect( data.parts[ 0 ]!.texture ).toBe( 'albedo' );
 		expect( data.parts[ 0 ]!.normalTexture ).toBe( 'normal' );
 		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
@@ -115,8 +209,13 @@ describe( 'procedural pebbles data', () => {
 		expect( data.textures.albedo!.height ).toBe( 1024 );
 		expect( data.textures.normal!.width ).toBe( 1024 );
 		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 128 );
-		expect( triangleCount( data.lods[ 3 ]! ) ).toBe( 12 );
+		expect( vertexCount( data.lods[ 3 ]! ) ).toBeGreaterThan( vertexCount( data.lods[ 4 ]! ) );
+		expect( vertexCount( data.lods[ 3 ]! ) ).toBeLessThanOrEqual( 90 );
+		expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 4 );
 		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 2 );
+		expect( data.lods[ 4 ]!.groups[ 0 ]!.partIndex ).toBe( 1 );
+		expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
+		expect( Object.keys( data.textures ) ).toEqual( [ 'albedo', 'normal' ] );
 		expect( hashBytes( data.textures.albedo!.data ) ).toBe( hashBytes( createRockTextures( 4 ).albedo.data ) );
 		expect( hashBytes( data.textures.normal!.data ) ).toBe( hashBytes( createRockTextures( 4 ).normal.data ) );
 		for ( const mesh of data.lods ) validateMeshData( mesh );
@@ -179,21 +278,53 @@ describe( 'procedural pebbles data', () => {
 
 	} );
 
-	it( 'keeps side and top coverage close across the stone LODs', () => {
+	it( 'keeps side and top coverage across low-poly cluster LODs', () => {
 
 		const data = generatePebblesData( { seed: 7 } );
 
 		for ( const topDown of [ false, true ] ) {
 
 			const lod0 = renderCoverage( data, 0, topDown );
-			for ( const lod of [ 1, 2 ] ) {
+			for ( const lod of [ 3 ] ) {
 
-				const coverage = coverageIou( lod0, renderCoverage( data, lod, topDown ), 1 );
-				expect( coverage, `LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThan( 0.65 );
+				const lodCoverage = renderCoverage( data, lod, topDown );
+				const coverage = coverageIou( lod0, lodCoverage, 1 );
+				expect( coverage, `LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThanOrEqual( 0.55 );
+
+				if ( ! topDown ) {
+
+					const sourceColor = meanOpaqueRgb( lod0.data );
+					const farColor = meanOpaqueRgb( lodCoverage.data );
+
+					for ( let channel = 0; channel < 3; channel ++ ) {
+						expect( Math.abs( sourceColor[ channel ]! - farColor[ channel ]! ), `LOD3 channel ${ channel } mean color: ${ sourceColor[ channel ] } vs ${ farColor[ channel ] }` ).toBeLessThanOrEqual( 8 );
+					}
+
+				}
 
 			}
 
 		}
+
+	} );
+
+	it( 'matches the visible LOD0 mean color within eight channels at far distances', () => {
+
+		withSharedRockTextures( () => {
+
+			for ( const seed of [ 1, 7, 341810 ] ) {
+
+				const data = generatePebblesData( { seed } );
+				const sourceColor = meanOpaqueRgb( renderCoverage( data, 0 ).data );
+				const farColor = meanOpaqueRgb( renderCoverage( data, 3 ).data );
+
+				for ( let channel = 0; channel < 3; channel ++ ) {
+					expect( Math.abs( sourceColor[ channel ]! - farColor[ channel ]! ), `seed ${ seed } channel ${ channel } mean color` ).toBeLessThanOrEqual( 8 );
+				}
+
+			}
+
+		} );
 
 	} );
 

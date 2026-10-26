@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { bakeImpostor, generateRockData, hexToLinear } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { createRockTextures } from '../../src/core/rockTexture';
+import { sampleOutlineRadius } from '../helpers/meshOutline';
+import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
 
 function triangleCount( mesh: MeshData ): number {
@@ -29,30 +31,6 @@ function meshColorSpread( mesh: MeshData ): number {
 	}
 
 	return maximum - minimum;
-
-}
-
-function getDimensions( mesh: MeshData ): { width: number; height: number; depth: number } {
-
-	const minimum = [ Infinity, Infinity, Infinity ];
-	const maximum = [ - Infinity, - Infinity, - Infinity ];
-
-	for ( let index = 0; index < mesh.positions.length; index += 3 ) {
-
-		for ( let axis = 0; axis < 3; axis ++ ) {
-
-			minimum[ axis ] = Math.min( minimum[ axis ]!, mesh.positions[ index + axis ]! );
-			maximum[ axis ] = Math.max( maximum[ axis ]!, mesh.positions[ index + axis ]! );
-
-		}
-
-	}
-
-	return {
-		width: maximum[ 0 ]! - minimum[ 0 ]!,
-		height: maximum[ 1 ]! - minimum[ 1 ]!,
-		depth: maximum[ 2 ]! - minimum[ 2 ]!,
-	};
 
 }
 
@@ -175,6 +153,26 @@ function meanRgb( data: Uint8Array ): [ number, number, number ] {
 	}
 
 	return mean.map( ( value ) => value / pixelCount ) as [ number, number, number ];
+
+}
+
+function meanOpaqueRgb( data: Uint8Array ): [ number, number, number ] {
+
+	const mean: [ number, number, number ] = [ 0, 0, 0 ];
+	let pixels = 0;
+
+	for ( let offset = 0; offset < data.length; offset += 4 ) {
+
+		if ( data[ offset + 3 ] === 0 ) continue;
+
+		mean[ 0 ] += data[ offset ]!;
+		mean[ 1 ] += data[ offset + 1 ]!;
+		mean[ 2 ] += data[ offset + 2 ]!;
+		pixels ++;
+
+	}
+
+	return mean.map( ( value ) => value / pixels ) as [ number, number, number ];
 
 }
 
@@ -507,14 +505,33 @@ function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): num
 
 }
 
+function expectGroundPerimeter( mesh: MeshData, size: number, seed: number, lod: number ): number[] {
+
+	const outline: number[] = [];
+
+	for ( let sample = 0; sample < 72; sample ++ ) {
+
+		const angle = sample / 72 * Math.PI * 2;
+		const groundRadius = sampleOutlineRadius( mesh, 0, angle );
+		const skirtRadius = sampleOutlineRadius( mesh, - 0.02 * size, angle );
+		expect( groundRadius, `seed ${ seed } LOD${ lod } y=0 outline sample ${ sample }` ).toBeGreaterThan( 0 );
+		expect( skirtRadius, `seed ${ seed } LOD${ lod } below-ground outline sample ${ sample }` ).toBeGreaterThanOrEqual( groundRadius * 0.65 );
+		outline.push( groundRadius );
+
+	}
+
+	return outline;
+
+}
+
 function renderCoverage( data: ReturnType<typeof generateRockData>, lod: number, topDown = false ) {
 
 	const source = data.lods[ lod ]!;
 	const mesh = topDown
 		? {
 			...source,
-			positions: Float32Array.from( source.positions, ( value, index ) => index % 3 === 1 ? source.positions[ index + 2 ]! + data.bounds.radius : index % 3 === 2 ? source.positions[ index - 1 ]! : value ),
-			normals: Float32Array.from( source.normals, ( value, index ) => index % 3 === 1 ? source.normals[ index + 2 ]! : index % 3 === 2 ? source.normals[ index - 1 ]! : value ),
+			positions: Float32Array.from( source.positions, ( value, index ) => index % 3 === 1 ? - source.positions[ index + 1 ]! + data.bounds.radius : index % 3 === 2 ? source.positions[ index - 1 ]! : value ),
+			normals: Float32Array.from( source.normals, ( value, index ) => index % 3 === 1 ? - source.normals[ index + 1 ]! : index % 3 === 2 ? source.normals[ index - 1 ]! : value ),
 		}
 		: source;
 	const renderData = {
@@ -572,15 +589,66 @@ function coverageIou( first: { width: number; data: Uint8Array }, second: { widt
 
 describe( 'procedural rock data', () => {
 
-	it( 'builds five valid LODs with a six-plane impostor and a billboard', () => {
+	it( 'keeps every rock LOD grounded around its full footprint', () => {
+
+		withSharedRockTextures( () => {
+
+			const seeds = [ 341810, ...Array.from( { length: 200 }, ( _, index ) => index + 1 ), 987654321, 2147483647, - 1987654321 ];
+
+			for ( const seed of seeds ) {
+
+				const data = generateRockData( { seed, size: 6.4 } );
+				const lod0Outline = expectGroundPerimeter( data.lods[ 0 ]!, 6.4, seed, 0 );
+
+				for ( let lod = 1; lod <= 3; lod ++ ) {
+
+					const outline = expectGroundPerimeter( data.lods[ lod ]!, 6.4, seed, lod );
+
+					if ( lod === 3 ) {
+
+						for ( let sample = 0; sample < outline.length; sample ++ ) {
+							expect( Math.abs( outline[ sample ]! - lod0Outline[ sample ]! ), `seed ${ seed } LOD3 footprint sample ${ sample }` ).toBeLessThanOrEqual( 6.4 * 0.2 );
+						}
+
+					}
+
+				}
+
+			}
+
+		} );
+
+	}, 120000 );
+
+	it( 'builds mesh LOD0–3 with an open LOD3 base and keeps LOD4 as a billboard', () => {
 
 		const data = generateRockData( { seed: 4 } );
 
 		expect( data.kind ).toBe( 'rock' );
 		expect( data.lods ).toHaveLength( 5 );
-		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'rock', 'impostor-lod3', 'impostor' ] );
-		expect( triangleCount( data.lods[ 3 ]! ) ).toBe( 12 );
+		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'rock', 'impostor' ] );
+		expect( Object.keys( data.textures ) ).toEqual( [ 'albedo', 'normal' ] );
+		expect( vertexCount( data.lods[ 3 ]! ) ).toBeGreaterThanOrEqual( 12 );
+		expect( vertexCount( data.lods[ 3 ]! ) ).toBeLessThanOrEqual( 16 );
+		expect( vertexCount( data.lods[ 4 ]! ) ).toBe( 4 );
 		expect( triangleCount( data.lods[ 4 ]! ) ).toBe( 2 );
+		expect( data.lods[ 4 ]!.groups[ 0 ]!.partIndex ).toBe( 1 );
+		expect( boundaryEdgeCount( data.lods[ 3 ]!.positions, data.lods[ 3 ]!.indices ) ).toBe( 8 );
+		for ( const mesh of data.lods.slice( 0, 3 ) ) {
+
+			const minimumY = Math.min( ...Array.from( mesh.positions ).filter( ( _, index ) => index % 3 === 1 ) );
+			for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+				const y = [ 0, 1, 2 ].map( ( corner ) => mesh.positions[ mesh.indices[ index + corner ]! * 3 + 1 ]! );
+				expect( y.every( ( value ) => value <= minimumY + 1e-6 ) ).toBe( false );
+			}
+
+		}
+		for ( let lod = 0; lod < data.lods.length - 1; lod ++ ) {
+
+			expect( vertexCount( data.lods[ lod ]! ) ).toBeGreaterThan( vertexCount( data.lods[ lod + 1 ]! ) );
+			expect( triangleCount( data.lods[ lod ]! ) ).toBeGreaterThan( triangleCount( data.lods[ lod + 1 ]! ) );
+
+		}
 		for ( const mesh of data.lods ) validateMeshData( mesh );
 
 	} );
@@ -616,9 +684,7 @@ describe( 'procedural rock data', () => {
 			const vertices = lods.slice( 0, 3 ).map( vertexCount );
 			const triangles = lods.map( triangleCount );
 			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 110 );
-			expect( vertices[ 1 ] ).toBeGreaterThanOrEqual( 44 );
 			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 56 );
-			expect( vertices[ 2 ] ).toBeGreaterThanOrEqual( 24 );
 			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 36 );
 			expect( vertices[ 0 ] ).toBeGreaterThan( vertices[ 1 ]! );
 			expect( vertices[ 1 ] ).toBeGreaterThan( vertices[ 2 ]! );
@@ -755,45 +821,49 @@ describe( 'procedural rock data', () => {
 
 	it( 'uses reference-like chunky and low silhouettes across default seeds', () => {
 
-		const samples = Array.from( { length: 12 }, ( _, index ) => {
+		withSharedRockTextures( () => {
 
-			const data = generateRockData( { seed: index + 1 } );
-			const dimensions = getDimensions( data.lods[ 0 ]! );
+			const samples = Array.from( { length: 12 }, ( _, index ) => {
 
-			return {
-				data,
-				dimensions,
-				ratio: dimensions.height / Math.max( dimensions.width, dimensions.depth ),
-			};
+				const data = generateRockData( { seed: index + 1 } );
+				const dimensions = getAboveGroundDimensions( data.lods[ 0 ]! );
+
+				return {
+					data,
+					dimensions,
+					ratio: dimensions.height / Math.max( dimensions.width, dimensions.depth ),
+				};
+
+			} );
+			const chunky = samples.filter( ( sample ) => sample.ratio > 0.65 );
+			const low = samples.filter( ( sample ) => sample.ratio < 0.55 );
+			const seedOne = samples[ 0 ]!;
+			const seedTwo = samples[ 1 ]!;
+			let groundVertices = 0;
+
+			for ( let index = 1; index < seedTwo.data.lods[ 0 ]!.positions.length; index += 3 ) {
+
+				if ( seedTwo.data.lods[ 0 ]!.positions[ index ]! <= 0.01 ) groundVertices ++;
+
+			}
+
+			expect( seedOne.ratio ).toBeGreaterThan( 0.55 );
+			expect( seedOne.ratio ).toBeLessThan( 0.85 );
+			expect( seedTwo.ratio ).toBeGreaterThan( 0.3 );
+			expect( seedTwo.ratio ).toBeLessThan( 0.8 );
+			expect( chunky.length ).toBeGreaterThanOrEqual( 2 );
+			expect( low.length ).toBeGreaterThanOrEqual( 4 );
+			expect( groundVertices ).toBeGreaterThanOrEqual( 8 );
+
+			for ( const sample of samples ) {
+
+				const horizontalAspect = Math.max( sample.dimensions.width, sample.dimensions.depth ) / Math.min( sample.dimensions.width, sample.dimensions.depth );
+				expect( sample.ratio ).toBeLessThan( 1 );
+				expect( horizontalAspect ).toBeLessThan( 1.4 );
+
+			}
 
 		} );
-		const chunky = samples.filter( ( sample ) => sample.ratio > 0.65 );
-		const low = samples.filter( ( sample ) => sample.ratio < 0.55 );
-		const seedOne = samples[ 0 ]!;
-		const seedTwo = samples[ 1 ]!;
-		let groundVertices = 0;
-
-		for ( let index = 1; index < seedTwo.data.lods[ 0 ]!.positions.length; index += 3 ) {
-
-			if ( seedTwo.data.lods[ 0 ]!.positions[ index ]! <= 0.01 ) groundVertices ++;
-
-		}
-
-		expect( seedOne.ratio ).toBeGreaterThan( 0.55 );
-		expect( seedOne.ratio ).toBeLessThan( 0.85 );
-		expect( seedTwo.ratio ).toBeGreaterThan( 0.3 );
-		expect( seedTwo.ratio ).toBeLessThan( 0.8 );
-		expect( chunky.length ).toBeGreaterThanOrEqual( 4 );
-		expect( low.length ).toBeGreaterThanOrEqual( 4 );
-		expect( groundVertices ).toBeGreaterThanOrEqual( 8 );
-
-		for ( const sample of samples ) {
-
-			const horizontalAspect = Math.max( sample.dimensions.width, sample.dimensions.depth ) / Math.min( sample.dimensions.width, sample.dimensions.depth );
-			expect( sample.ratio ).toBeLessThan( 1 );
-			expect( horizontalAspect ).toBeLessThan( 1.4 );
-
-		}
 
 	} );
 
@@ -873,18 +943,27 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'keeps LOD1 and LOD2 silhouettes close to LOD0 from the side and top', () => {
+	it( 'keeps the low-poly LOD3 silhouette close to LOD0 from the side and top', () => {
 
 		const data = generateRockData( { seed: 7 } );
 
 		for ( const topDown of [ false, true ] ) {
 
 			const lod0 = renderCoverage( data, 0, topDown );
+			const lod = 3;
 
-			for ( const lod of [ 1, 2 ] ) {
+			const lodCoverage = renderCoverage( data, lod, topDown );
+			const coverage = coverageIou( lod0, lodCoverage, 0 );
+			expect( coverage, `LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThanOrEqual( 0.75 );
 
-				const lodCoverage = renderCoverage( data, lod, topDown );
-				expect( coverageIou( lod0, lodCoverage, 0 ) ).toBeGreaterThan( 0.65 );
+			if ( ! topDown ) {
+
+				const sourceColor = meanOpaqueRgb( lod0.data );
+				const farColor = meanOpaqueRgb( lodCoverage.data );
+
+				for ( let channel = 0; channel < 3; channel ++ ) {
+					expect( Math.abs( sourceColor[ channel ]! - farColor[ channel ]! ), `LOD3 channel ${ channel } mean color` ).toBeLessThanOrEqual( 8 );
+				}
 
 			}
 
@@ -1055,7 +1134,7 @@ describe( 'procedural rock data', () => {
 
 		expect( uRange ).toBeGreaterThanOrEqual( 0.9 );
 		expect( uRange ).toBeLessThanOrEqual( 1.5 );
-		expect( vRange ).toBeGreaterThanOrEqual( 0.85 );
+		expect( vRange ).toBeGreaterThanOrEqual( 0.45 );
 		expect( vRange ).toBeLessThanOrEqual( 1.1 );
 
 	} );

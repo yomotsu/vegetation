@@ -1,6 +1,6 @@
-import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
 import { createRockTextures } from '../rockTexture';
-import { applyRockSurfaceShading, buildRockRingShell, buildRockShell, clamp, createRockRadiusFunction, getBounds, getHorizontalSpan, getMinimumY, liftMesh, recomputeSmoothNormals, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
+import { buildBillboard, impostorPart } from '../impostor';
+import { applyRockSurfaceShading, buildConvexHullFaces, buildRockMeshFromFaces, buildRockRingShell, buildRockShell, clamp, createRockRadiusFunction, getBounds, getHorizontalMeshOutline, getHorizontalSpan, getMinimumY, getProjectedMeshOutline, liftMesh, recomputeSmoothNormals, removeRockBottomCap, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -234,6 +234,38 @@ function refineVisibleRockSurface(
 
 }
 
+function getUniqueRockPositions( mesh: MeshData ): Vec3[] {
+
+	const positions = new Map<string, Vec3>();
+
+	for ( let offset = 0; offset < mesh.positions.length; offset += 3 ) {
+
+		const position: Vec3 = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+		positions.set( position.map( ( value ) => value.toFixed( 6 ) ).join( ',' ), position );
+
+	}
+
+	return [ ...positions.values() ];
+
+}
+
+function buildLowPolyRockShell( source: MeshData, size: number ): MeshData {
+
+	const positions = getUniqueRockPositions( source );
+	const bounds = getBounds( source );
+	const baseCount = 8;
+	const upperCount = 7;
+	const base = getProjectedMeshOutline( source, baseCount, - 0.03 * size );
+	const upper = getHorizontalMeshOutline( source, bounds.height * 0.48, upperCount );
+	const apex = positions.reduce( ( highest, position ) => position[ 1 ] > highest[ 1 ] ? position : highest, [ 0, - Infinity, 0 ] as Vec3 );
+	const vertices = [ ...base, ...upper, apex ];
+	const shell = buildRockMeshFromFaces( vertices, buildConvexHullFaces( vertices ) );
+	removeRockBottomCap( shell, - 0.03 * size );
+
+	return shell;
+
+}
+
 function buildCollider( mesh: MeshData ): ColliderData {
 
 	const vertices = new Map<string, number>();
@@ -320,7 +352,10 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	scaleHeight( lod1, heightScale );
 	scaleHeight( lod2, heightScale );
 	const fullHeight = getBounds( lod0 ).height;
-	const skirtFloor = - Math.min( burial, 0.15 ) * fullHeight;
+	const colliderLod2 = { ...lod2, positions: lod2.positions.slice() };
+	sinkMesh( colliderLod2, burial * fullHeight, - Math.min( burial, 0.15 ) * fullHeight );
+	const collider = buildCollider( colliderLod2 );
+	const skirtFloor = - 0.03 * size;
 
 	sinkMesh( lod0, burial * fullHeight, skirtFloor );
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
@@ -328,12 +363,20 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	refineVisibleRockSurface( lod0, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 110 );
 	refineVisibleRockSurface( lod1, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
+	removeRockBottomCap( lod0, skirtFloor );
+	removeRockBottomCap( lod1, skirtFloor );
+	removeRockBottomCap( lod2, skirtFloor );
 	recomputeSmoothNormals( lod0 );
 	recomputeSmoothNormals( lod1 );
 	recomputeSmoothNormals( lod2 );
 	applyRockSurfaceShading( lod0 );
 	applyRockSurfaceShading( lod1 );
 	applyRockSurfaceShading( lod2 );
+
+	const lod3 = buildLowPolyRockShell( lod0, size );
+	const lod4 = buildBillboard( getBounds( lod0 ), 1 );
+	recomputeSmoothNormals( lod3 );
+	lod3.colors.fill( lod0.colors[ 0 ]! );
 
 	const bounds = getBounds( lod0 );
 	const parts: PartDef[] = [
@@ -349,18 +392,15 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 			doubleSided: false,
 			flatShading: false,
 		},
-		impostorLod3Part(),
 		impostorPart(),
 	];
-	const lod3 = buildSixPlaneImpostor( bounds.height, bounds.radius, 1 );
-	const lod4 = buildBillboard( bounds, 2 );
 	const textures = createRockTextures( seed );
 
 	return {
 		kind: 'rock',
 		parts,
 		lods: [ lod0, lod1, lod2, lod3, lod4 ],
-		collider: buildCollider( lod2 ),
+		collider,
 		textures: { albedo: textures.albedo, normal: textures.normal },
 		bounds,
 	};
