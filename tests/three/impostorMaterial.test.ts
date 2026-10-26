@@ -33,7 +33,8 @@ describe( 'impostor materials', () => {
 		const asset = new VegetationAsset( generateTreeData( { seed: 3 } ) );
 		const mesh = new VegetationMesh( asset, 3 );
 
-		expect( mesh.geometry.getAttribute( 'position' ) ).toBeUndefined();
+		expect( mesh.geometry.getAttribute( 'position' ) ).toBeDefined();
+		expect( mesh.geometry.drawRange.count ).toBe( 0 );
 		expect( mesh.parts ).toHaveLength( 2 );
 		expect( mesh.parts[ 0 ]!.geometry.getIndex()!.count ).toBe( 36 );
 		expect( mesh.parts[ 1 ]!.geometry.getIndex()!.count ).toBe( 6 );

@@ -13,6 +13,10 @@
 		"./core": {
 			"types": "./dist/core/index.d.ts",
 			"import": "./dist/core/index.js"
+		},
+		"./webgpu": {
+			"types": "./dist/webgpu/index.d.ts",
+			"import": "./dist/webgpu/index.js"
 		}
 	},
 	"scripts": {

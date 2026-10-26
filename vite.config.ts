@@ -6,12 +6,13 @@ export default defineConfig( {
 			entry: {
 				index: 'src/index.ts',
 				'core/index': 'src/core/index.ts',
+			'webgpu/index': 'src/webgpu/index.ts',
 			},
 			formats: [ 'es' ],
 			fileName: ( _format, entryName ) => `${ entryName }.js`,
 		},
 		rollupOptions: {
-			external: [ 'three' ],
+			external: ( id ) => id === 'three' || id.startsWith( 'three/' ),
 		},
 	},
 } );

@@ -22,6 +22,7 @@ import { regenerateTexture } from '../core/textureRegenerator';
 import type { ImpostorView, LodLevel, MeshData, PartDef, TextureData, VegetationData } from '../core/types';
 import { addImpostorFade } from './impostorFadeMaterial';
 import { getImpostorMaterialFactory } from './impostorMaterialFactory';
+import type { VegetationMaterial } from './impostorMaterialFactory';
 
 function createTexture( data: TextureData, normalMap = false ): DataTexture {
 
@@ -105,13 +106,13 @@ export class VegetationAsset {
 	/** @remarks WebGPURenderer のシャドウ描画では、マテリアル配列と一緒に使わないでください。代わりに getParts( lod ) を使い、パーツごとに InstancedMesh を作成してください。 */
 	readonly geometries: BufferGeometry[];
 	/** @remarks WebGPURenderer のシャドウ描画では geometries[ lod ] と組み合わせないでください。getParts( lod ) の各パーツに対応するマテリアルを使ってください。 */
-	readonly materials: MeshStandardMaterial[];
+	readonly materials: VegetationMaterial[];
 	readonly collider: BufferGeometry | null;
 	private readonly impostorTextures = new Map<string, DataTexture>();
 	private readonly impostorViews = new Map<string, readonly ImpostorView[]>();
 	private readonly partIndices = new Map<string, number>();
 	private readonly partColors: Color[];
-	private readonly partsCache = new Map<LodLevel, { part: string; geometry: BufferGeometry; material: MeshStandardMaterial }[]>();
+	private readonly partsCache = new Map<LodLevel, { part: string; geometry: BufferGeometry; material: VegetationMaterial }[]>();
 	private readonly impostorSize: number;
 	private disposed = false;
 
@@ -188,7 +189,11 @@ export class VegetationAsset {
 			};
 			const impostorFactory = isImpostor ? getImpostorMaterialFactory() : null;
 			const material = impostorFactory !== null
-				? impostorFactory( materialParameters )
+				? impostorFactory( {
+					...materialParameters,
+					...( part.specularIntensity !== undefined ? { specularIntensity: part.specularIntensity } : {} ),
+					...( part.ior !== undefined ? { ior: part.ior } : {} ),
+				} )
 				: part.specularIntensity !== undefined || part.ior !== undefined
 				? new MeshPhysicalMaterial( {
 					...materialParameters,
@@ -216,7 +221,7 @@ export class VegetationAsset {
 	}
 
 	/** @remarks 返される geometry は属性バッファを geometries[ lod ] と共有し、VegetationAsset が所有します。個別に dispose せず、パーツごとの Mesh または InstancedMesh に使ってください。 */
-	getParts( lod: number ): { part: string; geometry: BufferGeometry; material: MeshStandardMaterial }[] {
+	getParts( lod: number ): { part: string; geometry: BufferGeometry; material: VegetationMaterial }[] {
 
 		const level = Math.max( 0, Math.min( 4, Math.floor( Number.isFinite( lod ) ? lod : 0 ) ) ) as LodLevel;
 		const cached = this.partsCache.get( level );

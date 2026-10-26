@@ -1,6 +1,12 @@
-import type { MeshStandardMaterial, MeshStandardMaterialParameters } from 'three';
+import type { Material, MeshPhysicalMaterialParameters, MeshStandardMaterial, MeshStandardMaterialParameters } from 'three';
 
-export type ImpostorMaterialFactory = ( parameters: MeshStandardMaterialParameters ) => MeshStandardMaterial;
+export type ImpostorMaterialParameters = MeshStandardMaterialParameters & Pick<MeshPhysicalMaterialParameters, 'specularIntensity' | 'ior'>;
+
+export type VegetationMaterial = Material & Pick<MeshStandardMaterial,
+	'color' | 'map' | 'normalMap' | 'roughness' | 'metalness' | 'emissive' | 'emissiveIntensity' | 'alphaTest' | 'alphaToCoverage' | 'transparent' | 'vertexColors' | 'flatShading' | 'side' | 'wireframe'
+>;
+
+export type ImpostorMaterialFactory = ( parameters: ImpostorMaterialParameters ) => VegetationMaterial;
 
 let impostorMaterialFactory: ImpostorMaterialFactory | null = null;
 

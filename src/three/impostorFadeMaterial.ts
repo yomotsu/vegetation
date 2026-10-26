@@ -1,4 +1,4 @@
-import type { MeshStandardMaterial } from 'three';
+import type { Material } from 'three';
 import {
 	IMPOSTOR_HORIZONTAL_FADE_END,
 	IMPOSTOR_HORIZONTAL_FADE_START,
@@ -14,7 +14,7 @@ function glslNumber( value: number ): string {
 
 }
 
-export function addImpostorFade( material: MeshStandardMaterial ): void {
+export function addImpostorFade( material: Material ): void {
 
 	const originalOnBeforeCompile = material.onBeforeCompile.bind( material );
 	const originalCacheKey = material.customProgramCacheKey();

@@ -104,7 +104,7 @@ describe( 'tree meshes', () => {
 
 	} );
 
-	it( 'uses a private, attribute-free LOD4 root geometry and disposes it', () => {
+	it( 'uses a private, non-drawing LOD4 root geometry with shader attributes', () => {
 
 		const asset = generateTree( { seed: 1 } );
 		const mesh = new VegetationMesh( asset, 4 );
@@ -113,8 +113,11 @@ describe( 'tree meshes', () => {
 		const disposeAsset = vi.spyOn( asset, 'dispose' );
 
 		emptyGeometry.addEventListener( 'dispose', disposeGeometry );
-		expect( emptyGeometry.getAttribute( 'position' ) ).toBeUndefined();
+		expect( emptyGeometry.getAttribute( 'position' ) ).toBeDefined();
+		expect( emptyGeometry.getAttribute( 'uv' ) ).toBeDefined();
+		expect( emptyGeometry.getAttribute( 'impostorCard' ) ).toBeDefined();
 		expect( emptyGeometry.getIndex() ).toBeNull();
+		expect( emptyGeometry.drawRange.count ).toBe( 0 );
 		expect( emptyGeometry ).not.toBe( mesh.parts[ 0 ]!.geometry );
 
 		mesh.dispose();

@@ -1,13 +1,22 @@
 import { BufferAttribute, BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
-import type { Camera, Color, ColorRepresentation, MeshStandardMaterial } from 'three';
+import type { Camera, Color, ColorRepresentation } from 'three';
 import type { LodLevel } from '../core/types';
 import { VegetationAsset } from './VegetationAsset';
+import type { VegetationMaterial } from './impostorMaterialFactory';
 
 const up = new Vector3( 0, 1, 0 );
 
 function createEmptyGeometry( source: BufferGeometry ): BufferGeometry {
 
 	const geometry = new BufferGeometry();
+	const attributes: [ string, number ][] = [ [ 'position', 3 ], [ 'normal', 3 ], [ 'uv', 2 ], [ 'impostorCard', 1 ] ];
+
+	for ( const [ name, itemSize ] of attributes ) {
+
+		geometry.setAttribute( name, new BufferAttribute( new Float32Array( itemSize ), itemSize ) );
+
+	}
+
 	geometry.setDrawRange( 0, 0 );
 	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
 
@@ -106,9 +115,9 @@ export function orientBillboardInstances( mesh: InstancedMesh, camera: Camera ):
 }
 
 /** LOD の各パーツを単一マテリアルの Mesh として構成します。 */
-export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
+export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 
-	private partMeshes: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
+	private partMeshes: Mesh<BufferGeometry, VegetationMaterial>[] = [];
 	private readonly ownedGeometries: BufferGeometry[] = [];
 	private shadowCast = false;
 	private shadowReceive = false;
@@ -242,7 +251,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 	}
 
-	get parts(): Mesh<BufferGeometry, MeshStandardMaterial>[] {
+	get parts(): Mesh<BufferGeometry, VegetationMaterial>[] {
 
 		return [ ...this.partMeshes ];
 
