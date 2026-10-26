@@ -21,6 +21,14 @@ function clamp( value: number, minimum: number, maximum: number ): number {
 
 }
 
+function smoothstep( minimum: number, maximum: number, value: number ): number {
+
+	const amount = clamp( ( value - minimum ) / ( maximum - minimum ), 0, 1 );
+
+	return amount * amount * ( 3 - 2 * amount );
+
+}
+
 function createRandom( seed: number ): () => number {
 
 	let state = ( Math.floor( Math.abs( seed ) * 1000 ) + 0x6d2b79f5 ) >>> 0;
@@ -259,6 +267,108 @@ function recomputeSmoothNormals( mesh: MeshData ): void {
 
 }
 
+function applyRockSurfaceShading( mesh: MeshData ): void {
+
+	const groups = new Map<string, number>();
+	const vertexGroups = new Int32Array( mesh.positions.length / 3 );
+	const positions: Vec3[] = [];
+	const normals: Vec3[] = [];
+
+	for ( let vertex = 0; vertex < vertexGroups.length; vertex ++ ) {
+
+		const offset = vertex * 3;
+		const position: Vec3 = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+		const key = position.map( ( value ) => value.toFixed( 6 ) ).join( ',' );
+		let group = groups.get( key );
+
+		if ( group === undefined ) {
+
+			group = positions.length;
+			groups.set( key, group );
+			positions.push( position );
+			normals.push( [ mesh.normals[ offset ]!, mesh.normals[ offset + 1 ]!, mesh.normals[ offset + 2 ]! ] );
+
+		}
+
+		vertexGroups[ vertex ] = group;
+
+	}
+
+	const neighbors = Array.from( { length: positions.length }, () => new Set<number>() );
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const first = vertexGroups[ mesh.indices[ index ]! ]!;
+		const second = vertexGroups[ mesh.indices[ index + 1 ]! ]!;
+		const third = vertexGroups[ mesh.indices[ index + 2 ]! ]!;
+		neighbors[ first ]!.add( second );
+		neighbors[ first ]!.add( third );
+		neighbors[ second ]!.add( first );
+		neighbors[ second ]!.add( third );
+		neighbors[ third ]!.add( first );
+		neighbors[ third ]!.add( second );
+
+	}
+
+	const height = getBounds( mesh ).height || 1;
+	let size = 0;
+
+	for ( const position of positions ) {
+
+		size = Math.max( size, Math.hypot( position[ 0 ], position[ 2 ] ) );
+
+	}
+
+	size = size || 1;
+	const groupColors = new Float32Array( positions.length );
+
+	for ( let group = 0; group < positions.length; group ++ ) {
+
+		const position = positions[ group ]!;
+		const normal = normals[ group ]!;
+		const adjacent = neighbors[ group ]!;
+		let concavity = 0;
+
+		if ( adjacent.size > 0 ) {
+
+			const average: Vec3 = [ 0, 0, 0 ];
+
+			for ( const neighbor of adjacent ) {
+
+				average[ 0 ] += positions[ neighbor ]![ 0 ];
+				average[ 1 ] += positions[ neighbor ]![ 1 ];
+				average[ 2 ] += positions[ neighbor ]![ 2 ];
+
+			}
+
+			average[ 0 ] /= adjacent.size;
+			average[ 1 ] /= adjacent.size;
+			average[ 2 ] /= adjacent.size;
+			const inward = -( ( position[ 0 ] - average[ 0 ] ) * normal[ 0 ] + ( position[ 1 ] - average[ 1 ] ) * normal[ 1 ] + ( position[ 2 ] - average[ 2 ] ) * normal[ 2 ] );
+
+			concavity = clamp( inward / size * 9, 0, 0.16 );
+
+		}
+
+		// 上面を明るくし、近傍平均より沈んだ箇所を柔らかく暗くする。
+		const exposure = smoothstep( 0.08, 0.92, clamp( position[ 1 ] / height, 0, 1 ) );
+		groupColors[ group ] = ( 0.92 + exposure * 0.16 ) * ( 1 - concavity );
+
+	}
+
+	for ( let vertex = 0; vertex < vertexGroups.length; vertex ++ ) {
+
+		const factor = groupColors[ vertexGroups[ vertex ]! ]!;
+		const offset = vertex * 3;
+
+		mesh.colors[ offset ] = factor;
+		mesh.colors[ offset + 1 ] = factor;
+		mesh.colors[ offset + 2 ] = factor;
+
+	}
+
+}
+
 function buildCollider( mesh: MeshData ): ColliderData {
 
 	const vertices = new Map<string, number>();
@@ -300,12 +410,6 @@ function buildShell( frequency: number, radiusAt: ( direction: Vec3 ) => number,
 		flat: false,
 	} );
 	const mesh = builder.build();
-
-	for ( let index = 0; index < mesh.uvs.length; index ++ ) {
-
-		mesh.uvs[ index ] = mesh.uvs[ index ]! * 2;
-
-	}
 
 	return mesh;
 
@@ -403,6 +507,9 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	recomputeSmoothNormals( lod0 );
 	recomputeSmoothNormals( lod1 );
 	recomputeSmoothNormals( lod2 );
+	applyRockSurfaceShading( lod0 );
+	applyRockSurfaceShading( lod1 );
+	applyRockSurfaceShading( lod2 );
 
 	const bounds = getBounds( lod0 );
 	const parts: PartDef[] = [

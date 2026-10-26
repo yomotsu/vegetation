@@ -1,13 +1,19 @@
 import type { TextureData } from './types';
 
-interface RockCell {
-	u: number;
-	v: number;
-	tone: number;
-	angle: number;
+type NoiseField = ( u: number, v: number ) => number;
+
+interface CrackSegment {
+	u0: number;
+	v0: number;
+	u1: number;
+	v1: number;
+	width: number;
 }
 
-type NoiseField = ( u: number, v: number ) => number;
+interface CrackPoint {
+	u: number;
+	v: number;
+}
 
 function clamp( value: number, minimum: number, maximum: number ): number {
 
@@ -90,69 +96,111 @@ function createPeriodicNoise( seed: number, columns: number, rows: number ): Noi
 
 }
 
-function createRockCells( seed: number ): RockCell[] {
+function addCrackPath(
+	segments: CrackSegment[],
+	start: CrackPoint,
+	angle: number,
+	length: number,
+	steps: number,
+	width: number,
+	random: () => number,
+): CrackPoint[] {
 
-	const random = createRandom( seed );
-	const cells: RockCell[] = [];
+	const points = [ start ];
+	let point = start;
+	let direction = angle;
 
-	for ( let y = 0; y < 3; y ++ ) {
+	for ( let step = 0; step < steps; step ++ ) {
 
-		for ( let x = 0; x < 3; x ++ ) {
+		direction += ( random() - 0.5 ) * 0.95;
+		const next = {
+			u: point.u + Math.cos( direction ) * length / steps,
+			v: point.v + Math.sin( direction ) * length / steps,
+		};
 
-			cells.push( {
-				u: ( x + 0.5 + ( random() - 0.5 ) * 0.64 ) / 3,
-				v: ( y + 0.5 + ( random() - 0.5 ) * 0.64 ) / 3,
-				tone: ( random() - 0.5 ) * 13,
-				angle: random() * Math.PI * 2,
-			} );
-
-		}
+		segments.push( { u0: point.u, v0: point.v, u1: next.u, v1: next.v, width } );
+		points.push( next );
+		point = next;
 
 	}
 
-	return cells;
+	return points;
 
 }
 
-function getCellDistances( u: number, v: number, cells: RockCell[] ): { cell: RockCell; first: number; second: number; dx: number; dy: number } {
+function createCracks( seed: number, dominantAngle: number ): CrackSegment[] {
 
-	let firstSquared = Infinity;
-	let secondSquared = Infinity;
-	let nearestCell = cells[ 0 ]!;
-	let nearestX = 0;
-	let nearestY = 0;
+	const random = createRandom( seed + 907 );
+	const segments: CrackSegment[] = [];
+	const count = 3 + Math.floor( random() * 2 );
+	let branchAdded = false;
 
-	for ( const cell of cells ) {
+	for ( let index = 0; index < count; index ++ ) {
 
-		let dx = u - cell.u;
-		let dy = v - cell.v;
-		dx -= Math.round( dx );
-		dy -= Math.round( dy );
-		const distanceSquared = dx * dx + dy * dy;
+		const start = { u: 0.12 + random() * 0.76, v: 0.19 + random() * 0.62 };
+		const angle = dominantAngle + ( random() - 0.5 ) * 0.82 + ( random() < 0.5 ? Math.PI : 0 );
+		const width = 0.0075 + random() * 0.0025;
+		const points = addCrackPath( segments, start, angle, 0.28 + random() * 0.25, 6 + Math.floor( random() * 3 ), width, random );
 
-		if ( distanceSquared < firstSquared ) {
+		if ( ! branchAdded && random() < 0.42 ) {
 
-			secondSquared = firstSquared;
-			firstSquared = distanceSquared;
-			nearestCell = cell;
-			nearestX = dx * 3;
-			nearestY = dy * 3;
+			const branchIndex = 2 + Math.floor( random() * ( points.length - 3 ) );
+			const branchStart = points[ branchIndex ]!;
+			const branchAngle = angle + ( random() < 0.5 ? - 1 : 1 ) * ( 0.58 + random() * 0.48 );
 
-		} else if ( distanceSquared < secondSquared ) {
-
-			secondSquared = distanceSquared;
+			addCrackPath( segments, branchStart, branchAngle, 0.11 + random() * 0.09, 3 + Math.floor( random() * 2 ), width * 0.78, random );
+			branchAdded = true;
 
 		}
 
 	}
 
-	return {
-		cell: nearestCell,
-		first: Math.sqrt( firstSquared ) * 3,
-		second: Math.sqrt( secondSquared ) * 3,
-		dx: nearestX,
-		dy: nearestY,
-	};
+	return segments;
+
+}
+
+function createCrackDistanceMap( size: number, segments: CrackSegment[] ): Float32Array {
+
+	const distances = new Float32Array( size * size );
+	distances.fill( Infinity );
+
+	for ( const segment of segments ) {
+
+		const deltaU = segment.u1 - segment.u0;
+		const deltaV = segment.v1 - segment.v0;
+		const lengthSquared = deltaU * deltaU + deltaV * deltaV;
+		const margin = segment.width * 3.5;
+
+		for ( const shift of [ - 1, 0, 1 ] ) {
+
+			const startU = segment.u0 + shift;
+			const endU = segment.u1 + shift;
+			const minimumX = Math.floor( ( Math.min( startU, endU ) - margin ) * size );
+			const maximumX = Math.ceil( ( Math.max( startU, endU ) + margin ) * size );
+			const minimumY = Math.max( 0, Math.floor( ( Math.min( segment.v0, segment.v1 ) - margin ) * size ) );
+			const maximumY = Math.min( size - 1, Math.ceil( ( Math.max( segment.v0, segment.v1 ) + margin ) * size ) );
+
+			for ( let y = minimumY; y <= maximumY; y ++ ) {
+
+				for ( let x = minimumX; x <= maximumX; x ++ ) {
+
+					const u = x / size;
+					const v = y / size;
+					const projection = clamp( ( ( u - startU ) * deltaU + ( v - segment.v0 ) * deltaV ) / lengthSquared, 0, 1 );
+					const distance = Math.hypot( u - startU - deltaU * projection, v - segment.v0 - deltaV * projection ) / segment.width;
+					const index = y * size + ( ( x % size ) + size ) % size;
+
+					distances[ index ] = Math.min( distances[ index ]!, distance );
+
+				}
+
+			}
+
+		}
+
+	}
+
+	return distances;
 
 }
 
@@ -193,13 +241,20 @@ function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
 export function createRockTextures( seed: number, size = 256 ): { albedo: TextureData; normal: TextureData } {
 
 	const seedOffset = Math.floor( Math.abs( seed ) * 1000 ) + 419;
-	const cells = createRockCells( seed );
-	const warpU = createPeriodicNoise( seedOffset + 13, 3, 3 );
-	const warpV = createPeriodicNoise( seedOffset + 29, 3, 3 );
-	const horizontalStreaks = createPeriodicNoise( seedOffset + 47, 54, 9 );
-	const verticalStreaks = createPeriodicNoise( seedOffset + 61, 9, 54 );
-	const horizontalChisel = createPeriodicNoise( seedOffset + 73, 72, 36 );
-	const verticalChisel = createPeriodicNoise( seedOffset + 89, 36, 72 );
+	const random = createRandom( seed );
+	const directions: [ number, number ][] = [ [ 1, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, - 1 ], [ 2, 1 ], [ 2, - 1 ], [ 1, 2 ], [ 1, - 2 ] ];
+	const direction = directions[ Math.floor( random() * directions.length ) ]!;
+	const dominantAngle = Math.atan2( - direction[ 0 ], direction[ 1 ] );
+	const bandCount = 3 + Math.floor( random() * 3 );
+	const broadNoise = createPeriodicNoise( seedOffset + 13, 4, 4 );
+	const mediumNoise = createPeriodicNoise( seedOffset + 29, 9, 9 );
+	const warpNoise = createPeriodicNoise( seedOffset + 47, 3, 3 );
+	const bandNoise = createPeriodicNoise( seedOffset + 61, bandCount, 1 );
+	const fineBandNoise = createPeriodicNoise( seedOffset + 73, bandCount * 5, 1 );
+	const grainNoise = createPeriodicNoise( seedOffset + 89, 80, 80 );
+	const fineGrainNoise = createPeriodicNoise( seedOffset + 101, 128, 128 );
+	const cracks = createCracks( seed, dominantAngle );
+	const crackDistances = createCrackDistanceMap( size, cracks );
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
 	const normalData = new Uint8Array( size * size * 4 );
@@ -210,28 +265,25 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 
 			const u = x / size;
 			const v = y / size;
-			const warpedU = fract( u + warpU( u, v ) * 0.05 );
-			const warpedV = fract( v + warpV( u, v ) * 0.05 );
-			const nearest = getCellDistances( warpedU, warpedV, cells );
-			const gap = nearest.second - nearest.first;
-			const plate = smoothstep( 0.012, 0.16, gap );
-			const crack = 1 - smoothstep( 0.014, 0.11, gap );
-			const interior = smoothstep( 0.045, 0.18, gap );
-			const horizontal = horizontalStreaks( warpedU, warpedV );
-			const vertical = verticalStreaks( warpedU, warpedV );
-			const cosine = Math.cos( nearest.cell.angle );
-			const sine = Math.sin( nearest.cell.angle );
-			const orientation = cosine * cosine;
-			const streak = ( horizontal * orientation + vertical * ( 1 - orientation ) ) * interior;
-			const chisel = ( horizontalChisel( warpedU, warpedV ) * orientation + verticalChisel( warpedU, warpedV ) * ( 1 - orientation ) ) * interior;
-			const bevel = ( nearest.dx * cosine + nearest.dy * sine ) * 16;
-			const brightness = nearest.cell.tone + bevel + streak * 5.5 - crack * 28;
+			const warp = warpNoise( u, v );
+			const phase = fract( ( direction[ 0 ] * u + direction[ 1 ] * v ) * bandCount + warp * 0.09 );
+			const strata = bandNoise( phase, 0.5 ) * 0.82 + fineBandNoise( fract( phase * 3 + warp * 0.24 ), 0.5 ) * 0.18;
+			const broad = broadNoise( u, v );
+			const medium = mediumNoise( u, v );
+			const grain = grainNoise( u, v ) * 0.68 + fineGrainNoise( u, v ) * 0.32;
+			const crackDistance = crackDistances[ y * size + x ]!;
+			const crack = 1 - smoothstep( 0.58, 1.32, crackDistance );
+			const crackHalo = 1 - smoothstep( 1.1, 3.4, crackDistance );
+			const poleFade = smoothstep( 0, 0.075, v ) * smoothstep( 0, 0.075, 1 - v );
+			const softCrack = crack * poleFade;
+			const shading = broad * 15 + medium * 5.6 + strata * 3 + grain * 5.1;
+			const brightness = shading - softCrack * 27 - crackHalo * poleFade * 4.5;
 			const index = y * size + x;
 
-			heightMap[ index ] = 0.25 + plate * 0.55 + chisel * 0.2;
-			albedoData[ index * 4 ] = Math.round( clamp( 84 + brightness * 0.93, 0, 255 ) );
-			albedoData[ index * 4 + 1 ] = Math.round( clamp( 99.3 + brightness, 0, 255 ) );
-			albedoData[ index * 4 + 2 ] = Math.round( clamp( 106.3 + brightness * 1.05, 0, 255 ) );
+			heightMap[ index ] = broad * 0.06 + medium * 0.025 + strata * 0.009 + grain * 0.003 - softCrack * 0.13 - crackHalo * poleFade * 0.012;
+			albedoData[ index * 4 ] = Math.round( clamp( 80 + brightness * 0.96, 0, 255 ) );
+			albedoData[ index * 4 + 1 ] = Math.round( clamp( 95 + brightness, 0, 255 ) );
+			albedoData[ index * 4 + 2 ] = Math.round( clamp( 102 + brightness * 1.04, 0, 255 ) );
 			albedoData[ index * 4 + 3 ] = 255;
 
 		}
@@ -261,8 +313,8 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 				2 * sampleHeight( heightMap, size, x, y - 1 ) -
 				sampleHeight( heightMap, size, x + 1, y - 1 )
 			) / 8;
-			const normalX = - gradientX * size * 0.05;
-			const normalY = - gradientY * size * 0.05;
+			const normalX = - gradientX * size * 0.2;
+			const normalY = - gradientY * size * 0.2;
 			const inverseLength = 1 / Math.hypot( normalX, normalY, 1 );
 
 			normalData[ index * 4 ] = Math.round( ( normalX * inverseLength * 0.5 + 0.5 ) * 255 );

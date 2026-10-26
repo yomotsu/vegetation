@@ -198,6 +198,75 @@ function rowStripeAmplitude( data: Uint8Array, width: number, height: number, cy
 
 }
 
+function darkPixelComponents( data: Uint8Array, width: number, threshold: number ): { coverage: number; count: number; largest: number } {
+
+	const pixelCount = width * width;
+	const visited = new Uint8Array( pixelCount );
+	const queue = new Int32Array( pixelCount );
+	let darkPixels = 0;
+	let count = 0;
+	let largest = 0;
+
+	for ( let index = 0; index < pixelCount; index ++ ) {
+
+		const offset = index * 4;
+		const luminance = ( data[ offset ]! + data[ offset + 1 ]! + data[ offset + 2 ]! ) / 3;
+
+		if ( luminance < threshold ) darkPixels ++;
+
+	}
+
+	for ( let start = 0; start < pixelCount; start ++ ) {
+
+		const startOffset = start * 4;
+		const startLuminance = ( data[ startOffset ]! + data[ startOffset + 1 ]! + data[ startOffset + 2 ]! ) / 3;
+
+		if ( visited[ start ] || startLuminance >= threshold ) continue;
+
+		let readIndex = 0;
+		let writeIndex = 0;
+		queue[ writeIndex ++ ] = start;
+		visited[ start ] = 1;
+
+		while ( readIndex < writeIndex ) {
+
+			const index = queue[ readIndex ++ ]!;
+			const x = index % width;
+			const y = Math.floor( index / width );
+			const neighbors = [
+				y > 0 ? index - width : - 1,
+				y + 1 < width ? index + width : - 1,
+				x > 0 ? index - 1 : - 1,
+				x + 1 < width ? index + 1 : - 1,
+			];
+
+			for ( const neighbor of neighbors ) {
+
+				if ( neighbor < 0 || visited[ neighbor ] ) continue;
+
+				const offset = neighbor * 4;
+				const luminance = ( data[ offset ]! + data[ offset + 1 ]! + data[ offset + 2 ]! ) / 3;
+
+				if ( luminance < threshold ) {
+
+					visited[ neighbor ] = 1;
+					queue[ writeIndex ++ ] = neighbor;
+
+				}
+
+			}
+
+		}
+
+		largest = Math.max( largest, writeIndex );
+		if ( writeIndex >= 20 ) count ++;
+
+	}
+
+	return { coverage: darkPixels / pixelCount, count, largest: largest / pixelCount };
+
+}
+
 function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): number {
 
 	const edges = new Map<string, number>();
@@ -353,6 +422,43 @@ describe( 'procedural rock data', () => {
 			}
 
 		}
+
+	} );
+
+	it( 'bakes soft upper light and concavity shading into rock vertex color', () => {
+
+		const data = generateRockData( { seed: 9 } );
+		const mesh = data.lods[ 0 ]!;
+		let upperColor = 0;
+		let upperCount = 0;
+		let lowerColor = 0;
+		let lowerCount = 0;
+		let minimumColor = Infinity;
+
+		for ( let vertex = 0; vertex < vertexCount( mesh ); vertex ++ ) {
+
+			const color = mesh.colors[ vertex * 3 ]!;
+			const y = mesh.positions[ vertex * 3 + 1 ]!;
+			minimumColor = Math.min( minimumColor, color );
+
+			if ( y > data.bounds.height * 0.7 ) {
+
+				upperColor += color;
+				upperCount ++;
+
+			} else if ( y > 0 && y < data.bounds.height * 0.35 ) {
+
+				lowerColor += color;
+				lowerCount ++;
+
+			}
+
+		}
+
+		expect( upperCount ).toBeGreaterThan( 0 );
+		expect( lowerCount ).toBeGreaterThan( 0 );
+		expect( upperColor / upperCount ).toBeGreaterThan( lowerColor / lowerCount );
+		expect( minimumColor ).toBeLessThan( 0.98 );
 
 	} );
 
@@ -526,11 +632,11 @@ describe( 'procedural rock data', () => {
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeLessThan( 2 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height ) ).toBeGreaterThan( 0.6 );
 		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 2.5 );
-		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 72 );
-		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 88 );
-		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 35 );
+		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 75 );
+		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 87 );
+		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 12 );
 		expect( normalMean[ 2 ] ).toBeGreaterThan( 220 );
-		expect( normalMean[ 2 ] ).toBeLessThan( 246 );
+		expect( normalMean[ 2 ] ).toBeLessThan( 254 );
 
 		let averageRed = 0;
 		let averageGreen = 0;
@@ -561,32 +667,15 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'uses repeat-wrapped plate textures with reference crack coverage and UV density', () => {
+	it( 'uses one non-repeating stone surface with sparse open cracks', () => {
 
 		const textures = createRockTextures( 9 );
 		const rock = generateRockData( { seed: 9 } );
-		const lowPixels = [ 0, 0, 0 ];
-		let lowPixelCount = 0;
+		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 68 );
 		let edgeDifference = 0;
 
 		expect( textures.albedo.wrap ).toBe( 'repeat' );
 		expect( textures.normal.wrap ).toBe( 'repeat' );
-
-		for ( let offset = 0; offset < textures.albedo.data.length; offset += 4 ) {
-
-			const luminance = ( textures.albedo.data[ offset ]! + textures.albedo.data[ offset + 1 ]! + textures.albedo.data[ offset + 2 ]! ) / 3;
-
-			if ( luminance >= 80 ) continue;
-
-			lowPixelCount ++;
-			lowPixels[ 0 ]! += textures.albedo.data[ offset ]!;
-			lowPixels[ 1 ]! += textures.albedo.data[ offset + 1 ]!;
-			lowPixels[ 2 ]! += textures.albedo.data[ offset + 2 ]!;
-
-		}
-
-		const lowPixelCoverage = lowPixelCount / ( textures.albedo.width * textures.albedo.height );
-		const lowPixelMean = lowPixels.map( ( value ) => value / lowPixelCount );
 
 		for ( let position = 0; position < textures.albedo.width; position ++ ) {
 
@@ -606,12 +695,11 @@ describe( 'procedural rock data', () => {
 
 		const meanEdgeDifference = edgeDifference / ( textures.albedo.width * 6 );
 
-		expect( lowPixelCoverage ).toBeGreaterThanOrEqual( 0.075 );
-		expect( lowPixelCoverage ).toBeLessThanOrEqual( 0.14 );
+		expect( darkRegions.coverage ).toBeGreaterThan( 0.002 );
+		expect( darkRegions.coverage ).toBeLessThan( 0.06 );
+		expect( darkRegions.count ).toBeLessThanOrEqual( 8 );
+		expect( darkRegions.largest ).toBeLessThan( 0.025 );
 		expect( meanEdgeDifference ).toBeLessThan( 3 );
-		expect( Math.abs( lowPixelMean[ 0 ]! - 65.52 ) ).toBeLessThanOrEqual( 8 );
-		expect( Math.abs( lowPixelMean[ 1 ]! - 77.95 ) ).toBeLessThanOrEqual( 8 );
-		expect( Math.abs( lowPixelMean[ 2 ]! - 84.21 ) ).toBeLessThanOrEqual( 8 );
 
 		const mesh = rock.lods[ 0 ]!;
 		const uValues = Array.from( mesh.uvs ).filter( ( _, index ) => index % 2 === 0 );
@@ -619,10 +707,10 @@ describe( 'procedural rock data', () => {
 		const uRange = Math.max( ...uValues ) - Math.min( ...uValues );
 		const vRange = Math.max( ...vValues ) - Math.min( ...vValues );
 
-		expect( uRange ).toBeGreaterThanOrEqual( 1.5 );
-		expect( uRange ).toBeLessThanOrEqual( 2.5 );
-		expect( vRange ).toBeGreaterThanOrEqual( 1.5 );
-		expect( vRange ).toBeLessThanOrEqual( 2.5 );
+		expect( uRange ).toBeGreaterThanOrEqual( 0.9 );
+		expect( uRange ).toBeLessThanOrEqual( 1.5 );
+		expect( vRange ).toBeGreaterThanOrEqual( 0.9 );
+		expect( vRange ).toBeLessThanOrEqual( 1.1 );
 
 	} );
 
