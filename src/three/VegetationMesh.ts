@@ -1,5 +1,5 @@
 import { BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
-import type { Camera, ColorRepresentation, MeshStandardMaterial } from 'three';
+import type { Camera, Color, ColorRepresentation, MeshStandardMaterial } from 'three';
 import type { LodLevel } from '../core/types';
 import { VegetationAsset } from './VegetationAsset';
 
@@ -8,8 +8,6 @@ const up = new Vector3( 0, 1, 0 );
 function createEmptyGeometry( source: BufferGeometry ): BufferGeometry {
 
 	const geometry = new BufferGeometry();
-	geometry.setAttribute( 'position', source.getAttribute( 'position' ) );
-	geometry.setIndex( [] );
 	geometry.setDrawRange( 0, 0 );
 	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
 
@@ -49,6 +47,9 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 	private partMeshes: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
 	private shadowCast = false;
 	private shadowReceive = false;
+	private readonly ownsAsset: boolean;
+	private readonly emptyGeometry: BufferGeometry | null;
+	private disposed = false;
 
 	declare castShadow: boolean;
 	declare receiveShadow: boolean;
@@ -56,7 +57,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 	readonly asset: VegetationAsset;
 	readonly lod: LodLevel;
 
-	constructor( asset: VegetationAsset, lod = 0 ) {
+	constructor( asset: VegetationAsset, lod = 0, ownsAsset = false ) {
 
 		const level = Math.floor( Math.max( 0, Math.min( 4, Number.isFinite( lod ) ? lod : 0 ) ) ) as LodLevel;
 		const parts = asset.getParts( level );
@@ -66,9 +67,12 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 			throw new Error( `Vegetation LOD ${ level } has no parts` );
 		}
 
-		super( level === 4 ? createEmptyGeometry( first.geometry ) : first.geometry, first.material );
+		const rootGeometry = level === 4 ? createEmptyGeometry( first.geometry ) : first.geometry;
+		super( rootGeometry, first.material );
 		this.asset = asset;
 		this.lod = level;
+		this.ownsAsset = ownsAsset;
+		this.emptyGeometry = level === 4 ? rootGeometry : null;
 		this.name = first.part;
 		const castShadow = this.castShadow;
 		const receiveShadow = this.receiveShadow;
@@ -108,12 +112,27 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 			billboard.name = part.part;
 			billboard.castShadow = this.shadowCast;
 			billboard.receiveShadow = this.shadowReceive;
+			const shadowCameras = new WeakSet<Camera>();
+			const inverseWorldMatrix = new Matrix4();
+			billboard.onBeforeShadow = ( renderer, object, camera, shadowCamera ) => {
+
+				shadowCameras.add( shadowCamera );
+
+			};
+			billboard.onAfterShadow = ( renderer, object, camera, shadowCamera ) => {
+
+				shadowCameras.delete( shadowCamera );
+
+			};
 			billboard.onBeforeRender = ( renderer, scene, camera ) => {
 
-				camera.updateWorldMatrix( true, false );
-				this.updateWorldMatrix( true, false );
-				camera.getWorldPosition( cameraPosition );
-				this.worldToLocal( cameraPosition );
+				if ( shadowCameras.has( camera ) ) {
+					return;
+				}
+
+				cameraPosition.setFromMatrixPosition( camera.matrixWorld );
+				inverseWorldMatrix.copy( this.matrixWorld ).invert();
+				cameraPosition.applyMatrix4( inverseWorldMatrix );
 				billboard.rotation.set( 0, Math.atan2( cameraPosition.x, cameraPosition.z ), 0 );
 				billboard.updateMatrixWorld( true );
 
@@ -152,13 +171,34 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 	}
 
+	getColor( part: string ): Color {
+
+		return this.asset.getColor( part );
+
+	}
+
 	setColor( part: string, color: ColorRepresentation ): void {
 
 		this.asset.setColor( part, color );
 
 	}
 
-	static fromAsset( asset: VegetationAsset, distances: number[] ): LOD {
+	dispose(): void {
+
+		if ( this.disposed ) {
+			return;
+		}
+
+		this.disposed = true;
+		this.emptyGeometry?.dispose();
+
+		if ( this.ownsAsset ) {
+			this.asset.dispose();
+		}
+
+	}
+
+	static fromAsset( asset: VegetationAsset, distances: number[], ownsAsset = false ): LOD {
 
 		if ( distances.length !== 5 ) {
 
@@ -170,7 +210,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, MeshStandardMaterial> {
 
 		for ( let level = 0; level < 5; level ++ ) {
 
-			lod.addLevel( new VegetationMesh( asset, level ), distances[ level ]! );
+			lod.addLevel( new VegetationMesh( asset, level, ownsAsset ), distances[ level ]! );
 
 		}
 

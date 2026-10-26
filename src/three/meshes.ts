@@ -49,16 +49,16 @@ export class TreeMesh extends VegetationMesh {
 
 	constructor( options: TreeMeshOptions = {} ) {
 
-		super( generateTree( options ), options.lod );
+		super( generateTree( options ), options.lod, true );
 
 	}
 
 	static createLOD( options: TreeMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
-		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * ( options.height ?? 6 ) / 6 );
+		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * ( options.height ?? 7.5 ) / 7.5 );
 		const asset = generateTree( options );
 
-		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances );
+		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances, true );
 
 	}
 
@@ -78,7 +78,7 @@ export class RockMesh extends VegetationMesh {
 
 	constructor( options: RockMeshOptions = {} ) {
 
-		super( generateRock( options ), options.lod );
+		super( generateRock( options ), options.lod, true );
 
 	}
 
@@ -87,7 +87,7 @@ export class RockMesh extends VegetationMesh {
 		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * ( options.size ?? 6.4 ) / 6.4 );
 		const asset = generateRock( options );
 
-		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances );
+		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances, true );
 
 	}
 

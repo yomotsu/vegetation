@@ -1,6 +1,6 @@
 import { BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
-import { describe, expect, it } from 'vitest';
-import { TreeMesh, generateTree } from '../../src/three/meshes';
+import { describe, expect, it, vi } from 'vitest';
+import { RockMesh, TreeMesh, generateTree } from '../../src/three/meshes';
 import { orientBillboardInstances, VegetationMesh } from '../../src/three/VegetationMesh';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 
@@ -57,7 +57,57 @@ describe( 'tree meshes', () => {
 
 	} );
 
-	it( 'turns the LOD4 quad toward the camera without changing the tree transform', () => {
+	it( 'exposes part colors and disposes assets owned by generated meshes', () => {
+
+		const mesh = new TreeMesh( { seed: 1 } );
+		const disposeAsset = vi.spyOn( mesh.asset, 'dispose' );
+
+		expect( mesh.getColor( 'leaf' ).getHex() ).toBe( 0x2f7d1f );
+		mesh.setColor( 'leaf', 0xc0392b );
+		expect( mesh.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
+
+		mesh.dispose();
+		expect( disposeAsset ).toHaveBeenCalledOnce();
+
+	} );
+
+	it( 'disposes assets owned by generated rock meshes and rock LOD sets', () => {
+
+		const rock = new RockMesh( { seed: 1, size: 1 } );
+		const rockDispose = vi.spyOn( rock.asset, 'dispose' );
+		rock.dispose();
+		expect( rockDispose ).toHaveBeenCalledOnce();
+
+		const lod = RockMesh.createLOD( { seed: 1, size: 1 } );
+		const asset = ( lod.levels[ 0 ]!.object as VegetationMesh ).asset;
+		const lodDispose = vi.spyOn( asset, 'dispose' );
+		( lod.levels[ 0 ]!.object as VegetationMesh ).dispose();
+		expect( lodDispose ).toHaveBeenCalledOnce();
+
+	} );
+
+	it( 'uses a private, attribute-free LOD4 root geometry and disposes it', () => {
+
+		const asset = generateTree( { seed: 1 } );
+		const mesh = new VegetationMesh( asset, 4 );
+		const emptyGeometry = mesh.geometry;
+		const disposeGeometry = vi.fn();
+		const disposeAsset = vi.spyOn( asset, 'dispose' );
+
+		emptyGeometry.addEventListener( 'dispose', disposeGeometry );
+		expect( emptyGeometry.getAttribute( 'position' ) ).toBeUndefined();
+		expect( emptyGeometry.getIndex() ).toBeNull();
+		expect( emptyGeometry ).not.toBe( mesh.parts[ 0 ]!.geometry );
+
+		mesh.dispose();
+
+		expect( disposeGeometry ).toHaveBeenCalledOnce();
+		expect( disposeAsset ).not.toHaveBeenCalled();
+		asset.dispose();
+
+	} );
+
+	it( 'turns the LOD4 quad toward the render camera but skips shadow cameras', () => {
 
 		const asset = generateTree( { seed: 1 } );
 		const mesh = new VegetationMesh( asset, 4 );
@@ -68,6 +118,22 @@ describe( 'tree meshes', () => {
 		camera.position.copy( mesh.localToWorld( new Vector3( 10, 2, 0 ) ) );
 		camera.updateMatrixWorld( true );
 		const part = mesh.parts[ 0 ]!;
+		const shadowCamera = new PerspectiveCamera();
+		shadowCamera.position.set( - 10, 0, 0 );
+		shadowCamera.updateMatrixWorld( true );
+		const updateMeshWorld = vi.spyOn( mesh, 'updateWorldMatrix' );
+		const updateCameraWorld = vi.spyOn( camera, 'updateWorldMatrix' );
+		const updateShadowCameraWorld = vi.spyOn( shadowCamera, 'updateWorldMatrix' );
+
+		part.onBeforeShadow( undefined as never, undefined as never, camera, shadowCamera, part.geometry, undefined as never, undefined as never );
+		part.onBeforeRender( undefined as never, undefined as never, shadowCamera, part.geometry, part.material, undefined as never );
+
+		expect( part.rotation.y ).toBe( 0 );
+		expect( updateMeshWorld ).not.toHaveBeenCalled();
+		expect( updateCameraWorld ).not.toHaveBeenCalled();
+		expect( updateShadowCameraWorld ).not.toHaveBeenCalled();
+
+		part.onAfterShadow( undefined as never, undefined as never, camera, shadowCamera, part.geometry, undefined as never, undefined as never );
 
 		part.onBeforeRender( undefined as never, undefined as never, camera, part.geometry, part.material, undefined as never );
 
@@ -133,19 +199,22 @@ describe( 'tree meshes', () => {
 
 	} );
 
-	it( 'creates five per-part LOD levels with shared materials and scaled default distances', () => {
+	it( 'creates owned per-part LOD levels scaled from the real default tree height', () => {
 
-		const lod = TreeMesh.createLOD( { seed: 1, height: 12 } );
+		const lod = TreeMesh.createLOD( { seed: 1 } );
 		const levels = lod.levels;
 		const asset = ( levels[ 0 ]!.object as VegetationMesh ).asset;
 
 		expect( lod ).toBeInstanceOf( LOD );
 		expect( levels ).toHaveLength( 5 );
-		expect( levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 30, 60, 120, 240 ] );
+		expect( levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 15, 30, 60, 120 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => part.material === asset.materials[ asset.data.parts.findIndex( ( definition ) => definition.name === part.name ) ] ) ) ).toBe( true );
 		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 2, 2, 1, 1 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => Array.isArray( part.material ) === false ) ) ).toBe( true );
 		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).lod ) ).toEqual( [ 0, 1, 2, 3, 4 ] );
+		const disposeAsset = vi.spyOn( asset, 'dispose' );
+		( levels[ 4 ]!.object as VegetationMesh ).dispose();
+		expect( disposeAsset ).toHaveBeenCalledOnce();
 
 	} );
 
