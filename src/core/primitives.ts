@@ -351,7 +351,7 @@ export function addRockShell(
 		const maximumU = Math.max( points[ 0 ].uv[ 0 ], points[ 1 ].uv[ 0 ], points[ 2 ].uv[ 0 ] );
 		const crossesSeam = maximumU - minimumU > 0.5;
 
-		return points.map( ( point ) => [ crossesSeam && point.uv[ 0 ] < 0.5 ? point.uv[ 0 ] + 1 : point.uv[ 0 ], point.uv[ 1 ] ] ) as [ [ number, number ], [ number, number ], [ number, number ] ];
+		return points.map( ( point ) => [ crossesSeam && point.uv[ 0 ] <= 0.5 ? point.uv[ 0 ] + 1 : point.uv[ 0 ], point.uv[ 1 ] ] ) as [ [ number, number ], [ number, number ], [ number, number ] ];
 
 	};
 

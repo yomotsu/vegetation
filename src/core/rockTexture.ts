@@ -128,28 +128,28 @@ function addCrackPath(
 
 }
 
-function createCracks( seed: number, dominantAngle: number ): CrackSegment[] {
+function createFineCracks( seed: number, dominantAngle: number, detailMask: NoiseField ): CrackSegment[] {
 
 	const random = createRandom( seed + 907 );
 	const segments: CrackSegment[] = [];
-	const count = 3 + Math.floor( random() * 2 );
-	let branchAdded = false;
+	const count = 150;
 
 	for ( let index = 0; index < count; index ++ ) {
 
-		const start = { u: 0.12 + random() * 0.76, v: 0.19 + random() * 0.62 };
-		const angle = dominantAngle + ( random() - 0.5 ) * 0.82 + ( random() < 0.5 ? Math.PI : 0 );
-		const width = 0.0075 + random() * 0.0025;
-		const points = addCrackPath( segments, start, angle, 0.28 + random() * 0.25, 6 + Math.floor( random() * 3 ), width, random );
+		const start = { u: random(), v: 0.12 + random() * 0.76 };
+		if ( detailMask( start.u, start.v ) < 0.28 ) continue;
+		const angle = dominantAngle + ( random() - 0.5 ) * 1.5;
+		const width = 0.0035 + random() * 0.002;
+		const length = 0.025 + random() * 0.045;
+		const points = addCrackPath( segments, start, angle, length, 2 + Math.floor( random() * 3 ), width, random );
 
-		if ( ! branchAdded && random() < 0.42 ) {
+		if ( random() < 0.46 ) {
 
-			const branchIndex = 2 + Math.floor( random() * ( points.length - 3 ) );
+			const branchIndex = Math.floor( random() * ( points.length - 1 ) );
 			const branchStart = points[ branchIndex ]!;
-			const branchAngle = angle + ( random() < 0.5 ? - 1 : 1 ) * ( 0.58 + random() * 0.48 );
+			const branchAngle = angle + ( random() < 0.5 ? - 1 : 1 ) * ( 0.55 + random() * 0.55 );
 
-			addCrackPath( segments, branchStart, branchAngle, 0.11 + random() * 0.09, 3 + Math.floor( random() * 2 ), width * 0.78, random );
-			branchAdded = true;
+			addCrackPath( segments, branchStart, branchAngle, 0.012 + random() * 0.022, 2 + Math.floor( random() * 2 ), width * 0.78, random );
 
 		}
 
@@ -253,7 +253,10 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 	const fineBandNoise = createPeriodicNoise( seedOffset + 73, bandCount * 5, 1 );
 	const grainNoise = createPeriodicNoise( seedOffset + 89, 80, 80 );
 	const fineGrainNoise = createPeriodicNoise( seedOffset + 101, 128, 128 );
-	const cracks = createCracks( seed, dominantAngle );
+	const detailMaskNoise = createPeriodicNoise( seedOffset + 113, 3, 3 );
+	const streakNoise = createPeriodicNoise( seedOffset + 127, 24, 72 );
+	const detailMask = ( u: number, v: number ): number => smoothstep( - 0.25, 0.5, detailMaskNoise( u, v ) + 1 );
+	const cracks = createFineCracks( seed, dominantAngle, detailMask );
 	const crackDistances = createCrackDistanceMap( size, cracks );
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
@@ -271,16 +274,21 @@ export function createRockTextures( seed: number, size = 256 ): { albedo: Textur
 			const broad = broadNoise( u, v );
 			const medium = mediumNoise( u, v );
 			const grain = grainNoise( u, v ) * 0.68 + fineGrainNoise( u, v ) * 0.32;
+			const detail = detailMask( u, v );
+			const localizedStrata = strata * ( 0.2 + detail * 0.8 );
+			const along = fract( direction[ 0 ] * u + direction[ 1 ] * v + warp * 0.015 );
+			const across = fract( - direction[ 1 ] * u + direction[ 0 ] * v + warp * 0.02 );
+			const fineStreak = ( 1 - smoothstep( 0.2, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
 			const crackDistance = crackDistances[ y * size + x ]!;
-			const crack = 1 - smoothstep( 0.58, 1.32, crackDistance );
-			const crackHalo = 1 - smoothstep( 1.1, 3.4, crackDistance );
+			const crack = 1 - smoothstep( 0.48, 1.25, crackDistance );
+			const crackHalo = 1 - smoothstep( 1.2, 3.2, crackDistance );
 			const poleFade = smoothstep( 0, 0.075, v ) * smoothstep( 0, 0.075, 1 - v );
-			const softCrack = crack * poleFade;
-			const shading = broad * 15 + medium * 5.6 + strata * 3 + grain * 5.1;
-			const brightness = shading - softCrack * 27 - crackHalo * poleFade * 4.5;
+			const fineCrack = crack * poleFade * detail;
+			const fineCrackHalo = crackHalo * poleFade * detail;
+			const brightness = broad * 15 + medium * 5.6 + localizedStrata * 2.2 + grain * 5.1 - fineStreak * 6 - fineCrack * 18 - fineCrackHalo * 3;
 			const index = y * size + x;
 
-			heightMap[ index ] = broad * 0.06 + medium * 0.025 + strata * 0.009 + grain * 0.003 - softCrack * 0.13 - crackHalo * poleFade * 0.012;
+			heightMap[ index ] = broad * 0.06 + medium * 0.025 + localizedStrata * 0.007 + grain * 0.005 - fineStreak * 0.003 - fineCrack * 0.025 - fineCrackHalo * 0.004;
 			albedoData[ index * 4 ] = Math.round( clamp( 80 + brightness * 0.96, 0, 255 ) );
 			albedoData[ index * 4 + 1 ] = Math.round( clamp( 95 + brightness, 0, 255 ) );
 			albedoData[ index * 4 + 2 ] = Math.round( clamp( 102 + brightness * 1.04, 0, 255 ) );

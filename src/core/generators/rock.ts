@@ -393,18 +393,12 @@ function refineVisibleRockSurface(
 		const offsets = vertices.map( ( vertex ) => vertex * 3 );
 
 		const center: Vec3 = [ 0, 0, 0 ];
-		const minimum = [ Infinity, Infinity, Infinity ];
-		const maximum = [ - Infinity, - Infinity, - Infinity ];
-
 		for ( const vertexOffset of offsets ) {
 
 			for ( let axis = 0; axis < 3; axis ++ ) {
 
 				const value = mesh.positions[ vertexOffset + axis ]!;
 				center[ axis ] = center[ axis ]! + value / 3;
-				minimum[ axis ] = Math.min( minimum[ axis ]!, value );
-				maximum[ axis ] = Math.max( maximum[ axis ]!, value );
-
 			}
 
 		}
@@ -425,7 +419,15 @@ function refineVisibleRockSurface(
 			Math.max( ( direction[ 1 ] * sampledRadius * verticalScale + groundOffset ) * heightScale - burialHeight, skirtFloor ),
 			direction[ 2 ] * sampledRadius,
 		];
-		const position = sampledPosition.map( ( value, axis ) => clamp( value, minimum[ axis ]!, maximum[ axis ]! ) ) as Vec3;
+		const displacement: Vec3 = [ sampledPosition[ 0 ] - center[ 0 ], sampledPosition[ 1 ] - center[ 1 ], sampledPosition[ 2 ] - center[ 2 ] ];
+		const displacementLength = Math.hypot( displacement[ 0 ], displacement[ 1 ], displacement[ 2 ] );
+		const maximumDisplacement = bounds.radius * 0.04;
+		const amount = displacementLength > maximumDisplacement ? maximumDisplacement / displacementLength : 1;
+		const position: Vec3 = [
+			center[ 0 ] + displacement[ 0 ] * amount,
+			center[ 1 ] + displacement[ 1 ] * amount,
+			center[ 2 ] + displacement[ 2 ] * amount,
+		];
 
 		if ( position[ 1 ] <= 0 ) continue;
 
@@ -468,6 +470,12 @@ function refineVisibleRockSurface(
 		const centerNormal = [ 0, 0, 0 ];
 		const centerUv = [ 0, 0 ];
 		const centerColor = [ 0, 0, 0 ];
+		const uValues = [
+			mesh.uvs[ first * 2 ]!,
+			mesh.uvs[ second * 2 ]!,
+			mesh.uvs[ third * 2 ]!,
+		];
+		const crossesSeam = Math.max( ...uValues ) - Math.min( ...uValues ) > 0.5;
 		let centerWindWeight = 0;
 
 		for ( const vertex of [ first, second, third ] ) {
@@ -482,7 +490,8 @@ function refineVisibleRockSurface(
 
 			}
 
-			centerUv[ 0 ]! += mesh.uvs[ uvOffset ]! / 3;
+			const u = mesh.uvs[ uvOffset ]!;
+			centerUv[ 0 ]! += ( crossesSeam && u <= 0.5 ? u + 1 : u ) / 3;
 			centerUv[ 1 ]! += mesh.uvs[ uvOffset + 1 ]! / 3;
 			centerWindWeight += mesh.windWeight[ vertex ]! / 3;
 
@@ -600,7 +609,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		const coarse = noise( direction[ 0 ] * 1.05 + noiseOffset[ 0 ]!, direction[ 1 ] * 1.05 + noiseOffset[ 1 ]!, direction[ 2 ] * 1.05 + noiseOffset[ 2 ]! );
 		const medium = noise( direction[ 0 ] * 2.65 - noiseOffset[ 2 ]!, direction[ 1 ] * 2.65 + noiseOffset[ 0 ]!, direction[ 2 ] * 2.65 - noiseOffset[ 1 ]! );
 		const detail = noise( direction[ 0 ] * 5.1 + noiseOffset[ 1 ]!, direction[ 1 ] * 5.1 - noiseOffset[ 2 ]!, direction[ 2 ] * 5.1 + noiseOffset[ 0 ]! );
-		const relief = noise( direction[ 0 ] * 8.8 - noiseOffset[ 0 ]!, direction[ 1 ] * 8.8 + noiseOffset[ 2 ]!, direction[ 2 ] * 8.8 - noiseOffset[ 1 ]! );
+		const relief = noise( direction[ 0 ] * 6.8 - noiseOffset[ 0 ]!, direction[ 1 ] * 6.8 + noiseOffset[ 2 ]!, direction[ 2 ] * 6.8 - noiseOffset[ 1 ]! );
 		const angle = Math.atan2( direction[ 2 ], direction[ 0 ] );
 		const lobes = Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.075 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.035;
 		let deformedRadius = radius * clamp( 0.97 + ( coarse * 0.25 + medium * 0.075 + detail * 0.012 + lobes ) * roughness, 0.62, 1.34 );
@@ -614,7 +623,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		}
 
 		const reliefExposure = 0.35 + smoothstep( 0.08, 0.65, Math.abs( direction[ 1 ] ) ) * 0.65;
-		deformedRadius = clamp( deformedRadius + radius * relief * 0.08 * roughness * reliefExposure, radius * 0.62, radius * 1.34 );
+		deformedRadius = clamp( deformedRadius + radius * relief * 0.072 * roughness * reliefExposure, radius * 0.62, radius * 1.34 );
 
 		const floorHeight = - radius * verticalScale * 0.55;
 

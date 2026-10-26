@@ -165,6 +165,45 @@ function meanNeighborDelta( data: Uint8Array, width: number, height: number ): n
 
 }
 
+function tileTextureContrasts( data: Uint8Array, width: number, tileSize: number ): number[] {
+
+	const tileCount = width / tileSize;
+	const totals = new Float64Array( tileCount * tileCount );
+	const counts = new Uint32Array( tileCount * tileCount );
+	const luminanceAt = ( x: number, y: number ): number => {
+
+		const offset = ( y * width + x ) * 4;
+		return ( data[ offset ]! + data[ offset + 1 ]! + data[ offset + 2 ]! ) / 3;
+
+	};
+
+	for ( let y = 0; y < width; y ++ ) {
+
+		for ( let x = 0; x < width; x ++ ) {
+
+			const tileX = Math.floor( x / tileSize );
+			const tileY = Math.floor( y / tileSize );
+			const tile = tileY * tileCount + tileX;
+			const current = luminanceAt( x, y );
+
+			if ( x + 1 < ( tileX + 1 ) * tileSize ) {
+				totals[ tile ]! += Math.abs( current - luminanceAt( x + 1, y ) );
+				counts[ tile ]! ++;
+			}
+
+			if ( y + 1 < ( tileY + 1 ) * tileSize ) {
+				totals[ tile ]! += Math.abs( current - luminanceAt( x, y + 1 ) );
+				counts[ tile ]! ++;
+			}
+
+		}
+
+	}
+
+	return Array.from( totals, ( total, index ) => total / counts[ index ]! );
+
+}
+
 function rowStripeAmplitude( data: Uint8Array, width: number, height: number, cycles: number ): number {
 
 	const rows = new Float64Array( height );
@@ -198,7 +237,7 @@ function rowStripeAmplitude( data: Uint8Array, width: number, height: number, cy
 
 }
 
-function darkPixelComponents( data: Uint8Array, width: number, threshold: number ): { coverage: number; count: number; largest: number } {
+function darkPixelComponents( data: Uint8Array, width: number, threshold: number ): { coverage: number; count: number; largest: number; span: number } {
 
 	const pixelCount = width * width;
 	const visited = new Uint8Array( pixelCount );
@@ -206,6 +245,7 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 	let darkPixels = 0;
 	let count = 0;
 	let largest = 0;
+	let span = 0;
 
 	for ( let index = 0; index < pixelCount; index ++ ) {
 
@@ -225,6 +265,10 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 
 		let readIndex = 0;
 		let writeIndex = 0;
+		let minimumX = width;
+		let maximumX = 0;
+		let minimumY = width;
+		let maximumY = 0;
 		queue[ writeIndex ++ ] = start;
 		visited[ start ] = 1;
 
@@ -233,6 +277,10 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 			const index = queue[ readIndex ++ ]!;
 			const x = index % width;
 			const y = Math.floor( index / width );
+			minimumX = Math.min( minimumX, x );
+			maximumX = Math.max( maximumX, x );
+			minimumY = Math.min( minimumY, y );
+			maximumY = Math.max( maximumY, y );
 			const neighbors = [
 				y > 0 ? index - width : - 1,
 				y + 1 < width ? index + width : - 1,
@@ -259,15 +307,16 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 		}
 
 		largest = Math.max( largest, writeIndex );
+		span = Math.max( span, Math.hypot( maximumX - minimumX + 1, maximumY - minimumY + 1 ) / width );
 		if ( writeIndex >= 20 ) count ++;
 
 	}
 
-	return { coverage: darkPixels / pixelCount, count, largest: largest / pixelCount };
+	return { coverage: darkPixels / pixelCount, count, largest: largest / pixelCount, span };
 
 }
 
-function getSurfaceStats( mesh: MeshData ): { relief: number; spacing: number } {
+function getSurfaceStats( mesh: MeshData ): { relief: number; percentileRelief: number; spacing: number } {
 
 	const groups = new Map<string, number>();
 	const vertexGroups = new Int32Array( vertexCount( mesh ) );
@@ -353,9 +402,11 @@ function getSurfaceStats( mesh: MeshData ): { relief: number; spacing: number } 
 	}
 
 	spacings.sort( ( first, second ) => first - second );
+	deviations.sort( ( first, second ) => first - second );
 
 	return {
 		relief: deviations.reduce( ( total, value ) => total + value, 0 ) / deviations.length,
+		percentileRelief: deviations[ Math.floor( ( deviations.length - 1 ) * 0.95 ) ]!,
 		spacing: spacings[ Math.floor( spacings.length / 2 ) ]!,
 	};
 
@@ -506,6 +557,14 @@ describe( 'procedural rock data', () => {
 			expect( stats.spacing ).toBeLessThanOrEqual( reference.spacing * 1.35 );
 
 		}
+
+	} );
+
+	it( 'keeps seed 2 relief as gentle bumps instead of stacked ledges', () => {
+
+		const stats = getSurfaceStats( generateRockData( { seed: 2 } ).lods[ 0 ]! );
+
+		expect( stats.percentileRelief ).toBeLessThan( 0.052 );
 
 	} );
 
@@ -784,7 +843,7 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'uses one non-repeating stone surface with sparse open cracks', () => {
+	it( 'uses one non-repeating stone surface with localized dark detail', () => {
 
 		const textures = createRockTextures( 9 );
 		const rock = generateRockData( { seed: 9 } );
@@ -814,7 +873,7 @@ describe( 'procedural rock data', () => {
 
 		expect( darkRegions.coverage ).toBeGreaterThan( 0.002 );
 		expect( darkRegions.coverage ).toBeLessThan( 0.06 );
-		expect( darkRegions.count ).toBeLessThanOrEqual( 8 );
+		expect( darkRegions.count ).toBeLessThanOrEqual( 20 );
 		expect( darkRegions.largest ).toBeLessThan( 0.025 );
 		expect( meanEdgeDifference ).toBeLessThan( 3 );
 
@@ -828,6 +887,23 @@ describe( 'procedural rock data', () => {
 		expect( uRange ).toBeLessThanOrEqual( 1.5 );
 		expect( vRange ).toBeGreaterThanOrEqual( 0.9 );
 		expect( vRange ).toBeLessThanOrEqual( 1.1 );
+
+	} );
+
+	it( 'localizes fine stone detail and avoids bold long cracks', () => {
+
+		const rockOne = createRockTextures( 1 );
+		const textures = createRockTextures( 2 );
+		const contrasts = tileTextureContrasts( textures.albedo.data, textures.albedo.width, 32 ).sort( ( first, second ) => first - second );
+		const quietContrast = contrasts.slice( 0, 16 ).reduce( ( total, value ) => total + value, 0 ) / 16;
+		const detailedContrast = contrasts.slice( - 16 ).reduce( ( total, value ) => total + value, 0 ) / 16;
+		const rockOneDarkRegions = darkPixelComponents( rockOne.albedo.data, rockOne.albedo.width, 68 );
+		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 68 );
+
+		expect( detailedContrast ).toBeGreaterThan( quietContrast * 1.2 );
+		expect( rockOneDarkRegions.span ).toBeLessThan( 0.12 );
+		expect( darkRegions.largest ).toBeLessThan( 0.01 );
+		expect( darkRegions.span ).toBeLessThan( 0.12 );
 
 	} );
 
