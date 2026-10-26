@@ -28,7 +28,11 @@ function colorsFromOptions(
 	const colors: Record<string, ColorRepresentation> = {};
 
 	for ( const [ option, part ] of Object.entries( parts ) ) {
-		if ( options[ option ] !== undefined ) colors[ part ] = options[ option ]!;
+		if ( options[ option ] !== undefined ) {
+
+			colors[ part ] = options[ option ]!;
+
+		}
 	}
 
 	return colors;

@@ -199,9 +199,9 @@ export function addTube(
 
 		winds.push( opts.wind( t ) );
 
-		for ( let side = 0; side < sides; side ++ ) {
+		for ( let side = 0; side <= sides; side ++ ) {
 
-			const angle = side / sides * Math.PI * 2;
+			const angle = ( side % sides ) / sides * Math.PI * 2;
 			const radial = add( multiply( frame.u, Math.cos( angle ) ), multiply( frame.v, Math.sin( angle ) ) );
 			const normal = normalize( subtract( radial, multiply( frame.tangent, radiusSlopes[ i ]! ) ) );
 			const position = add( spine[ i ]!, multiply( radial, radius ) );
@@ -220,11 +220,10 @@ export function addTube(
 
 		for ( let side = 0; side < sides; side ++ ) {
 
-			const nextSide = ( side + 1 ) % sides;
 			const a = ringIndices[ segment ]![ side ]!;
-			const bIndex = ringIndices[ segment ]![ nextSide ]!;
+			const bIndex = ringIndices[ segment ]![ side + 1 ]!;
 			const c = ringIndices[ segment + 1 ]![ side ]!;
-			const d = ringIndices[ segment + 1 ]![ nextSide ]!;
+			const d = ringIndices[ segment + 1 ]![ side + 1 ]!;
 
 			b.addTriangle( a, bIndex, c );
 			b.addTriangle( bIndex, d, c );
@@ -492,7 +491,11 @@ export function addRockShell(
 			const uvs = triangleUvs( points );
 			const indices = points.map( ( point, index ) => {
 
-				if ( uvs[ index ]![ 0 ] === point.uv[ 0 ] ) return point.index!;
+				if ( uvs[ index ]![ 0 ] === point.uv[ 0 ] ) {
+
+					return point.index!;
+
+				}
 
 				const key = `${ point.geometryKey }:${ uvs[ index ]![ 0 ].toFixed( 10 ) }:${ uvs[ index ]![ 1 ].toFixed( 10 ) }`;
 				let vertexIndex = seamIndices.get( key );

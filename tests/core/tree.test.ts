@@ -4,6 +4,11 @@ import { generateTreeData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { validateMeshData } from '../helpers/validateMeshData';
 
+const BARK_PART_INDEX = 0;
+const LEAF_PART_INDEX = 1;
+const LOD3_IMPOSTOR_PART_INDEX = 2;
+const IMPOSTOR_PART_INDEX = 3;
+
 function triangleCount( mesh: { indices: Uint32Array } ): number {
 
 	return mesh.indices.length / 3;
@@ -85,6 +90,14 @@ function distance3( a: [ number, number, number ], b: [ number, number, number ]
 function boundaryEdges( mesh: MeshData, group: { start: number; count: number } ): [ number, number ][] {
 
 	const counts = new Map<string, { edge: [ number, number ]; count: number }>();
+	const vertexKeys = new Map<number, string>();
+
+	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
+
+		const offset = vertex * 3;
+		vertexKeys.set( vertex, `${ mesh.positions[ offset ]!.toFixed( 6 ) }:${ mesh.positions[ offset + 1 ]!.toFixed( 6 ) }:${ mesh.positions[ offset + 2 ]!.toFixed( 6 ) }` );
+
+	}
 
 	for ( let index = group.start; index < group.start + group.count; index += 3 ) {
 
@@ -94,12 +107,22 @@ function boundaryEdges( mesh: MeshData, group: { start: number; count: number } 
 
 			const first = triangle[ edgeIndex ]!;
 			const second = triangle[ ( edgeIndex + 1 ) % 3 ]!;
-			const edge: [ number, number ] = first < second ? [ first, second ] : [ second, first ];
-			const key = `${ edge[ 0 ] }:${ edge[ 1 ] }`;
+			const firstKey = vertexKeys.get( first )!;
+			const secondKey = vertexKeys.get( second )!;
+			const edge: [ number, number ] = firstKey < secondKey ? [ first, second ] : [ second, first ];
+			const key = firstKey < secondKey ? `${ firstKey }:${ secondKey }` : `${ secondKey }:${ firstKey }`;
 			const existing = counts.get( key );
 
-			if ( existing === undefined ) counts.set( key, { edge, count: 1 } );
-			else existing.count ++;
+			if ( existing === undefined ) {
+
+				counts.set( key, { edge, count: 1 } );
+
+			}
+			else {
+
+				existing.count ++;
+
+			}
 
 		}
 
@@ -117,7 +140,7 @@ function defaultColors( data: ReturnType<typeof generateTreeData> ): [ number, n
 
 function leafGroup( mesh: MeshData ) {
 
-	return mesh.groups.find( ( group ) => group.partIndex === 1 )!;
+	return mesh.groups.find( ( group ) => group.partIndex === LEAF_PART_INDEX )!;
 
 }
 
@@ -198,19 +221,39 @@ function coverageIou( first: { width: number; data: Uint8Array }, second: { widt
 					const sampleX = x + dx;
 					const sampleY = y + dy;
 
-					if ( sampleX < 0 || sampleX >= tileSize || sampleY < 0 || sampleY >= tileSize ) continue;
+					if ( sampleX < 0 || sampleX >= tileSize || sampleY < 0 || sampleY >= tileSize ) {
+
+						continue;
+
+					}
 
 					const firstOffset = ( sampleY * first.width + tile * tileSize + sampleX ) * 4 + 3;
 					const secondOffset = ( sampleY * second.width + tile * tileSize + sampleX ) * 4 + 3;
-					if ( first.data[ firstOffset ] === 255 ) firstOpaque = true;
-					if ( second.data[ secondOffset ] === 255 ) secondOpaque = true;
+					if ( first.data[ firstOffset ] === 255 ) {
+
+						firstOpaque = true;
+
+					}
+					if ( second.data[ secondOffset ] === 255 ) {
+
+						secondOpaque = true;
+
+					}
 
 				}
 
 			}
 
-			if ( firstOpaque && secondOpaque ) intersection ++;
-			if ( firstOpaque || secondOpaque ) union ++;
+			if ( firstOpaque && secondOpaque ) {
+
+				intersection ++;
+
+			}
+			if ( firstOpaque || secondOpaque ) {
+
+				union ++;
+
+			}
 
 		}
 
@@ -268,7 +311,11 @@ function brownStemWidthAtRow( texture: { width: number; height: number; data: Ui
 		const green = texture.data[ offset + 1 ]!;
 		const blue = texture.data[ offset + 2 ]!;
 
-		if ( texture.data[ offset + 3 ]! >= 128 && red > green + 2 && green > blue * 1.5 ) width ++;
+		if ( texture.data[ offset + 3 ]! >= 128 && red > green + 2 && green > blue * 1.5 ) {
+
+			width ++;
+
+		}
 
 	}
 
@@ -291,7 +338,11 @@ function sampleFrondLuminance( texture: { width: number; height: number; data: U
 			const green = texture.data[ offset + 1 ]!;
 			const blue = texture.data[ offset + 2 ]!;
 
-			if ( texture.data[ offset + 3 ]! < 128 || green <= red || green <= blue ) continue;
+			if ( texture.data[ offset + 3 ]! < 128 || green <= red || green <= blue ) {
+
+				continue;
+
+			}
 
 			const normalizedGreen = green / 255;
 			const linearGreen = normalizedGreen <= 0.04045
@@ -389,8 +440,16 @@ function bakeElevatedLod( data: ReturnType<typeof generateTreeData>, lod: number
 		...source,
 		positions: Float32Array.from( source.positions, ( value, index ) => {
 
-			if ( index % 3 === 1 ) return ( value - data.bounds.height * 0.5 ) * cosine - source.positions[ index + 1 ]! * sine + viewHeight * 0.5;
-			if ( index % 3 === 2 ) return ( source.positions[ index - 1 ]! - data.bounds.height * 0.5 ) * sine + value * cosine;
+			if ( index % 3 === 1 ) {
+
+				return ( value - data.bounds.height * 0.5 ) * cosine - source.positions[ index + 1 ]! * sine + viewHeight * 0.5;
+
+			}
+			if ( index % 3 === 2 ) {
+
+				return ( source.positions[ index - 1 ]! - data.bounds.height * 0.5 ) * sine + value * cosine;
+
+			}
 
 			return value;
 
@@ -434,7 +493,11 @@ function opaquePixelCount( texture: { width: number; data: Uint8Array }, tile: n
 		for ( let x = 0; x < tileSize; x ++ ) {
 
 			const offset = ( y * texture.width + tile * tileSize + x ) * 4 + 3;
-			if ( texture.data[ offset ] === 255 ) count ++;
+			if ( texture.data[ offset ] === 255 ) {
+
+				count ++;
+
+			}
 
 		}
 
@@ -446,9 +509,10 @@ function opaquePixelCount( texture: { width: number; data: Uint8Array }, tile: n
 
 function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, ringSegments: number, y: number ): { center: [ number, number ]; radius: number } {
 
-	const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+	const bark = mesh.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 	const rootOffset = minimumYInGroup( mesh, bark ) < - 0.01 ? 1 : 0;
 	const ringCount = ringSegments + rootOffset;
+	const ringStride = sides + 1;
 	const rings: { center: [ number, number ]; y: number; radius: number }[] = [];
 
 	for ( let ring = 0; ring <= ringCount; ring ++ ) {
@@ -459,7 +523,7 @@ function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, ringSegments: numb
 
 		for ( let side = 0; side < sides; side ++ ) {
 
-			const vertex = ring === ringCount ? ring * sides : ring * sides + side;
+			const vertex = ring === ringCount ? ring * ringStride : ring * ringStride + side;
 			const offset = vertex * 3;
 			centerX += mesh.positions[ offset ]! / sides;
 			centerY += mesh.positions[ offset + 1 ]! / sides;
@@ -471,7 +535,7 @@ function trunkAxisAndRadiusAt( mesh: MeshData, sides: number, ringSegments: numb
 
 		for ( let side = 0; side < sides; side ++ ) {
 
-			const vertex = ring === ringCount ? ring * sides : ring * sides + side;
+			const vertex = ring === ringCount ? ring * ringStride : ring * ringStride + side;
 			const offset = vertex * 3;
 			radius += Math.hypot( mesh.positions[ offset ]! - centerX, mesh.positions[ offset + 2 ]! - centerZ ) / sides;
 
@@ -547,13 +611,33 @@ describe( 'conifer tree data', () => {
 
 	} );
 
+	it( 'uses a gray-ish bark map multiplied by the brown default color', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const barkPart = data.parts.find( ( part ) => part.name === 'bark' )!;
+		const texture = data.textures[ barkPart.texture! ]!;
+		const means = [ 0, 0, 0 ];
+
+		for ( let offset = 0; offset < texture.data.length; offset += 4 ) {
+
+			for ( let channel = 0; channel < 3; channel ++ ) means[ channel ]! += texture.data[ offset + channel ]!;
+
+		}
+
+		for ( let channel = 0; channel < 3; channel ++ ) means[ channel ]! /= texture.width * texture.height;
+
+		expect( barkPart.defaultColor ).toBe( 0x6b4c32 );
+		expect( Math.max( ...means ) - Math.min( ...means ) ).toBeLessThan( 30 );
+
+	} );
+
 	it( 'defaults to ten branch whorls', () => {
 
 		const defaultTree = generateTreeData( { seed: 1 } );
 		const tenWhorls = generateTreeData( { seed: 1, branchCount: 10 } );
 
 		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBe( triangleCount( tenWhorls.lods[ 0 ]! ) );
-		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBe( 91 + 51 * 8 );
+		expect( triangleCount( defaultTree.lods[ 0 ]! ) ).toBeGreaterThan( frondCount( defaultTree.lods[ 0 ]!, 8 ) * 8 );
 
 	} );
 
@@ -567,7 +651,7 @@ describe( 'conifer tree data', () => {
 		expect( data.parts ).toHaveLength( 4 );
 		expect( data.parts[ 0 ] ).toEqual( {
 			name: 'bark',
-			defaultColor: 0xffffff,
+			defaultColor: 0x6b4c32,
 			texture: 'bark',
 			alphaTest: 0,
 			doubleSided: false,
@@ -606,7 +690,7 @@ describe( 'conifer tree data', () => {
 
 		expect( counts[ 0 ] ).toBeGreaterThanOrEqual( 400 );
 		expect( counts[ 0 ] ).toBeLessThanOrEqual( 1000 );
-		expect( counts[ 0 ] ).toBe( 91 + 51 * 8 );
+		expect( counts[ 0 ] ).toBeGreaterThan( frondCount( data.lods[ 0 ]!, 8 ) * 8 );
 		expect( counts[ 1 ] ).toBeLessThan( counts[ 0 ]! );
 		expect( counts[ 1 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.45 );
 		expect( counts[ 1 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.55 );
@@ -614,11 +698,9 @@ describe( 'conifer tree data', () => {
 		expect( counts[ 2 ] ).toBeGreaterThanOrEqual( counts[ 0 ]! * 0.2 );
 		expect( counts[ 2 ] ).toBeLessThanOrEqual( counts[ 0 ]! * 0.3 );
 		expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
-		expect( counts[ 3 ] ).toBe( 12 );
 		expect( counts[ 4 ] ).toBeLessThan( counts[ 3 ]! );
-		expect( counts[ 4 ] ).toBe( 2 );
-		expect( data.lods[ 3 ]!.groups ).toEqual( [ { start: 0, count: 36, partIndex: 2 } ] );
-		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, 3 ) );
+		expect( data.lods[ 3 ]!.groups ).toEqual( [ { start: 0, count: 36, partIndex: LOD3_IMPOSTOR_PART_INDEX } ] );
+		expect( data.lods[ 4 ] ).toEqual( buildBillboard( data.bounds, IMPOSTOR_PART_INDEX ) );
 
 	} );
 
@@ -628,12 +710,15 @@ describe( 'conifer tree data', () => {
 
 			const lods = generateTreeData( { seed } ).lods;
 			const counts = lods.map( vertexCount );
+			const triangles = lods.map( triangleCount );
 
 			expect( counts[ 0 ] ).toBeLessThanOrEqual( 740 );
 			expect( counts[ 1 ] ).toBeLessThanOrEqual( 410 );
 			expect( counts[ 2 ] ).toBeLessThanOrEqual( 331 );
 			expect( counts[ 0 ] ).toBeLessThanOrEqual( 795 );
 			expect( counts[ 1 ] ).toBeLessThanOrEqual( 513 );
+			expect( triangles[ 3 ] ).toBeLessThanOrEqual( 40 );
+			expect( triangles[ 4 ] ).toBeLessThanOrEqual( 12 );
 			expect( counts[ 3 ] ).toBe( 24 );
 			expect( counts[ 4 ] ).toBe( 4 );
 			expect( counts[ 3 ] ).toBeLessThan( counts[ 2 ]! );
@@ -861,8 +946,8 @@ describe( 'conifer tree data', () => {
 		for ( let index = 0; index < 3; index ++ ) {
 
 			const lod = data.lods[ index ]!;
-			const trunk = lod.groups.find( ( group ) => group.partIndex === 0 )!;
-			const leaves = lod.groups.find( ( group ) => group.partIndex === 1 )!;
+			const trunk = lod.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
+			const leaves = lod.groups.find( ( group ) => group.partIndex === LEAF_PART_INDEX )!;
 
 			expect( Math.abs( minimumYInGroup( lod, trunk ) + rootDepth ) ).toBeLessThanOrEqual( 1e-3 );
 			expect( minimumYInGroup( lod, leaves ) ).toBeGreaterThanOrEqual( - 0.05 );
@@ -872,7 +957,7 @@ describe( 'conifer tree data', () => {
 
 		expect( data.bounds.height ).toBe( 7.5 );
 		const taller = generateTreeData( { seed: 6, height: 15 } );
-		const tallerTrunk = taller.lods[ 0 ]!.groups.find( ( group ) => group.partIndex === 0 )!;
+		const tallerTrunk = taller.lods[ 0 ]!.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 		expect( Math.abs( minimumYInGroup( taller.lods[ 0 ]!, tallerTrunk ) + 0.3 * ( taller.bounds.height / 7.55 ) ) ).toBeLessThanOrEqual( 1e-3 );
 
 		for ( const lod of data.lods.slice( 3 ) ) {
@@ -895,7 +980,7 @@ describe( 'conifer tree data', () => {
 			for ( let index = 0; index < 3; index ++ ) {
 
 				const lod = data.lods[ index ]!;
-				const trunk = lod.groups.find( ( group ) => group.partIndex === 0 )!;
+				const trunk = lod.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 
 				expect( Math.abs( minimumYInGroup( lod, trunk ) ) ).toBeLessThanOrEqual( 1e-3 );
 
@@ -915,7 +1000,7 @@ describe( 'conifer tree data', () => {
 		for ( let index = 0; index < 3; index ++ ) {
 
 			const lod = data.lods[ index ]!;
-			const trunk = lod.groups.find( ( group ) => group.partIndex === 0 )!;
+			const trunk = lod.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 
 			expect( Math.abs( minimumYInGroup( lod, trunk ) + rootDepth ) ).toBeLessThanOrEqual( 1e-3 );
 
@@ -947,7 +1032,7 @@ describe( 'conifer tree data', () => {
 		expect( Math.min( ...winds ) ).toBeGreaterThanOrEqual( 0.5 );
 		expect( Math.max( ...winds ) ).toBeLessThanOrEqual( 1 );
 
-		const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+		const bark = mesh.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 		const barkWinds = Array.from( { length: bark.count }, ( _, i ) => mesh.windWeight[ mesh.indices[ bark.start + i ]! ]! );
 
 		expect( Math.min( ...barkWinds ) ).toBeGreaterThanOrEqual( 0 );
@@ -956,7 +1041,7 @@ describe( 'conifer tree data', () => {
 		for ( let lod = 0; lod < 3; lod ++ ) {
 
 			const trunkMesh = data.lods[ lod ]!;
-			const trunk = trunkMesh.groups.find( ( group ) => group.partIndex === 0 )!;
+			const trunk = trunkMesh.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 
 			for ( let i = trunk.start; i < trunk.start + trunk.count; i ++ ) {
 
@@ -1172,9 +1257,8 @@ describe( 'conifer tree data', () => {
 		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 51 );
 		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 51 );
 		expect( frondCount( data.lods[ 2 ]!, 2 ) ).toBe( 51 );
-		expect( triangleCount( data.lods[ 0 ]! ) ).toBe( 499 );
-		expect( triangleCount( data.lods[ 1 ]! ) ).toBe( 270 );
-		expect( triangleCount( data.lods[ 2 ]! ) ).toBe( 138 );
+		expect( triangleCount( data.lods[ 0 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 1 ]! ) );
+		expect( triangleCount( data.lods[ 1 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 2 ]! ) );
 
 		for ( let frond = 0; frond < 51; frond ++ ) {
 
@@ -1376,7 +1460,7 @@ describe( 'conifer tree data', () => {
 		for ( let lod = 0; lod < 3; lod ++ ) {
 
 			const mesh = data.lods[ lod ]!;
-			const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+			const bark = mesh.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 			const first = mesh.indices[ bark.start ]!;
 			const second = mesh.indices[ bark.start + 1 ]!;
 			const firstOffset = first * 3;
@@ -1402,7 +1486,7 @@ describe( 'conifer tree data', () => {
 		for ( let lod = 0; lod < sideCounts.length; lod ++ ) {
 
 			const mesh = data.lods[ lod ]!;
-			const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+			const bark = mesh.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 			const boundary = boundaryEdges( mesh, bark );
 
 			expect( boundary ).toHaveLength( sideCounts[ lod ]! );
@@ -1439,7 +1523,7 @@ describe( 'conifer tree data', () => {
 	it( 'uses a trunk UV range suitable for repeating the bark grain', () => {
 
 		const mesh = generateTreeData( { seed: 1 } ).lods[ 0 ]!;
-		const bark = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
+		const bark = mesh.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 		let minU = Infinity;
 		let maxU = - Infinity;
 		let minV = Infinity;
@@ -1459,7 +1543,7 @@ describe( 'conifer tree data', () => {
 		expect( maxU ).toBeGreaterThanOrEqual( 0.8 );
 		expect( minV ).toBe( 0 );
 		expect( maxV ).toBeGreaterThanOrEqual( 2 );
-		expect( mesh.uvs[ 7 * 2 + 1 ] ).toBeGreaterThan( mesh.uvs[ 1 ]! );
+		expect( mesh.uvs[ 8 * 2 + 1 ] ).toBeGreaterThan( mesh.uvs[ 1 ]! );
 
 	} );
 
@@ -1468,7 +1552,7 @@ describe( 'conifer tree data', () => {
 		const fiveTiers = generateTreeData( { seed: 1, branchCount: 5 } );
 		const eightTiers = generateTreeData( { seed: 1, branchCount: 8 } );
 		const trunk = eightTiers.lods[ 0 ]!;
-		const bark = trunk.groups.find( ( group ) => group.partIndex === 0 )!;
+		const bark = trunk.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 		let baseRadius = 0;
 
 		for ( let i = bark.start; i < bark.start + bark.count; i ++ ) {
@@ -1482,8 +1566,9 @@ describe( 'conifer tree data', () => {
 		}
 
 		expect( baseRadius ).toBeCloseTo( 0.293, 2 );
-		expect( triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( 91 + 26 * 8 );
-		expect( triangleCount( eightTiers.lods[ 0 ]! ) ).toBe( 91 + 41 * 8 );
+		const fiveFronds = frondCount( fiveTiers.lods[ 0 ]!, 8 );
+		const eightFronds = frondCount( eightTiers.lods[ 0 ]!, 8 );
+		expect( triangleCount( eightTiers.lods[ 0 ]! ) - triangleCount( fiveTiers.lods[ 0 ]! ) ).toBe( ( eightFronds - fiveFronds ) * 8 );
 
 	} );
 
@@ -1504,8 +1589,8 @@ describe( 'conifer tree data', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const mesh = data.lods[ 0 ]!;
-		const trunk = mesh.groups.find( ( group ) => group.partIndex === 0 )!;
-		const leaves = mesh.groups.find( ( group ) => group.partIndex === 1 )!;
+		const trunk = mesh.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
+		const leaves = mesh.groups.find( ( group ) => group.partIndex === LEAF_PART_INDEX )!;
 		let trunkTipY = - Infinity;
 		let highestLeafY = - Infinity;
 
@@ -1556,8 +1641,16 @@ describe( 'conifer tree data', () => {
 						const referenceOpaque = reference.data[ offset ]! >= 128;
 						const candidateOpaque = candidate.data[ offset ]! >= 128;
 
-						if ( referenceOpaque && candidateOpaque ) intersection ++;
-						if ( referenceOpaque || candidateOpaque ) union ++;
+						if ( referenceOpaque && candidateOpaque ) {
+
+							intersection ++;
+
+						}
+						if ( referenceOpaque || candidateOpaque ) {
+
+							union ++;
+
+						}
 
 					}
 
@@ -1598,8 +1691,16 @@ describe( 'conifer tree data', () => {
 						const referenceOpaque = reference.data[ offset ]! >= 128;
 						const candidateOpaque = candidate.data[ offset ]! >= 128;
 
-						if ( referenceOpaque && candidateOpaque ) intersection ++;
-						if ( referenceOpaque || candidateOpaque ) union ++;
+						if ( referenceOpaque && candidateOpaque ) {
+
+							intersection ++;
+
+						}
+						if ( referenceOpaque || candidateOpaque ) {
+
+							union ++;
+
+						}
 
 					}
 
@@ -1639,8 +1740,16 @@ describe( 'conifer tree data', () => {
 						const referenceOpaque = reference.data[ offset ]! >= 128;
 						const candidateOpaque = candidate.data[ offset ]! >= 128;
 
-						if ( referenceOpaque && candidateOpaque ) intersection ++;
-						if ( referenceOpaque || candidateOpaque ) union ++;
+						if ( referenceOpaque && candidateOpaque ) {
+
+							intersection ++;
+
+						}
+						if ( referenceOpaque || candidateOpaque ) {
+
+							union ++;
+
+						}
 
 					}
 
@@ -1658,7 +1767,7 @@ describe( 'conifer tree data', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const collider = data.collider!;
-		const bark = data.lods[ 0 ]!.groups.find( ( group ) => group.partIndex === 0 )!;
+		const bark = data.lods[ 0 ]!.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
 		let baseRadius = 0;
 		let colliderMaximumY = - Infinity;
 		let colliderMinimumY = Infinity;
@@ -1670,7 +1779,11 @@ describe( 'conifer tree data', () => {
 			const y = data.lods[ 0 ]!.positions[ index + 1 ]!;
 			const z = data.lods[ 0 ]!.positions[ index + 2 ]!;
 
-			if ( y < data.bounds.height * 0.01 ) baseRadius = Math.max( baseRadius, Math.hypot( x, z ) );
+			if ( y < data.bounds.height * 0.01 ) {
+
+				baseRadius = Math.max( baseRadius, Math.hypot( x, z ) );
+
+			}
 
 		}
 

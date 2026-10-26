@@ -20,10 +20,12 @@ export interface MeshData {
 
 export interface PartDef {
 	name: string; // 'bark' | 'leaf' | 'rock' | 'impostor' など
-	defaultColor: number; // sRGB hex（0x5a8f3a）。texture が再生成対象なら色を再生成し、それ以外は乗算する。
+	/** sRGB hex. colorizesTexture が true なら texture を再生成し、それ以外は texture に乗算します。 */
+	defaultColor: number;
 	texture: string | null; // VegetationData.textures のキー
 	impostorYawAngles?: readonly number[]; // 指定時は texture 用のビューを three 層で焼く。
 	normalTexture?: string; // tangent-space normal map のキー
+	/** true なら色変更でテクスチャを再生成し、false または未指定ならマテリアル色を乗算します。 */
 	colorizesTexture?: boolean;
 	roughness?: number;
 	/** 誘電体の鏡面反射強度。指定時は MeshPhysicalMaterial を使用する。 */

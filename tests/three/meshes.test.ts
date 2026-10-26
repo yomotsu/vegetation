@@ -14,7 +14,11 @@ function meanTextureColorAtV( texture: { width: number; height: number; data: Ui
 
 		const offset = ( y * texture.width + x ) * 4;
 
-		if ( texture.data[ offset + 3 ]! < 128 ) continue;
+		if ( texture.data[ offset + 3 ]! < 128 ) {
+
+			continue;
+
+		}
 
 		for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
 		count ++;
@@ -68,6 +72,20 @@ describe( 'tree meshes', () => {
 
 		mesh.dispose();
 		expect( disposeAsset ).toHaveBeenCalledOnce();
+
+	} );
+
+	it( 'reports bark as brown and uses barkColor as a material tint', () => {
+
+		const defaultTree = new TreeMesh( { seed: 1 } );
+		const customTree = new TreeMesh( { seed: 1, barkColor: '#855537' } );
+
+		expect( defaultTree.getColor( 'bark' ).getHex() ).toBe( 0x6b4c32 );
+		expect( customTree.getColor( 'bark' ).getHex() ).toBe( 0x855537 );
+		expect( customTree.asset.materials[ 0 ]!.color.getHex() ).toBe( 0x855537 );
+
+		defaultTree.dispose();
+		customTree.dispose();
 
 	} );
 

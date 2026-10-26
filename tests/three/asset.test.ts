@@ -26,7 +26,11 @@ function meanTextureColor( texture: { width: number; height: number; data: Uint8
 		for ( let x = 0; x < texture.width; x ++ ) {
 
 			const offset = ( y * texture.width + x ) * 4;
-			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+			if ( texture.data[ offset + 3 ]! < 128 ) {
+
+				continue;
+
+			}
 
 			for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
 			count ++;
@@ -163,6 +167,9 @@ describe( 'VegetationAsset', () => {
 		expect( impostorLod3Texture.image.width ).toBe( 128 * 6 );
 		expect( impostorLod3Texture.image.height ).toBe( 128 );
 		expect( asset.data.parts[ 0 ]!.texture ).toBe( 'bark' );
+		expect( asset.data.parts[ 0 ]!.defaultColor ).toBe( 0x6b4c32 );
+		expect( barkMaterial.color.getHex() ).toBe( 0x6b4c32 );
+		expect( asset.getColor( 'bark' ).getHex() ).toBe( 0x6b4c32 );
 		expect( asset.data.textures.bark ).toBeDefined();
 
 		for ( const texture of [ barkTexture, leafTexture, impostorTexture, impostorLod3Texture ] ) {
@@ -195,6 +202,19 @@ describe( 'VegetationAsset', () => {
 		expect( impostorMaterial.vertexColors ).toBe( false );
 		expect( impostorMaterial.roughness ).toBe( 1 );
 		expect( impostorMaterial.metalness ).toBe( 0 );
+
+	} );
+
+	it( 'does not mutate input texture data when constructor colors trigger regeneration', () => {
+
+		const data = generateTreeData( { seed: 1 } );
+		const inputPixels = data.textures.leaf!.data.slice();
+		const asset = new VegetationAsset( data, { leaf: '#c0392b' } );
+
+		expect( data.textures.leaf!.data ).toEqual( inputPixels );
+		expect( asset.data.textures.leaf!.data ).not.toEqual( inputPixels );
+
+		asset.dispose();
 
 	} );
 
@@ -366,6 +386,27 @@ describe( 'VegetationAsset', () => {
 
 		asset.dispose();
 		constructed.dispose();
+
+	} );
+
+	it( 'batches changed colors into one impostor rebake and skips no-op color sets', () => {
+
+		const asset = generateTree( { seed: 1 } );
+		const impostor = asset.materials[ 2 ]!.map as DataTexture;
+		const initialVersion = impostor.version;
+
+		asset.setColors( { leaf: '#c0392b', bark: '#855537' } );
+
+		expect( asset.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
+		expect( asset.getColor( 'bark' ).getHex() ).toBe( 0x855537 );
+		expect( impostor.version ).toBe( initialVersion + 1 );
+
+		const changedVersion = impostor.version;
+		asset.setColors( { leaf: '#c0392b', bark: '#855537' } );
+
+		expect( impostor.version ).toBe( changedVersion );
+
+		asset.dispose();
 
 	} );
 

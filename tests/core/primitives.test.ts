@@ -101,6 +101,26 @@ describe( 'procedural mesh primitives', () => {
 
 	} );
 
+	it( 'duplicates the tube seam with UV coordinates from zero through one', () => {
+
+		const builder = new MeshBuilder();
+
+		addTube( builder, [ [ 0, 0, 0 ], [ 0, 1, 0 ] ], [ 0.2, 0.1 ], 6, {
+			color,
+			wind: () => 0,
+			capEnd: false,
+		} );
+
+		const mesh = builder.build();
+		const seamDuplicate = 6;
+
+		expect( mesh.uvs[ 0 ] ).toBe( 0 );
+		expect( mesh.uvs[ seamDuplicate * 2 ] ).toBe( 1 );
+		expect( mesh.positions.slice( 0, 3 ) ).toEqual( mesh.positions.slice( seamDuplicate * 3, seamDuplicate * 3 + 3 ) );
+		expect( mesh.normals.slice( 0, 3 ) ).toEqual( mesh.normals.slice( seamDuplicate * 3, seamDuplicate * 3 + 3 ) );
+
+	} );
+
 	it( 'keeps tube frames aligned across the x/z tangent crossover', () => {
 
 		const spine: [ number, number, number ][] = [ [ 0, 0, 0 ] ];
@@ -130,9 +150,9 @@ describe( 'procedural mesh primitives', () => {
 
 		const mesh = builder.build();
 		const firstRingU = spine.map( ( point, ring ) => normalize( [
-			mesh.positions[ ring * sides * 3 ]! - point[ 0 ],
-			mesh.positions[ ring * sides * 3 + 1 ]! - point[ 1 ],
-			mesh.positions[ ring * sides * 3 + 2 ]! - point[ 2 ],
+			mesh.positions[ ring * ( sides + 1 ) * 3 ]! - point[ 0 ],
+			mesh.positions[ ring * ( sides + 1 ) * 3 + 1 ]! - point[ 1 ],
+			mesh.positions[ ring * ( sides + 1 ) * 3 + 2 ]! - point[ 2 ],
 		] ) );
 
 		for ( let i = 1; i < firstRingU.length; i ++ ) {

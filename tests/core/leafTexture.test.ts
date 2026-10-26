@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBarkTexture, createFirSprigTexture } from '../../src/core';
+import { createBarkTexture, createFirSprigTexture, hexToLinear, linearToSrgbByte } from '../../src/core';
 import * as publicCore from '../../src/core';
 import { generateTreeData } from '../../src/core/generators/tree';
 import { getFirSprigNeedleGeometry } from '../../src/core/leafTexture';
@@ -35,7 +35,11 @@ function brownStemWidthAt( texture: { width: number; height: number; data: Uint8
 
 	for ( let x = center - 6; x <= center + 6; x ++ ) {
 
-		if ( isBrownStemPixel( texture, x, y ) ) width ++;
+		if ( isBrownStemPixel( texture, x, y ) ) {
+
+			width ++;
+
+		}
 
 	}
 
@@ -55,7 +59,11 @@ function meanStemColorAtBase( texture: { width: number; height: number; data: Ui
 
 		for ( let x = center - 8; x <= center + 8; x ++ ) {
 
-			if ( ! isBrownStemPixel( texture, x, y ) ) continue;
+			if ( ! isBrownStemPixel( texture, x, y ) ) {
+
+				continue;
+
+			}
 
 			const offset = ( y * texture.width + x ) * 4;
 
@@ -73,11 +81,18 @@ function meanStemColorAtBase( texture: { width: number; height: number; data: Ui
 function meanBarkColor( texture: { width: number; height: number; data: Uint8Array } ): [ number, number, number ] {
 
 	const channels = [ 0, 0, 0 ];
+	const tint = hexToLinear( 0x6b4c32 );
 	const pixelCount = texture.width * texture.height;
 
 	for ( let offset = 0; offset < texture.data.length; offset += 4 ) {
 
-		for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
+		for ( let channel = 0; channel < 3; channel ++ ) {
+
+			const normalized = texture.data[ offset + channel ]! / 255;
+			const linear = normalized <= 0.04045 ? normalized / 12.92 : ( ( normalized + 0.055 ) / 1.055 ) ** 2.4;
+			channels[ channel ]! += linearToSrgbByte( linear * tint[ channel ]! );
+
+		}
 
 	}
 
@@ -95,8 +110,16 @@ function meanLeafColorAtV( texture: { width: number; height: number; data: Uint8
 
 		const offset = ( y * texture.width + x ) * 4;
 
-		if ( texture.data[ offset + 3 ]! < 128 ) continue;
-		if ( isBrownStemPixel( texture, x, y ) ) continue;
+		if ( texture.data[ offset + 3 ]! < 128 ) {
+
+			continue;
+
+		}
+		if ( isBrownStemPixel( texture, x, y ) ) {
+
+			continue;
+
+		}
 
 		for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
 		count ++;
@@ -117,7 +140,11 @@ function meanNeedleDirectionAngle( texture: { width: number; height: number; dat
 	for ( let y = startY; y < endY; y ++ ) {
 		for ( let x = 1; x < tileWidth - 1; x ++ ) {
 
-			if ( Math.abs( x - center ) < 7 ) continue;
+			if ( Math.abs( x - center ) < 7 ) {
+
+				continue;
+
+			}
 
 			const horizontalGradient = alphaAt( texture, x + 1, y ) - alphaAt( texture, x - 1, y );
 			const verticalGradient = alphaAt( texture, x, y + 1 ) - alphaAt( texture, x, y - 1 );
@@ -140,7 +167,11 @@ function alphaCoverage( texture: { width: number; height: number; data: Uint8Arr
 
 		for ( let x = xOffset; x < xOffset + width; x ++ ) {
 
-			if ( alphaAt( texture, x, y ) >= 128 ) covered ++;
+			if ( alphaAt( texture, x, y ) >= 128 ) {
+
+				covered ++;
+
+			}
 
 		}
 
@@ -156,7 +187,11 @@ function rowWidth( texture: { width: number; data: Uint8Array }, xOffset: number
 
 	for ( let x = xOffset; x < xOffset + width; x ++ ) {
 
-		if ( alphaAt( texture, x, y ) >= 128 ) count ++;
+		if ( alphaAt( texture, x, y ) >= 128 ) {
+
+			count ++;
+
+		}
 
 	}
 
@@ -173,7 +208,11 @@ function opaqueChannelValues( texture: { width: number; height: number; data: Ui
 		for ( let x = 0; x < tileWidth; x ++ ) {
 			const offset = ( y * texture.width + x ) * 4;
 
-			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+			if ( texture.data[ offset + 3 ]! < 128 ) {
+
+				continue;
+
+			}
 
 			if ( channel === 3 ) {
 				values.push( Math.round( 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]! ) );
@@ -199,7 +238,11 @@ function opaqueNeighborGradientValues( texture: { width: number; height: number;
 
 			const offset = ( y * texture.width + x ) * 4;
 
-			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+			if ( texture.data[ offset + 3 ]! < 128 ) {
+
+				continue;
+
+			}
 
 			const luminance = 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]!;
 
@@ -208,11 +251,19 @@ function opaqueNeighborGradientValues( texture: { width: number; height: number;
 				const neighborX = x + dx!;
 				const neighborY = y + dy!;
 
-				if ( neighborX >= tileWidth || neighborY >= texture.height ) continue;
+				if ( neighborX >= tileWidth || neighborY >= texture.height ) {
+
+					continue;
+
+				}
 
 				const neighborOffset = ( neighborY * texture.width + neighborX ) * 4;
 
-				if ( texture.data[ neighborOffset + 3 ]! < 128 ) continue;
+				if ( texture.data[ neighborOffset + 3 ]! < 128 ) {
+
+					continue;
+
+				}
 
 				const neighborLuminance = 0.2126 * texture.data[ neighborOffset ]! + 0.7152 * texture.data[ neighborOffset + 1 ]! + 0.0722 * texture.data[ neighborOffset + 2 ]!;
 
@@ -238,7 +289,11 @@ function meanOpaqueLuminanceInColumnRange( texture: { width: number; height: num
 
 			const offset = ( y * texture.width + x ) * 4;
 
-			if ( texture.data[ offset + 3 ]! < 128 ) continue;
+			if ( texture.data[ offset + 3 ]! < 128 ) {
+
+				continue;
+
+			}
 
 			values.push( 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]! );
 
@@ -259,7 +314,11 @@ function opaqueRowLuminance( texture: { width: number; data: Uint8Array }, y: nu
 
 		const offset = ( y * texture.width + x ) * 4;
 
-		if ( texture.data[ offset + 3 ]! < 128 ) continue;
+		if ( texture.data[ offset + 3 ]! < 128 ) {
+
+			continue;
+
+		}
 
 		total += 0.2126 * texture.data[ offset ]! + 0.7152 * texture.data[ offset + 1 ]! + 0.0722 * texture.data[ offset + 2 ]!;
 		count ++;
@@ -287,7 +346,11 @@ function meanGreenRowColor( texture: { width: number; height: number; data: Uint
 			const green = texture.data[ offset + 1 ]!;
 			const blue = texture.data[ offset + 2 ]!;
 
-			if ( texture.data[ offset + 3 ]! < 128 || green <= red || green <= blue ) continue;
+			if ( texture.data[ offset + 3 ]! < 128 || green <= red || green <= blue ) {
+
+				continue;
+
+			}
 
 			for ( let channel = 0; channel < 3; channel ++ ) totals[ channel ]! += texture.data[ offset + channel ]!;
 			count ++;
@@ -314,6 +377,7 @@ describe( 'fir sprig texture', () => {
 
 		expect( publicCore ).not.toHaveProperty( 'getFirSprigNeedleGeometry' );
 		expect( publicCore ).not.toHaveProperty( 'composeFirSprigTexture' );
+		expect( publicCore ).not.toHaveProperty( 'getFirSprigLeafColor' );
 
 	} );
 
@@ -331,7 +395,11 @@ describe( 'fir sprig texture', () => {
 			for ( let x = center - 8; x <= center + 8; x ++ ) {
 
 				const pixel = y * original.width + x;
-				if ( original.colorFactors![ pixel ]! > 0 || alphaAt( original, x, y ) === 0 ) continue;
+				if ( original.colorFactors![ pixel ]! > 0 || alphaAt( original, x, y ) === 0 ) {
+
+					continue;
+
+				}
 
 				const offset = pixel * 4;
 				expect( [ tinted.data[ offset ], tinted.data[ offset + 1 ], tinted.data[ offset + 2 ] ] ).toEqual( [ original.data[ offset ], original.data[ offset + 1 ], original.data[ offset + 2 ] ] );
@@ -416,7 +484,11 @@ describe( 'fir sprig texture', () => {
 				const blue = first.data[ offset + 2 ]!;
 				const alpha = first.data[ offset + 3 ]!;
 
-				if ( alpha !== 0 && alpha !== 255 ) invalidAlphaPixels ++;
+				if ( alpha !== 0 && alpha !== 255 ) {
+
+					invalidAlphaPixels ++;
+
+				}
 
 				if ( alpha === 255 ) {
 
@@ -432,8 +504,16 @@ describe( 'fir sprig texture', () => {
 
 				}
 
-				if ( x < tileWidth && alpha === 255 && green > red && green > blue ) greenPixels ++;
-				if ( x < tileWidth && alpha === 255 && red > green && green > blue ) brownPixels ++;
+				if ( x < tileWidth && alpha === 255 && green > red && green > blue ) {
+
+					greenPixels ++;
+
+				}
+				if ( x < tileWidth && alpha === 255 && red > green && green > blue ) {
+
+					brownPixels ++;
+
+				}
 
 			}
 
@@ -479,7 +559,11 @@ describe( 'fir sprig texture', () => {
 
 				const offset = ( y * texture.width + x ) * 4;
 
-				if ( ! isBrownStemPixel( texture, x, y ) ) continue;
+				if ( ! isBrownStemPixel( texture, x, y ) ) {
+
+					continue;
+
+				}
 
 				brownPixels.push( x );
 
@@ -554,8 +638,16 @@ describe( 'fir sprig texture', () => {
 
 			for ( let x = center - 8; x <= center + 8; x ++ ) {
 
-				if ( isBrownStemPixel( texture, x, y ) ) brownTipPixels ++;
-				if ( alphaAt( texture, x, y ) >= 128 && ! isBrownStemPixel( texture, x, y ) ) needleTipPixels ++;
+				if ( isBrownStemPixel( texture, x, y ) ) {
+
+					brownTipPixels ++;
+
+				}
+				if ( alphaAt( texture, x, y ) >= 128 && ! isBrownStemPixel( texture, x, y ) ) {
+
+					needleTipPixels ++;
+
+				}
 
 			}
 
@@ -606,7 +698,11 @@ describe( 'fir sprig texture', () => {
 
 			for ( let x = center - 6; x <= center + 6; x ++ ) {
 
-				if ( isBrownStemPixel( texture, x, y ) ) lastStemRow = y;
+				if ( isBrownStemPixel( texture, x, y ) ) {
+
+					lastStemRow = y;
+
+				}
 
 			}
 
@@ -792,9 +888,17 @@ describe( 'fir sprig texture', () => {
 				const blue = texture.data[ offset + 2 ]!;
 				const alpha = texture.data[ offset + 3 ]!;
 
-				if ( alpha >= 128 && green > red && green > blue ) brightestOpaqueGreen = Math.max( brightestOpaqueGreen, green );
+				if ( alpha >= 128 && green > red && green > blue ) {
 
-				if ( alpha === 0 || alpha >= 128 || green <= red || green <= blue ) continue;
+					brightestOpaqueGreen = Math.max( brightestOpaqueGreen, green );
+
+				}
+
+				if ( alpha === 0 || alpha >= 128 || green <= red || green <= blue ) {
+
+					continue;
+
+				}
 
 				partialAlphaPixels ++;
 				brightestPartialGreen = Math.max( brightestPartialGreen, green );
@@ -855,7 +959,11 @@ describe( 'fir sprig texture', () => {
 			const left = opaqueRowLuminance( texture, y, 118, 124 );
 			const right = opaqueRowLuminance( texture, y, 132, 138 );
 
-			if ( center === null || left === null || right === null ) continue;
+			if ( center === null || left === null || right === null ) {
+
+				continue;
+
+			}
 
 			contrasts.push( center - ( left + right ) * 0.5 );
 
@@ -878,7 +986,11 @@ describe( 'fir sprig texture', () => {
 
 				const offset = ( y * texture.width + x ) * 4;
 
-				if ( texture.data[ offset + 3 ]! < 128 ) continue;
+				if ( texture.data[ offset + 3 ]! < 128 ) {
+
+					continue;
+
+				}
 
 				opaquePixels ++;
 
@@ -887,7 +999,11 @@ describe( 'fir sprig texture', () => {
 					const neighborX = x + dx!;
 					const neighborY = y + dy!;
 
-					if ( neighborX < 0 || neighborX >= tileWidth || neighborY < 0 || neighborY >= texture.height || alphaAt( texture, neighborX, neighborY ) < 128 ) perimeter ++;
+					if ( neighborX < 0 || neighborX >= tileWidth || neighborY < 0 || neighborY >= texture.height || alphaAt( texture, neighborX, neighborY ) < 128 ) {
+
+						perimeter ++;
+
+					}
 
 				}
 
@@ -968,16 +1084,32 @@ describe( 'fir sprig texture', () => {
 				const blue = texture.data[ offset + 2 ]!;
 				const alpha = texture.data[ offset + 3 ]!;
 
-				if ( alpha === 0 || alpha === 255 ) continue;
+				if ( alpha === 0 || alpha === 255 ) {
+
+					continue;
+
+				}
 
 				partialPixels ++;
 				values.add( alpha );
-				if ( green > red && green > blue ) partialNeedlePixels ++;
-				if ( red > green + 2 && green > blue * 1.5 ) partialStemPixels ++;
+				if ( green > red && green > blue ) {
+
+					partialNeedlePixels ++;
+
+				}
+				if ( red > green + 2 && green > blue * 1.5 ) {
+
+					partialStemPixels ++;
+
+				}
 				const needleColor = green > red && green > blue;
 				const stemColor = red > green + 2 && green > blue * 1.5;
 
-				if ( ! needleColor && ! stemColor ) invalidPartialColor ++;
+				if ( ! needleColor && ! stemColor ) {
+
+					invalidPartialColor ++;
+
+				}
 
 			}
 

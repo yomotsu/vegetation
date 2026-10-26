@@ -2,7 +2,7 @@ import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart }
 import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
-import { createBarkTexture } from '../barkTexture';
+import { createBarkTexture, DEFAULT_BARK_COLOR } from '../barkTexture';
 import { composeFirSprigTexture, createFirSprigTexture, DEFAULT_LEAF_COLOR } from '../leafTexture';
 import { registerTextureRegenerator } from '../textureRegenerator';
 import type { Color3, ColliderData, MeshData, PartDef, TextureData, TextureGeneratorDef, Vec3, VegetationData } from '../types';
@@ -51,6 +51,7 @@ const impostorLod3PartIndex = 2;
 const impostorPartIndex = 3;
 const frondsPerTier = 5;
 const lodFrondFoldRatio = 0.16;
+// Tree01 の測定値から幹の半径を設定します。
 const trunkProfile = [
 	[ - 0.2, 0.36 ],
 	[ 0.1, 0.26 ],
@@ -64,6 +65,7 @@ const trunkProfile = [
 	[ 5.9, 0.053 ],
 	[ 6.6, 0.022 ],
 ] as const;
+// Tree01 の測定値から各段の葉張りを設定します。
 const frondSizeProfile = [
 	[ 1.8, 2.2 ],
 	[ 2.4, 2.6 ],
@@ -76,6 +78,7 @@ const frondSizeProfile = [
 	[ 6.2, 1.2 ],
 	[ 6.6, 1.0 ],
 ] as const;
+// Tree01 の測定値から枝の傾きを補間します。
 const frondPitchProfile = [
 	[ 1.8 / 7.55, - 17, 9 ],
 	[ 2.5 / 7.55, - 13, 13 ],
@@ -348,7 +351,11 @@ function getFrondWind( point: Vec3, frond: Frond ): number {
 
 function getFrondVertexColor( radius: number, lateral: number ): Color3 {
 
-	if ( lateral === 0.5 ) return [ 1, 1, 1 ];
+	if ( lateral === 0.5 ) {
+
+		return [ 1, 1, 1 ];
+
+	}
 
 	const tierLift = clamp( radius / 2.42, 0, 1 ) * 0.03;
 	const green = ( 0.96 + tierLift ) * leafBrightness;
@@ -372,7 +379,11 @@ function getFrondMeanVertexColor( radius: number ): Color3 {
 
 function getFrondPoint( frond: Frond, t: number ): Vec3 {
 
-	if ( t <= 0.4 ) return add( frond.base, multiply( subtract( frond.mid, frond.base ), t / 0.4 ) );
+	if ( t <= 0.4 ) {
+
+		return add( frond.base, multiply( subtract( frond.mid, frond.base ), t / 0.4 ) );
+
+	}
 
 	return add( frond.mid, multiply( subtract( frond.tip, frond.mid ), ( t - 0.4 ) / 0.6 ) );
 
@@ -586,8 +597,9 @@ function scaleTrunkV( mesh: MeshData, trunkVertexCount: number ): void {
 
 function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNormal: Vec3 ): MeshData {
 
-	const topStart = ( ringCount - 1 ) * sides;
-	const topEnd = topStart + sides;
+	const ringStride = sides + 1;
+	const topStart = ( ringCount - 1 ) * ringStride;
+	const topEnd = topStart + ringStride;
 	const indices: number[] = [];
 	const groups = [];
 
@@ -605,13 +617,21 @@ function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNor
 
 			const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ].map( ( vertex ) => vertex >= topStart && vertex < topEnd ? topStart : vertex );
 
-			if ( triangle[ 0 ] === triangle[ 1 ] || triangle[ 1 ] === triangle[ 2 ] || triangle[ 2 ] === triangle[ 0 ] ) continue;
+			if ( triangle[ 0 ] === triangle[ 1 ] || triangle[ 1 ] === triangle[ 2 ] || triangle[ 2 ] === triangle[ 0 ] ) {
+
+				continue;
+
+			}
 
 			indices.push( triangle[ 0 ]!, triangle[ 1 ]!, triangle[ 2 ]! );
 
 		}
 
-		if ( indices.length > start ) groups.push( { start, count: indices.length - start, partIndex: group.partIndex } );
+		if ( indices.length > start ) {
+
+			groups.push( { start, count: indices.length - start, partIndex: group.partIndex } );
+
+		}
 
 	}
 
@@ -625,7 +645,11 @@ function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNor
 
 	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
 
-		if ( ! usedVertices.has( vertex ) ) continue;
+		if ( ! usedVertices.has( vertex ) ) {
+
+			continue;
+
+		}
 
 		vertexMap.set( vertex, positions.length / 3 );
 		positions.push( mesh.positions[ vertex * 3 ]!, mesh.positions[ vertex * 3 + 1 ]!, mesh.positions[ vertex * 3 + 2 ]! );
@@ -650,7 +674,11 @@ function closeTrunkTip( mesh: MeshData, ringCount: number, sides: number, tipNor
 
 function addRootRing( spine: Vec3[], radii: number[], rootDepth: number ): { spine: Vec3[]; radii: number[] } {
 
-	if ( rootDepth === 0 ) return { spine, radii };
+	if ( rootDepth === 0 ) {
+
+		return { spine, radii };
+
+	}
 
 	const ground = spine[ 0 ]!;
 
@@ -674,7 +702,7 @@ function addPointedTrunk( builder: MeshBuilder, spine: Vec3[], radii: number[], 
 		capEnd: false,
 	} );
 
-	return ( spine.length - 1 ) * sides + 1;
+	return ( spine.length - 1 ) * ( sides + 1 ) + 1;
 
 }
 
@@ -733,7 +761,11 @@ function buildCollider( layout: TreeLayout ): ColliderData {
 	const trunk = fractions.map( ( fraction ) => getTrunkPoint( layout.trunkSpine, layout.height, fraction ) );
 	const spine = layout.rootDepth === 0 ? trunk : [ [ trunk[ 0 ]![ 0 ], - layout.rootDepth, trunk[ 0 ]![ 2 ] ] as Vec3, ...trunk ];
 	const radii = fractions.map( ( fraction ) => getTrunkRadius( fraction, layout.height ) );
-	if ( layout.rootDepth > 0 ) radii.unshift( radii[ 0 ]! );
+	if ( layout.rootDepth > 0 ) {
+
+		radii.unshift( radii[ 0 ]! );
+
+	}
 	const builder = new MeshBuilder();
 
 	builder.beginGroup( barkPartIndex );
@@ -793,7 +825,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	const parts: PartDef[] = [
 		{
 			name: 'bark',
-			defaultColor: 0xffffff,
+			defaultColor: DEFAULT_BARK_COLOR,
 			texture: 'bark',
 			roughness: 0.85,
 			specularIntensity: 0.014872,

@@ -1,4 +1,50 @@
 import type { TextureData } from './types';
+import { hexToLinear, linearToSrgbByte } from './color';
+
+export const DEFAULT_BARK_COLOR = 0x6b4c32;
+
+const barkTint = hexToLinear( DEFAULT_BARK_COLOR );
+
+function srgbByteToLinear( value: number ): number {
+
+	const normalized = value / 255;
+
+	return normalized <= 0.04045 ? normalized / 12.92 : ( ( normalized + 0.055 ) / 1.055 ) ** 2.4;
+
+}
+
+function createBarkChannelLookup( tint: number ): Uint8Array {
+
+	const lookup = new Uint8Array( 256 );
+
+	for ( let source = 0; source < 256; source ++ ) {
+
+		let bestError = Infinity;
+		let bestChannel = 0;
+
+		for ( let candidate = 0; candidate < 256; candidate ++ ) {
+
+			const rendered = linearToSrgbByte( srgbByteToLinear( candidate ) * tint );
+			const error = Math.abs( rendered - source );
+
+			if ( error < bestError ) {
+
+				bestError = error;
+				bestChannel = candidate;
+
+			}
+
+		}
+
+		lookup[ source ] = bestChannel;
+
+	}
+
+	return lookup;
+
+}
+
+const barkColorLookup = [ createBarkChannelLookup( barkTint[ 0 ] ), createBarkChannelLookup( barkTint[ 1 ] ), createBarkChannelLookup( barkTint[ 2 ] ) ];
 
 interface Knot {
 	u: number;
@@ -110,9 +156,12 @@ export function createBarkTexture( seed: number, size = 128 ): TextureData {
 			const value = plankTone + blockTone + plankCrease + verticalGrain + horizontalGrain + localGrain + fineNoise + knotShade;
 			const offset = ( y * size + x ) * 4;
 
-			data[ offset ] = Math.max( 0, Math.min( 255, Math.round( 67 + value ) ) );
-			data[ offset + 1 ] = Math.max( 0, Math.min( 255, Math.round( 52 + value * 0.84 ) ) );
-			data[ offset + 2 ] = Math.max( 0, Math.min( 255, Math.round( 27 + value * 0.62 ) ) );
+			const red = Math.max( 0, Math.min( 255, Math.round( 67 + value ) ) );
+			const green = Math.max( 0, Math.min( 255, Math.round( 52 + value * 0.84 ) ) );
+			const blue = Math.max( 0, Math.min( 255, Math.round( 27 + value * 0.62 ) ) );
+			data[ offset ] = barkColorLookup[ 0 ]![ red ]!;
+			data[ offset + 1 ] = barkColorLookup[ 1 ]![ green ]!;
+			data[ offset + 2 ] = barkColorLookup[ 2 ]![ blue ]!;
 			data[ offset + 3 ] = 255;
 
 		}

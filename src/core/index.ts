@@ -6,7 +6,7 @@ export * from './color';
 export * from './meshBuilder';
 export * from './primitives';
 export * from './impostor';
-export { createFirSprigTexture, DEFAULT_LEAF_COLOR, getFirSprigLeafColor } from './leafTexture';
+export { createFirSprigTexture, DEFAULT_LEAF_COLOR } from './leafTexture';
 export * from './barkTexture';
 export * from './rockTexture';
 export * from './generators/tree';
