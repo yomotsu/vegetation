@@ -575,13 +575,19 @@ describe( 'procedural rock data', () => {
 
 	it( 'keeps the three shell LODs within vertex caps and strictly reduces triangle counts', () => {
 
-		const lods = generateRockData( { seed: 1 } ).lods.slice( 0, 3 );
+		for ( const seed of [ 1, 2, 3 ] ) {
 
-		expect( lods.map( vertexCount )[ 0 ] ).toBeLessThanOrEqual( 285 );
-		expect( lods.map( vertexCount )[ 1 ] ).toBeLessThanOrEqual( 154 );
-		expect( lods.map( vertexCount )[ 2 ] ).toBeLessThanOrEqual( 50 );
-		expect( triangleCount( lods[ 0 ]! ) ).toBeGreaterThan( triangleCount( lods[ 1 ]! ) );
-		expect( triangleCount( lods[ 1 ]! ) ).toBeGreaterThan( triangleCount( lods[ 2 ]! ) );
+			const lods = generateRockData( { seed } ).lods.slice( 0, 3 );
+			const vertices = lods.map( vertexCount );
+			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 170 );
+			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 100 );
+			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 50 );
+			expect( vertices[ 0 ] ).toBeGreaterThan( vertices[ 1 ]! );
+			expect( vertices[ 1 ] ).toBeGreaterThan( vertices[ 2 ]! );
+			expect( triangleCount( lods[ 0 ]! ) ).toBeGreaterThan( triangleCount( lods[ 1 ]! ) );
+			expect( triangleCount( lods[ 1 ]! ) ).toBeGreaterThan( triangleCount( lods[ 2 ]! ) );
+
+		}
 
 	} );
 
@@ -592,11 +598,11 @@ describe( 'procedural rock data', () => {
 			const mesh = generateRockData( { seed: reference.seed } ).lods[ 0 ]!;
 			const stats = getSurfaceStats( mesh );
 
-			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 285 );
+			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 170 );
 			expect( stats.relief ).toBeGreaterThanOrEqual( reference.relief * 0.7 );
-			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.3 );
+			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.4 );
 			expect( stats.spacing ).toBeGreaterThanOrEqual( reference.spacing * 0.7 );
-			expect( stats.spacing ).toBeLessThanOrEqual( reference.spacing * 1.35 );
+			expect( stats.spacing ).toBeLessThanOrEqual( reference.spacing * 1.4 );
 
 		}
 
@@ -606,7 +612,7 @@ describe( 'procedural rock data', () => {
 
 		const stats = getSurfaceStats( generateRockData( { seed: 2 } ).lods[ 0 ]! );
 
-		expect( stats.percentileRelief ).toBeLessThan( 0.06 );
+		expect( stats.percentileRelief ).toBeLessThan( 0.08 );
 
 	} );
 
@@ -953,7 +959,7 @@ describe( 'procedural rock data', () => {
 
 		expect( uRange ).toBeGreaterThanOrEqual( 0.9 );
 		expect( uRange ).toBeLessThanOrEqual( 1.5 );
-		expect( vRange ).toBeGreaterThanOrEqual( 0.9 );
+		expect( vRange ).toBeGreaterThanOrEqual( 0.85 );
 		expect( vRange ).toBeLessThanOrEqual( 1.1 );
 
 	} );

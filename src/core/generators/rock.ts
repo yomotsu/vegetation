@@ -434,17 +434,56 @@ function refineVisibleRockSurface(
 		if ( position[ 1 ] <= 0 ) continue;
 
 		const hash = Math.sin( center[ 0 ] * 12.9898 + center[ 1 ] * 78.233 + center[ 2 ] * 37.719 ) * 43758.5453;
+		const tieBreaker = hash - Math.floor( hash );
+		const silhouette = smoothstep( 0.72, 0.98, Math.hypot( center[ 0 ], center[ 2 ] ) / bounds.radius );
 
 		candidates.push( {
 			offset,
 			position,
-			priority: hash - Math.floor( hash ),
+			priority: Math.min( displacementLength / ( bounds.radius * 0.04 ), 1 ) + silhouette * 0.25 + tieBreaker * 0.02,
 		} );
 
 	}
 
-	candidates.sort( ( first, second ) => first.priority - second.priority );
-	const selected = new Map( candidates.slice( 0, addedVertexLimit ).map( ( candidate ) => [ candidate.offset, candidate.position ] ) );
+	const selectedCandidates: typeof candidates = [];
+	const remaining = candidates.slice();
+
+	while ( selectedCandidates.length < addedVertexLimit && remaining.length > 0 ) {
+
+		let bestIndex = 0;
+		let bestPriority = - Infinity;
+
+		for ( let index = 0; index < remaining.length; index ++ ) {
+
+			const candidate = remaining[ index ]!;
+			let spacing = 1;
+
+			for ( const selected of selectedCandidates ) {
+
+				spacing = Math.min( spacing, Math.hypot(
+					candidate.position[ 0 ] - selected.position[ 0 ],
+					candidate.position[ 1 ] - selected.position[ 1 ],
+					candidate.position[ 2 ] - selected.position[ 2 ],
+				) / bounds.radius );
+
+			}
+
+			const priority = candidate.priority + spacing * 0.16;
+
+			if ( priority > bestPriority ) {
+
+				bestIndex = index;
+				bestPriority = priority;
+
+			}
+
+		}
+
+		selectedCandidates.push( remaining.splice( bestIndex, 1 )[ 0 ]! );
+
+	}
+
+	const selected = new Map( selectedCandidates.map( ( candidate ) => [ candidate.offset, candidate.position ] ) );
 	const positions = Array.from( mesh.positions );
 	const normals = Array.from( mesh.normals );
 	const uvs = Array.from( mesh.uvs );
@@ -639,16 +678,18 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		return deformedRadius;
 
 	};
-	const lod0 = buildShell( 4, radiusAt, verticalScale );
-	const lod1 = buildShell( 3, radiusAt, verticalScale );
+	const shapeReference = buildShell( 4, radiusAt, verticalScale );
+	const lod0 = buildShell( 3, radiusAt, verticalScale );
+	const lod1 = buildShell( 2, radiusAt, verticalScale );
 	const lod2 = buildShell( 2, radiusAt, verticalScale );
-	const groundOffset = - getMinimumY( lod0.positions );
+	const groundOffset = - getMinimumY( shapeReference.positions );
 
+	liftMesh( shapeReference, groundOffset );
 	liftMesh( lod0, groundOffset );
 	liftMesh( lod1, groundOffset );
 	liftMesh( lod2, groundOffset );
-	const targetHeight = getHorizontalSpan( lod0 ) * getTargetAspect( internalSeed, flatness );
-	const heightScale = targetHeight / getBounds( lod0 ).height;
+	const targetHeight = getHorizontalSpan( shapeReference ) * getTargetAspect( internalSeed, flatness );
+	const heightScale = targetHeight / getBounds( shapeReference ).height;
 
 	scaleHeight( lod0, heightScale );
 	scaleHeight( lod1, heightScale );
@@ -659,7 +700,9 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( lod0, burial * fullHeight, skirtFloor );
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
 	sinkMesh( lod2, burial * fullHeight, skirtFloor );
-	refineVisibleRockSurface( lod0, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 285 );
+
+	refineVisibleRockSurface( lod0, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 170 );
+	refineVisibleRockSurface( lod1, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 95 );
 	recomputeSmoothNormals( lod0 );
 	recomputeSmoothNormals( lod1 );
 	recomputeSmoothNormals( lod2 );
