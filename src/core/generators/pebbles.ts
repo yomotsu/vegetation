@@ -268,7 +268,6 @@ function selectPebbleVertices( mesh: MeshData, count: number, prioritizeFootprin
 		( bounds.minimum[ 1 ] + bounds.maximum[ 1 ] ) * 0.5,
 		( bounds.minimum[ 2 ] + bounds.maximum[ 2 ] ) * 0.5,
 	];
-
 	while ( selected.size < count ) {
 
 		let best = - 1;
@@ -401,13 +400,16 @@ function createPlacements( seed: number, count: number, spread: number, size: nu
 function buildStoneLod( placements: PebblePlacement[], burial: number, level: 0 | 1 | 2 ): MeshData {
 
 	const builder = new MeshBuilder();
+	const sizePriority = placements.slice().sort( ( first, second ) => second.size - first.size );
+	const refinedLod1 = new Set( sizePriority.slice( 0, Math.ceil( placements.length / 2 ) ) );
+
 	for ( const placement of placements ) {
 
 		const radiusAt = createRockRadiusFunction( placement.seed, 1, placement.roughness, 1 );
 		const reference = buildRockShell( 1, radiusAt, 1 );
 		scaleMesh( reference, [ placement.size * 0.5 * placement.aspect, placement.size * 0.5 * placement.verticalAspect, placement.size * 0.5 * placement.depthAspect ] );
 		rotateMesh( reference, placement.yaw );
-		const vertexLimit = level === 0 ? 10 : level === 1 ? 8 : 6;
+		const vertexLimit = level === 0 ? 8 : level === 1 ? refinedLod1.has( placement ) ? 7 : 6 : 6;
 		const stone = buildLowPolyPebble( selectPebbleVertices( reference, vertexLimit, level === 2 ) );
 
 		appendPebble( builder, stone, placement, burial );

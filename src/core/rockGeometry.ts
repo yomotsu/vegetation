@@ -383,3 +383,80 @@ export function buildRockShell( frequency: number, radiusAt: ( direction: Vec3 )
 
 }
 
+export function buildRockRingShell( radiusAt: ( direction: Vec3 ) => number, verticalScale: number, segments = 8 ): MeshData {
+
+	const builder = new MeshBuilder();
+	const rings: number[][] = [];
+	const latitudes = [ - 0.62, 0.08, 0.72 ];
+	const white: [ number, number, number ] = [ 1, 1, 1 ];
+	const addPoint = ( direction: Vec3, u: number, v: number ): number => {
+
+		const radius = radiusAt( direction );
+		return builder.addVertex(
+			[ direction[ 0 ] * radius, direction[ 1 ] * radius * verticalScale, direction[ 2 ] * radius ],
+			direction,
+			[ u, v ],
+			white,
+			0,
+		);
+
+	};
+
+	builder.beginGroup( 0 );
+
+	for ( const latitude of latitudes ) {
+
+		const ring: number[] = [];
+		const horizontal = Math.cos( latitude );
+
+		for ( let segment = 0; segment < segments; segment ++ ) {
+
+			const angle = segment / segments * Math.PI * 2;
+			ring.push( addPoint( [ horizontal * Math.cos( angle ), Math.sin( latitude ), horizontal * Math.sin( angle ) ], segment / segments + 0.5, latitude / Math.PI + 0.5 ) );
+
+		}
+
+		const seamDirection: Vec3 = [ horizontal, Math.sin( latitude ), 0 ];
+		ring.push( addPoint( seamDirection, 1.5, latitude / Math.PI + 0.5 ) );
+		rings.push( ring );
+
+	}
+
+	const top: Vec3 = [ 0, 1, 0 ];
+	const bottom: Vec3 = [ 0, - 1, 0 ];
+	const topPole = addPoint( top, 0.5, 1 );
+	const topSeam = addPoint( top, 1.5, 1 );
+	const bottomPole = addPoint( bottom, 0.5, 0 );
+	const bottomSeam = addPoint( bottom, 1.5, 0 );
+
+	for ( let ringIndex = 0; ringIndex < rings.length - 1; ringIndex ++ ) {
+
+		for ( let segment = 0; segment < segments; segment ++ ) {
+
+			const first = rings[ ringIndex ]![ segment ]!;
+			const next = rings[ ringIndex ]![ segment + 1 ]!;
+			const upper = rings[ ringIndex + 1 ]![ segment ]!;
+			const upperNext = rings[ ringIndex + 1 ]![ segment + 1 ]!;
+			builder.addTriangle( first, upper, next );
+			builder.addTriangle( next, upper, upperNext );
+
+		}
+
+	}
+
+	for ( let segment = 0; segment < segments; segment ++ ) {
+
+		const first = rings[ 0 ]![ segment ]!;
+		const next = rings[ 0 ]![ segment + 1 ]!;
+		const upper = rings[ rings.length - 1 ]![ segment ]!;
+		const upperNext = rings[ rings.length - 1 ]![ segment + 1 ]!;
+		const seamHalf = segment >= segments / 2;
+		builder.addTriangle( first, next, seamHalf ? bottomSeam : bottomPole );
+		builder.addTriangle( upper, seamHalf ? topSeam : topPole, upperNext );
+
+	}
+
+	return builder.build();
+
+}
+

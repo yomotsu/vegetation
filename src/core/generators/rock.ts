@@ -1,6 +1,6 @@
 import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
 import { createRockTextures } from '../rockTexture';
-import { applyRockSurfaceShading, buildRockShell, clamp, createRockRadiusFunction, getBounds, getHorizontalSpan, getMinimumY, liftMesh, recomputeSmoothNormals, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
+import { applyRockSurfaceShading, buildRockRingShell, buildRockShell, clamp, createRockRadiusFunction, getBounds, getHorizontalSpan, getMinimumY, liftMesh, recomputeSmoothNormals, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -306,7 +306,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const shapeReference = buildRockShell( 4, radiusAt, verticalScale );
 	const lod0 = buildRockShell( 3, radiusAt, verticalScale );
 	const lod1 = buildRockShell( 2, radiusAt, verticalScale );
-	const lod2 = buildRockShell( 2, radiusAt, verticalScale );
+	const lod2 = buildRockRingShell( radiusAt, verticalScale );
 	const groundOffset = - getMinimumY( shapeReference.positions );
 
 	liftMesh( shapeReference, groundOffset );
@@ -326,8 +326,8 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
 	sinkMesh( lod2, burial * fullHeight, skirtFloor );
 
-	refineVisibleRockSurface( lod0, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 170 );
-	refineVisibleRockSurface( lod1, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 95 );
+	refineVisibleRockSurface( lod0, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 110 );
+	refineVisibleRockSurface( lod1, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
 	recomputeSmoothNormals( lod0 );
 	recomputeSmoothNormals( lod1 );
 	recomputeSmoothNormals( lod2 );

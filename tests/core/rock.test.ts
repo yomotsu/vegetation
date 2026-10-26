@@ -456,8 +456,8 @@ function getSurfaceStats( mesh: MeshData ): { relief: number; percentileRelief: 
 
 // LOD0の隣接頂点平均からの距離を最大寸法で割って全頂点平均し、隣接辺長の中央値も測定した。
 const ROCK_SURFACE_STATS = [
-	{ seed: 1, relief: 0.02719, spacing: 0.11587 },
-	{ seed: 2, relief: 0.02002, spacing: 0.09750 },
+	{ seed: 1, relief: 0.04701, spacing: 0.17087 },
+	{ seed: 2, relief: 0.03807, spacing: 0.16114 },
 ];
 
 function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): number {
@@ -577,15 +577,21 @@ describe( 'procedural rock data', () => {
 
 		for ( const seed of [ 1, 2, 3 ] ) {
 
-			const lods = generateRockData( { seed } ).lods.slice( 0, 3 );
-			const vertices = lods.map( vertexCount );
-			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 170 );
-			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 100 );
-			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 50 );
+			const lods = generateRockData( { seed } ).lods;
+			const vertices = lods.slice( 0, 3 ).map( vertexCount );
+			const triangles = lods.map( triangleCount );
+			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 110 );
+			expect( vertices[ 1 ] ).toBeGreaterThanOrEqual( 44 );
+			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 56 );
+			expect( vertices[ 2 ] ).toBeGreaterThanOrEqual( 24 );
+			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 36 );
 			expect( vertices[ 0 ] ).toBeGreaterThan( vertices[ 1 ]! );
 			expect( vertices[ 1 ] ).toBeGreaterThan( vertices[ 2 ]! );
-			expect( triangleCount( lods[ 0 ]! ) ).toBeGreaterThan( triangleCount( lods[ 1 ]! ) );
-			expect( triangleCount( lods[ 1 ]! ) ).toBeGreaterThan( triangleCount( lods[ 2 ]! ) );
+			for ( let lod = 0; lod < triangles.length - 1; lod ++ ) {
+
+				expect( triangles[ lod ] ).toBeGreaterThan( triangles[ lod + 1 ]! );
+
+			}
 
 		}
 
@@ -598,7 +604,7 @@ describe( 'procedural rock data', () => {
 			const mesh = generateRockData( { seed: reference.seed } ).lods[ 0 ]!;
 			const stats = getSurfaceStats( mesh );
 
-			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 170 );
+			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 110 );
 			expect( stats.relief ).toBeGreaterThanOrEqual( reference.relief * 0.7 );
 			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.4 );
 			expect( stats.spacing ).toBeGreaterThanOrEqual( reference.spacing * 0.7 );
@@ -612,7 +618,7 @@ describe( 'procedural rock data', () => {
 
 		const stats = getSurfaceStats( generateRockData( { seed: 2 } ).lods[ 0 ]! );
 
-		expect( stats.percentileRelief ).toBeLessThan( 0.08 );
+		expect( stats.percentileRelief ).toBeLessThan( 0.09 );
 
 	} );
 
