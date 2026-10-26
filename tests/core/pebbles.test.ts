@@ -6,6 +6,7 @@ import { validateMeshData } from '../helpers/validateMeshData';
 import { sampleOutlineRadius, splitConnectedComponents } from '../helpers/meshOutline';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { topCardCoverageIou } from '../helpers/topCardCoverage';
+import { minimumRockApexAngle } from '../helpers/rockSharpness';
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -138,6 +139,33 @@ function coverageIou( first: { width: number; data: Uint8Array }, second: { widt
 }
 
 describe( 'procedural pebbles data', () => {
+
+	it( 'keeps each above-ground pebble vertex broad across all mesh LODs', () => {
+
+		withSharedRockTextures( () => {
+
+			const seeds = [ ...Array.from( { length: 300 }, ( _, index ) => index + 1 ), 341810, 987654321, 2147483647, - 1987654321 ];
+
+			for ( const seed of seeds ) {
+
+				const lods = generatePebblesData( { seed } ).lods;
+
+				for ( let lod = 0; lod <= 3; lod ++ ) {
+
+					for ( const [ stone, component ] of splitConnectedComponents( lods[ lod ]! ).entries() ) {
+
+						const angle = minimumRockApexAngle( component );
+						expect( angle, `seed ${ seed } LOD${ lod } pebble ${ stone } narrowest vertex cone` ).toBeGreaterThanOrEqual( 100 );
+
+					}
+
+				}
+
+			}
+
+		} );
+
+	}, 180000 );
 
 	it( 'keeps every far pebble grounded around its full footprint', () => {
 

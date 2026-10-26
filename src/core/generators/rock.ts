@@ -1,6 +1,6 @@
 import { createRockTextures } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
-import { applyRockSurfaceShading, buildConvexHullFaces, buildRockMeshFromFaces, buildRockRingShell, buildRockShell, clamp, createRockRadiusFunction, getBounds, getHorizontalMeshOutline, getHorizontalSpan, getMinimumY, getProjectedMeshOutline, liftMesh, recomputeSmoothNormals, removeRockBottomCap, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
+import { applyRockSurfaceShading, buildConvexHullFaces, buildRockMeshFromFaces, buildRockRingShell, buildRockShell, clamp, createRockRadiusFunction, getBounds, getHorizontalMeshOutline, getHorizontalSpan, getMinimumY, getProjectedMeshOutline, liftMesh, limitRockPeakSharpness, recomputeSmoothNormals, removeRockBottomCap, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -334,11 +334,13 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const flatness = clamp( flatnessInput, 0, 1 );
 	const radius = size * 0.5;
 	const verticalScale = getVerticalScale( internalSeed, flatness );
-	const radiusAt = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale );
-	const shapeReference = buildRockShell( 4, radiusAt, verticalScale );
-	const lod0 = buildRockShell( 3, radiusAt, verticalScale );
-	const lod1 = buildRockShell( 2, radiusAt, verticalScale );
-	const lod2 = buildRockRingShell( radiusAt, verticalScale );
+	const radiusAtLod0 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.9 );
+	const radiusAtLod1 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.3 );
+	const radiusAtLod2 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.08 );
+	const shapeReference = buildRockShell( 4, radiusAtLod0, verticalScale );
+	const lod0 = buildRockShell( 3, radiusAtLod0, verticalScale );
+	const lod1 = buildRockShell( 2, radiusAtLod1, verticalScale );
+	const lod2 = buildRockRingShell( radiusAtLod2, verticalScale );
 	const groundOffset = - getMinimumY( shapeReference.positions );
 
 	liftMesh( shapeReference, groundOffset );
@@ -361,11 +363,14 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
 	sinkMesh( lod2, burial * fullHeight, skirtFloor );
 
-	refineVisibleRockSurface( lod0, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 110 );
-	refineVisibleRockSurface( lod1, radiusAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
+	refineVisibleRockSurface( lod0, radiusAtLod0, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 130 );
+	refineVisibleRockSurface( lod1, radiusAtLod1, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
 	removeRockBottomCap( lod0, skirtFloor );
 	removeRockBottomCap( lod1, skirtFloor );
 	removeRockBottomCap( lod2, skirtFloor );
+	limitRockPeakSharpness( lod0, 0.04 );
+	limitRockPeakSharpness( lod1, 0.04 );
+	limitRockPeakSharpness( lod2, 0.02 );
 	recomputeSmoothNormals( lod0 );
 	recomputeSmoothNormals( lod1 );
 	recomputeSmoothNormals( lod2 );
@@ -375,6 +380,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	const lod3 = buildLowPolyRockShell( lod0, size );
 	const bounds = getBounds( lod0 );
+	limitRockPeakSharpness( lod3, 0.02 );
 	const lod4 = buildBillboard( bounds, 1, lod0, bounds.height * 0.75 );
 	recomputeSmoothNormals( lod3 );
 	lod3.colors.fill( lod0.colors[ 0 ]! );

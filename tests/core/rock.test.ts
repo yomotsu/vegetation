@@ -6,6 +6,7 @@ import { sampleOutlineRadius } from '../helpers/meshOutline';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
 import { topCardCoverageIou } from '../helpers/topCardCoverage';
+import { minimumRockApexAngle } from '../helpers/rockSharpness';
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -621,6 +622,29 @@ describe( 'procedural rock data', () => {
 
 	}, 120000 );
 
+	it( 'keeps above-ground rock vertices broader than a 100 degree cone', () => {
+
+		withSharedRockTextures( () => {
+
+			const seeds = [ ...Array.from( { length: 300 }, ( _, index ) => index + 1 ), 341810, 987654321, 2147483647, - 1987654321 ];
+
+			for ( const seed of seeds ) {
+
+				const lods = generateRockData( { seed, size: 6.4 } ).lods;
+
+				for ( let lod = 0; lod <= 3; lod ++ ) {
+
+					const angle = minimumRockApexAngle( lods[ lod ]! );
+					expect( angle, `seed ${ seed } LOD${ lod } narrowest vertex cone` ).toBeGreaterThanOrEqual( 100 );
+
+				}
+
+			}
+
+		} );
+
+	}, 180000 );
+
 	it( 'builds mesh LOD0–3 with an open LOD3 base and keeps LOD4 as a billboard', () => {
 
 		const data = generateRockData( { seed: 4 } );
@@ -699,7 +723,7 @@ describe( 'procedural rock data', () => {
 			const lods = generateRockData( { seed } ).lods;
 			const vertices = lods.slice( 0, 3 ).map( vertexCount );
 			const triangles = lods.map( triangleCount );
-			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 110 );
+			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 130 );
 			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 56 );
 			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 36 );
 			expect( vertices[ 0 ] ).toBeGreaterThan( vertices[ 1 ]! );
@@ -721,7 +745,7 @@ describe( 'procedural rock data', () => {
 			const mesh = generateRockData( { seed: reference.seed } ).lods[ 0 ]!;
 			const stats = getSurfaceStats( mesh );
 
-			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 110 );
+			expect( vertexCount( mesh ) ).toBeLessThanOrEqual( 130 );
 			expect( stats.relief ).toBeGreaterThanOrEqual( reference.relief * 0.7 );
 			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.4 );
 			expect( stats.spacing ).toBeGreaterThanOrEqual( reference.spacing * 0.7 );

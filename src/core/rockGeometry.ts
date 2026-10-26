@@ -9,6 +9,187 @@ export function clamp( value: number, minimum: number, maximum: number ): number
 
 }
 
+interface WeldedMeshTopology {
+	positions: Vec3[];
+	vertices: number[][];
+	neighbors: Set<number>[];
+	vertexGroups: number[];
+}
+
+function getWeldedMeshTopology( mesh: MeshData ): WeldedMeshTopology {
+
+	const groups = new Map<string, number>();
+	const positions: Vec3[] = [];
+	const vertices: number[][] = [];
+	const vertexGroups = new Array<number>( mesh.positions.length / 3 );
+
+	for ( let vertex = 0; vertex < vertexGroups.length; vertex ++ ) {
+
+		const offset = vertex * 3;
+		const position: Vec3 = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+		const key = position.map( ( value ) => value.toFixed( 6 ) ).join( ',' );
+		let group = groups.get( key );
+
+		if ( group === undefined ) {
+
+			group = positions.length;
+			groups.set( key, group );
+			positions.push( position );
+			vertices.push( [] );
+
+		}
+
+		vertexGroups[ vertex ] = group;
+		vertices[ group ]!.push( vertex );
+
+	}
+
+	const neighbors = positions.map( () => new Set<number>() );
+
+	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+
+		const triangle = [ vertexGroups[ mesh.indices[ index ]! ]!, vertexGroups[ mesh.indices[ index + 1 ]! ]!, vertexGroups[ mesh.indices[ index + 2 ]! ]! ];
+
+		for ( let edge = 0; edge < 3; edge ++ ) {
+
+			const first = triangle[ edge ]!;
+			const second = triangle[ ( edge + 1 ) % 3 ]!;
+
+			if ( first === second ) continue;
+			neighbors[ first ]!.add( second );
+			neighbors[ second ]!.add( first );
+
+		}
+
+	}
+
+	return { positions, vertices, neighbors, vertexGroups };
+
+}
+
+function meanNeighborPosition( positions: Vec3[], neighbors: Set<number> ): Vec3 | undefined {
+
+	if ( neighbors.size === 0 ) return undefined;
+
+	const average: Vec3 = [ 0, 0, 0 ];
+
+	for ( const neighbor of neighbors ) {
+		for ( let axis = 0; axis < 3; axis ++ ) average[ axis ]! += positions[ neighbor ]![ axis ]! / neighbors.size;
+	}
+
+	return average;
+
+}
+
+function getConeApexAngle( point: Vec3, neighbors: Set<number>, positions: Vec3[] ): number {
+
+	const average = meanNeighborPosition( positions, neighbors );
+	if ( average === undefined || neighbors.size < 3 ) return 180;
+
+	const axis: Vec3 = [ average[ 0 ] - point[ 0 ], average[ 1 ] - point[ 1 ], average[ 2 ] - point[ 2 ] ];
+	const axisLength = Math.hypot( axis[ 0 ], axis[ 1 ], axis[ 2 ] );
+	if ( axisLength < 1e-8 ) return 180;
+	axis[ 0 ] /= axisLength;
+	axis[ 1 ] /= axisLength;
+	axis[ 2 ] /= axisLength;
+	let widestHalfAngle = 0;
+
+	for ( const neighbor of neighbors ) {
+		const ray: Vec3 = [ positions[ neighbor ]![ 0 ] - point[ 0 ], positions[ neighbor ]![ 1 ] - point[ 1 ], positions[ neighbor ]![ 2 ] - point[ 2 ] ];
+		const rayLength = Math.hypot( ray[ 0 ], ray[ 1 ], ray[ 2 ] );
+		if ( rayLength < 1e-8 ) continue;
+		const cosine = clamp( ( ray[ 0 ] * axis[ 0 ] + ray[ 1 ] * axis[ 1 ] + ray[ 2 ] * axis[ 2 ] ) / rayLength, - 1, 1 );
+		widestHalfAngle = Math.max( widestHalfAngle, Math.acos( cosine ) );
+	}
+
+	return Math.min( Math.PI, widestHalfAngle * 2 ) * 180 / Math.PI;
+
+}
+
+/** Low-pass mesh-scale displacement and keep visible 1-ring peaks broad enough to read as rock. */
+export function limitRockPeakSharpness( mesh: MeshData, bandLimitWeight: number, minimumApexAngle = 100.5 ): void {
+
+	if ( ! Number.isFinite( bandLimitWeight ) || bandLimitWeight < 0 || bandLimitWeight > 1 ) {
+		throw new RangeError( 'Rock band-limit weight must be from 0 to 1' );
+	}
+
+	const topology = getWeldedMeshTopology( mesh );
+	const positions = topology.positions.map( ( position ) => [ ...position ] as Vec3 );
+	const center: Vec3 = [ 0, 0, 0 ];
+	for ( const position of positions ) {
+		center[ 0 ] += position[ 0 ] / positions.length;
+		center[ 1 ] += position[ 1 ] / positions.length;
+		center[ 2 ] += position[ 2 ] / positions.length;
+	}
+
+	// One graph-Laplacian pass damps radius detail that the current LOD cannot represent.
+	if ( bandLimitWeight > 0 ) {
+		const filtered = positions.map( ( position ) => [ ...position ] as Vec3 );
+		for ( let vertex = 0; vertex < positions.length; vertex ++ ) {
+			if ( positions[ vertex ]![ 1 ] <= 0 ) continue;
+			const average = meanNeighborPosition( positions, topology.neighbors[ vertex ]! );
+			if ( average === undefined ) continue;
+			for ( let axis = 0; axis < 3; axis ++ ) filtered[ vertex ]![ axis ] = positions[ vertex ]![ axis ]! + ( average[ axis ]! - positions[ vertex ]![ axis ]! ) * bandLimitWeight;
+		}
+		for ( let vertex = 0; vertex < positions.length; vertex ++ ) positions[ vertex ] = filtered[ vertex ]!;
+	}
+
+	// Clamp only outward Laplacian offsets; ordinary convex curvature stays intact.
+	for ( let vertex = 0; vertex < positions.length; vertex ++ ) {
+		if ( positions[ vertex ]![ 1 ] <= 0 ) continue;
+		const adjacent = topology.neighbors[ vertex ]!;
+		const average = meanNeighborPosition( positions, adjacent );
+		if ( average === undefined || adjacent.size < 3 ) continue;
+		let averageSpacing = 0;
+		for ( const neighbor of adjacent ) averageSpacing += Math.hypot( positions[ vertex ]![ 0 ] - positions[ neighbor ]![ 0 ], positions[ vertex ]![ 1 ] - positions[ neighbor ]![ 1 ], positions[ vertex ]![ 2 ] - positions[ neighbor ]![ 2 ] ) / adjacent.size;
+		const radial: Vec3 = [ positions[ vertex ]![ 0 ] - center[ 0 ], positions[ vertex ]![ 1 ] - center[ 1 ], positions[ vertex ]![ 2 ] - center[ 2 ] ];
+		const radialLength = Math.hypot( radial[ 0 ], radial[ 1 ], radial[ 2 ] ) || 1;
+		const offset: Vec3 = [ positions[ vertex ]![ 0 ] - average[ 0 ], positions[ vertex ]![ 1 ] - average[ 1 ], positions[ vertex ]![ 2 ] - average[ 2 ] ];
+		const prominence = ( offset[ 0 ] * radial[ 0 ] + offset[ 1 ] * radial[ 1 ] + offset[ 2 ] * radial[ 2 ] ) / radialLength;
+		const maximumProminence = averageSpacing * 0.9;
+		if ( prominence <= maximumProminence ) continue;
+		const correction = prominence - maximumProminence;
+		positions[ vertex ] = [ positions[ vertex ]![ 0 ] - radial[ 0 ] / radialLength * correction, positions[ vertex ]![ 1 ] - radial[ 1 ] / radialLength * correction, positions[ vertex ]![ 2 ] - radial[ 2 ] / radialLength * correction ];
+	}
+
+	// Move any remaining narrow cone toward its 1-ring centroid, binary-searching the minimum correction.
+	for ( let pass = 0; pass < 32; pass ++ ) {
+		let changed = false;
+		for ( let vertex = 0; vertex < positions.length; vertex ++ ) {
+			if ( positions[ vertex ]![ 1 ] <= 0 ) continue;
+			const adjacent = topology.neighbors[ vertex ]!;
+			if ( getConeApexAngle( positions[ vertex ]!, adjacent, positions ) >= minimumApexAngle ) continue;
+			const average = meanNeighborPosition( positions, adjacent );
+			if ( average === undefined ) continue;
+			const origin = positions[ vertex ]!;
+			let endpoint = center;
+			if ( getConeApexAngle( endpoint, adjacent, positions ) < minimumApexAngle ) endpoint = average;
+			let minimum = 0;
+			let maximum = 1;
+			for ( let iteration = 0; iteration < 12; iteration ++ ) {
+				const amount = ( minimum + maximum ) * 0.5;
+				const candidate: Vec3 = [ origin[ 0 ] + ( endpoint[ 0 ] - origin[ 0 ] ) * amount, origin[ 1 ] + ( endpoint[ 1 ] - origin[ 1 ] ) * amount, origin[ 2 ] + ( endpoint[ 2 ] - origin[ 2 ] ) * amount ];
+				if ( getConeApexAngle( candidate, adjacent, positions ) >= minimumApexAngle ) maximum = amount;
+				else minimum = amount;
+			}
+			positions[ vertex ] = [ origin[ 0 ] + ( endpoint[ 0 ] - origin[ 0 ] ) * maximum, origin[ 1 ] + ( endpoint[ 1 ] - origin[ 1 ] ) * maximum, origin[ 2 ] + ( endpoint[ 2 ] - origin[ 2 ] ) * maximum ];
+			changed = true;
+		}
+		if ( ! changed ) break;
+	}
+
+	for ( let group = 0; group < topology.vertices.length; group ++ ) {
+		const position = positions[ group ]!;
+		for ( const vertex of topology.vertices[ group ]! ) {
+			const offset = vertex * 3;
+			mesh.positions[ offset ] = position[ 0 ];
+			mesh.positions[ offset + 1 ] = position[ 1 ];
+			mesh.positions[ offset + 2 ] = position[ 2 ];
+		}
+	}
+
+}
+
 export function smoothstep( minimum: number, maximum: number, value: number ): number {
 
 	const amount = clamp( ( value - minimum ) / ( maximum - minimum ), 0, 1 );
@@ -440,7 +621,8 @@ export function removeRockBottomCap( mesh: MeshData, floor: number ): void {
 
 }
 
-export function createRockRadiusFunction( seed: number, radius: number, roughness: number, verticalScale: number ): ( direction: Vec3 ) => number {
+/** detailScale attenuates medium and finer geometric displacement for coarser LODs. */
+export function createRockRadiusFunction( seed: number, radius: number, roughness: number, verticalScale: number, detailScale = 1 ): ( direction: Vec3 ) => number {
 
 	const noise = createNoise3D( seed + 71 );
 	const noiseOffset = [ ( seed * 17.13 ) % 71, ( seed * 31.7 ) % 89, ( seed * 53.9 ) % 97 ];
@@ -453,8 +635,8 @@ export function createRockRadiusFunction( seed: number, radius: number, roughnes
 		const detail = noise( direction[ 0 ] * 5.1 + noiseOffset[ 1 ]!, direction[ 1 ] * 5.1 - noiseOffset[ 2 ]!, direction[ 2 ] * 5.1 + noiseOffset[ 0 ]! );
 		const relief = noise( direction[ 0 ] * 6.8 - noiseOffset[ 0 ]!, direction[ 1 ] * 6.8 + noiseOffset[ 2 ]!, direction[ 2 ] * 6.8 - noiseOffset[ 1 ]! );
 		const angle = Math.atan2( direction[ 2 ], direction[ 0 ] );
-		const lobes = Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.075 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.035;
-		let deformedRadius = radius * clamp( 0.97 + ( coarse * 0.25 + medium * 0.075 + detail * 0.012 + lobes ) * roughness, 0.62, 1.34 );
+		const lobes = ( Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.075 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.035 ) * detailScale;
+		let deformedRadius = radius * clamp( 0.97 + ( coarse * 0.25 + medium * 0.075 * detailScale + detail * 0.012 * detailScale + lobes ) * roughness, 0.62, 1.34 );
 
 		for ( const plane of cuttingPlanes ) {
 
@@ -465,7 +647,7 @@ export function createRockRadiusFunction( seed: number, radius: number, roughnes
 		}
 
 		const reliefExposure = 0.35 + smoothstep( 0.08, 0.65, Math.abs( direction[ 1 ] ) ) * 0.65;
-		deformedRadius = clamp( deformedRadius + radius * relief * 0.072 * roughness * reliefExposure, radius * 0.62, radius * 1.34 );
+		deformedRadius = clamp( deformedRadius + radius * relief * 0.072 * roughness * reliefExposure * detailScale, radius * 0.62, radius * 1.34 );
 
 		const floorHeight = - radius * verticalScale * 0.55;
 

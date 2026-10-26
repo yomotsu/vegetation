@@ -1,6 +1,6 @@
 import { buildBillboard, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
-import { applyRockSurfaceShading, buildOpenConvexRockMesh, buildRockMeshFromFaces, buildRockShell, createRockRadiusFunction, createRockRandom, getBounds, getProjectedMeshOutline, liftMesh, recomputeSmoothNormals, sinkMesh } from '../rockGeometry';
+import { applyRockSurfaceShading, buildOpenConvexRockMesh, buildRockMeshFromFaces, buildRockShell, createRockRadiusFunction, createRockRandom, getBounds, getProjectedMeshOutline, liftMesh, limitRockPeakSharpness, recomputeSmoothNormals, sinkMesh } from '../rockGeometry';
 import { createRockTextures } from '../rockTexture';
 import type { Color3, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
@@ -199,7 +199,7 @@ function buildLowPolyPebble( positions: Vec3[] ): MeshData {
 
 }
 
-function appendPebble( builder: MeshBuilder, mesh: MeshData, placement: PebblePlacement, burial: number, alreadyGrounded = false ): void {
+function appendPebble( builder: MeshBuilder, mesh: MeshData, placement: PebblePlacement, burial: number, alreadyGrounded = false, bandLimitWeight = 0.3 ): void {
 
 	if ( ! alreadyGrounded ) {
 
@@ -211,6 +211,8 @@ function appendPebble( builder: MeshBuilder, mesh: MeshData, placement: PebblePl
 		sinkMesh( mesh, burial * fullHeight, - Math.min( burial, 0.15 ) * fullHeight );
 
 	}
+
+	limitRockPeakSharpness( mesh, bandLimitWeight );
 
 	const vertices: number[] = [];
 	builder.beginGroup( 0 );
@@ -274,14 +276,15 @@ function buildStoneLod( placements: PebblePlacement[], burial: number, level: 0 
 
 	for ( const placement of placements ) {
 
-		const radiusAt = createRockRadiusFunction( placement.seed, 1, placement.roughness, 1 );
+		const detailScale = level === 0 ? 0.15 : level === 1 ? 0.08 : 0.03;
+		const radiusAt = createRockRadiusFunction( placement.seed, 1, placement.roughness, 1, detailScale );
 		const reference = buildRockShell( 1, radiusAt, 1 );
 		scaleMesh( reference, [ placement.size * 0.5 * placement.aspect, placement.size * 0.5 * placement.verticalAspect, placement.size * 0.5 * placement.depthAspect ] );
 		rotateMesh( reference, placement.yaw );
 		const vertexLimit = level === 0 ? 8 : level === 1 ? refinedLod1.has( placement ) ? 7 : 6 : 6;
 		const stone = buildLowPolyPebble( selectPebbleVertices( reference, vertexLimit, level === 2 ) );
 
-		appendPebble( builder, stone, placement, burial );
+		appendPebble( builder, stone, placement, burial, false, 0.025 );
 
 	}
 
@@ -301,13 +304,14 @@ function buildFarStoneLod( placements: PebblePlacement[], burial: number, size: 
 
 	for ( const placement of selected ) {
 
-		const radiusAt = createRockRadiusFunction( placement.seed, 1, placement.roughness, 1 );
+		const radiusAt = createRockRadiusFunction( placement.seed, 1, placement.roughness, 1, 0.02 );
 		const reference = buildRockShell( 1, radiusAt, 1 );
 		scaleMesh( reference, [ placement.size * 0.5 * placement.aspect, placement.size * 0.5 * placement.verticalAspect, placement.size * 0.5 * placement.depthAspect ] );
 		rotateMesh( reference, placement.yaw );
 		const bounds = getMeshBounds( reference );
 		const fullHeight = bounds.maximum[ 1 ] - bounds.minimum[ 1 ];
-		const base = getProjectedMeshOutline( reference, 5, - 0.03 * size );
+		// Widen the coarse base enough to keep its apex obtuse without shortening the silhouette.
+		const base = getProjectedMeshOutline( reference, 5, - 0.03 * size ).map( ( [ x, y, z ] ) => [ x * 1.1, y, z * 1.1 ] as Vec3 );
 		const apexY = bounds.maximum[ 1 ] - bounds.minimum[ 1 ] - burial * fullHeight;
 		const vertices = [ ...base, [ 0, apexY, 0 ] as Vec3 ];
 		const apexIndex = vertices.length - 1;
@@ -316,7 +320,7 @@ function buildFarStoneLod( placements: PebblePlacement[], burial: number, size: 
 		for ( let index = 0; index < base.length; index ++ ) faces.push( [ index, apexIndex, ( index + 1 ) % base.length ] );
 		const stone = buildRockMeshFromFaces( vertices, faces );
 
-		appendPebble( builder, stone, placement, burial, true );
+		appendPebble( builder, stone, placement, burial, true, 0.03 );
 
 	}
 
