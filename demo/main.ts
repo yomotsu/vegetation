@@ -348,7 +348,7 @@ function rebuildPreview(): void {
 			const geometry = asset.geometries[ lod ]!;
 			const triangles = Math.round( geometry.getIndex()!.count / 3 ).toLocaleString();
 			const vertices = geometry.getAttribute( 'position' ).count.toLocaleString();
-			label.textContent = `LOD ${ lod } · ${ triangles } tris\n${ vertices } verts`;
+			label.textContent = `LOD ${ lod }\n${ triangles } tris\n${ vertices } verts`;
 			compareLabels.append( label );
 			labels.push( { mesh, element: label } );
 
