@@ -113,6 +113,9 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 	if ( name === 'rootDepth' ) return [ 0, 1, 0.05 ];
 	if ( name === 'crownSize' ) return [ 0.5, 1.5, 0.01 ];
 	if ( name === 'branchCount' ) return [ 1, 18, 1 ];
+	if ( name === 'size' ) return [ 1, 12, 0.1 ];
+	if ( name === 'roughness' ) return [ 0, 1.5, 0.01 ];
+	if ( name === 'flatness' ) return [ 0, 1, 0.01 ];
 
 	const value = state.options[ name ]!;
 	return [ 0, Math.max( 10, value * 2 ), 0.1 ];
@@ -194,7 +197,7 @@ function addCollider( x: number, visible: boolean ): void {
 
 function frameView(): void {
 
-	const height = state.options.height ?? 6;
+	const height = state.options.height ?? state.options.size ?? 6;
 	controls.target.set( 0, state.mode === 'scatter' ? 0 : height * 0.5, 0 );
 
 	if ( state.mode === 'single' ) {
@@ -225,9 +228,11 @@ function rebuildPreview(): void {
 		root.add( mesh );
 		addCollider( 0, state.collider );
 	} else if ( state.mode === 'compare' ) {
+		const spacing = Math.max( 4.5, ( state.options.size ?? 0 ) * 1.25 );
+
 		for ( let lod = 0; lod < 5; lod ++ ) {
 
-			const x = ( lod - 2 ) * 4.5;
+			const x = ( lod - 2 ) * spacing;
 			const mesh = new VegetationMesh( asset, lod );
 			mesh.position.x = x;
 			setPreviewShadowFlags( mesh );
@@ -381,7 +386,7 @@ function updateCompareLabels(): void {
 	for ( const label of labels ) {
 
 		const position = label.mesh.position.clone();
-		position.y = ( state.options.height ?? 6 ) * 1.13;
+		position.y = ( state.options.height ?? state.options.size ?? 6 ) * 1.13;
 		position.project( camera );
 		label.element.style.left = `${ ( position.x * 0.5 + 0.5 ) * window.innerWidth }px`;
 		label.element.style.top = `${ ( - position.y * 0.5 + 0.5 ) * window.innerHeight }px`;

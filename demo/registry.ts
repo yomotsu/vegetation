@@ -1,5 +1,5 @@
-import { generateTree } from '../src/index';
-import type { TreeMeshOptions, VegetationAsset } from '../src/index';
+import { generateRock, generateTree } from '../src/index';
+import type { RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
 
 export interface VegetationKind {
 	name: string;
@@ -26,6 +26,17 @@ export const kinds: VegetationKind[] = [
 			rootDepth: 0.3 * ( 7.5 / 7.55 ),
 			crownSize: 1,
 			branchCount: 10,
+		},
+	},
+	{
+		name: 'Rock',
+		create: ( opts ) => generateRock( opts as RockMeshOptions ),
+		colorParts: [ 'rock' ],
+		options: {
+			seed: 1,
+			size: 6.4,
+			roughness: 1.2,
+			flatness: 0.04,
 		},
 	},
 ];

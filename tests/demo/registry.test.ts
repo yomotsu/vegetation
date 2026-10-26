@@ -14,9 +14,9 @@ describe( 'demo registry', () => {
 
 	} );
 
-	it( 'registers only the tree with the supported controls', () => {
+	it( 'registers the tree and rock with the supported controls', () => {
 
-		expect( kinds ).toHaveLength( 1 );
+		expect( kinds ).toHaveLength( 2 );
 		expect( kinds[ 0 ]!.name ).toBe( 'Tree' );
 		expect( kinds[ 0 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
 		expect( kinds[ 0 ]!.options ).toEqual( {
@@ -25,6 +25,14 @@ describe( 'demo registry', () => {
 			rootDepth: 0.3 * ( 7.5 / 7.55 ),
 			crownSize: 1,
 			branchCount: 10,
+		} );
+		expect( kinds[ 1 ]!.name ).toBe( 'Rock' );
+		expect( kinds[ 1 ]!.colorParts ).toEqual( [ 'rock' ] );
+		expect( kinds[ 1 ]!.options ).toEqual( {
+			seed: 1,
+			size: 6.4,
+			roughness: 1.2,
+			flatness: 0.04,
 		} );
 
 	} );
