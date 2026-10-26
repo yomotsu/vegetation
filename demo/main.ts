@@ -54,7 +54,7 @@ scene.add( root );
 
 const state: DemoState = {
 	kind: kinds[ 0 ]!.name,
-	mode: 'single',
+	mode: 'compare',
 	lod: 0,
 	turntable: false,
 	wireframe: false,
