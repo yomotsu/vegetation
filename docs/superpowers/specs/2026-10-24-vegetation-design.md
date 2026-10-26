@@ -200,6 +200,8 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 
 ## 制約
 
+- **LOD4 の板（2026-10-26 ユーザー決定）**: SpeedTree 方式。縦のビルボード（横から見た絵）と水平の板（真上から見た絵）を、カメラの見下ろし角に応じてシェーダーでディザ・フェードして切り替える。このマテリアルに限り独自シェーダーを許可（WebGL は onBeforeCompile、WebGPU は `vegetation/webgpu` エントリで TSL 版を登録）
+
 - **頂点数（2026-10-25 ユーザー決定）**: tree の各 LOD の頂点数は参考 Tree01 と同じかそれ以下（LOD0 ≤ 795、LOD1 ≤ 513、LOD2 ≤ 331）。少ないほど良いが、見た目は参考を保つこと
 
 - 参考プロジェクトの教訓（terrain-kit `CLAUDE.md`）:
