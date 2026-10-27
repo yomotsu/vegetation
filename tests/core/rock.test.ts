@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bakeImpostor, generateRockData, hexToLinear } from '../../src/core';
 import type { MeshData } from '../../src/core';
-import { createRockTextures } from '../../src/core/rockTexture';
+import { createRockCrackPaths, createRockTextures } from '../../src/core/rockTexture';
 import { sampleOutlineRadius } from '../helpers/meshOutline';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -1202,6 +1202,64 @@ describe( 'procedural rock data', () => {
 		expect( rockOneDarkRegions.span ).toBeLessThan( 0.12 );
 		expect( darkRegions.largest ).toBeLessThan( 0.01 );
 		expect( darkRegions.span ).toBeLessThan( 0.12 );
+
+	} );
+
+	it( 'builds thin angular cracks with pointed ends and occasional short branches', () => {
+
+		const paths = createRockCrackPaths( 9, Math.PI / 4, () => 1 );
+		const mainPaths = paths.filter( ( path ) => ! path.branch );
+		const branches = paths.filter( ( path ) => path.branch );
+		let sharpTurns = 0;
+
+		expect( mainPaths ).toHaveLength( 150 );
+		expect( branches.length ).toBeGreaterThan( 20 );
+		expect( branches.length ).toBeLessThan( 50 );
+
+		for ( const path of paths ) {
+
+			const widths = [ path.segments[ 0 ]!.width0, ...path.segments.map( ( segment ) => segment.width1 ) ];
+			expect( widths[ 0 ] ).toBe( 0 );
+			expect( widths[ widths.length - 1 ] ).toBe( 0 );
+			expect( Math.max( ...widths ) ).toBeLessThanOrEqual( 0.002 );
+			expect( new Set( widths ).size ).toBeGreaterThan( 1 );
+
+			const pathLength = path.points.slice( 1 ).reduce( ( length, point, index ) => {
+
+				const previous = path.points[ index ]!;
+				return length + Math.hypot( point.u - previous.u, point.v - previous.v );
+
+			}, 0 );
+
+			if ( path.branch ) {
+
+				expect( pathLength ).toBeGreaterThan( 0.01 );
+				expect( pathLength ).toBeLessThan( 0.04 );
+
+			}
+
+			for ( let index = 1; index < path.points.length - 1; index ++ ) {
+
+				const previous = path.points[ index - 1 ]!;
+				const current = path.points[ index ]!;
+				const next = path.points[ index + 1 ]!;
+				const firstAngle = Math.atan2( current.v - previous.v, current.u - previous.u );
+				const secondAngle = Math.atan2( next.v - current.v, next.u - current.u );
+				const turn = Math.abs( Math.atan2( Math.sin( secondAngle - firstAngle ), Math.cos( secondAngle - firstAngle ) ) );
+
+				if ( turn > 0.5 ) sharpTurns ++;
+
+			}
+
+		}
+
+		expect( sharpTurns ).toBeGreaterThan( 30 );
+		expect( createRockCrackPaths( 9, Math.PI / 4, () => 1 ) ).toEqual( paths );
+		expect( createRockCrackPaths( 10, Math.PI / 4, () => 1 ) ).not.toEqual( paths );
+
+		const textures = createRockTextures( 9 );
+		expect( textures.albedo.width ).toBe( 1024 );
+		expect( textures.normal.width ).toBe( 1024 );
 
 	} );
 

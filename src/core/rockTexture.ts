@@ -72,17 +72,24 @@ function copyTexturePair( textures: RockTexturePair ): RockTexturePair {
 
 }
 
-interface CrackSegment {
+export interface RockCrackSegment {
 	u0: number;
 	v0: number;
 	u1: number;
 	v1: number;
-	width: number;
+	width0: number;
+	width1: number;
 }
 
-interface CrackPoint {
+export interface RockCrackPoint {
 	u: number;
 	v: number;
+}
+
+export interface RockCrackPath {
+	points: RockCrackPoint[];
+	segments: RockCrackSegment[];
+	branch: boolean;
 }
 
 function clamp( value: number, minimum: number, maximum: number ): number {
@@ -208,41 +215,60 @@ function createPeriodicNoise1D( seed: number, columns: number ): ( value: number
 }
 
 function addCrackPath(
-	segments: CrackSegment[],
-	start: CrackPoint,
+	start: RockCrackPoint,
 	angle: number,
 	length: number,
 	steps: number,
 	width: number,
 	random: () => number,
-): CrackPoint[] {
+	branch: boolean,
+): RockCrackPath {
 
-	const points = [ start ];
+	const points: RockCrackPoint[] = [ start ];
 	let point = start;
 	let direction = angle;
 
 	for ( let step = 0; step < steps; step ++ ) {
 
-		direction += ( random() - 0.5 ) * 0.95;
+		direction += ( random() - 0.5 ) * 1.6;
 		const next = {
 			u: point.u + Math.cos( direction ) * length / steps,
 			v: point.v + Math.sin( direction ) * length / steps,
 		};
 
-		segments.push( { u0: point.u, v0: point.v, u1: next.u, v1: next.v, width } );
 		points.push( next );
 		point = next;
 
 	}
 
-	return points;
+	const widths = points.map( ( _, index ) => {
+
+		if ( index === 0 || index === steps ) return 0;
+
+		const progress = index / steps;
+		const taper = Math.pow( Math.sin( progress * Math.PI ), 0.8 );
+		const variation = 0.76 + 0.24 * ( Math.sin( start.u * 31.7 + start.v * 57.3 + index * 1.91 ) * 0.5 + 0.5 );
+
+		return width * taper * variation;
+
+	} );
+	const segments = points.slice( 0, - 1 ).map( ( first, index ) => ( {
+		u0: first.u,
+		v0: first.v,
+		u1: points[ index + 1 ]!.u,
+		v1: points[ index + 1 ]!.v,
+		width0: widths[ index ]!,
+		width1: widths[ index + 1 ]!,
+	} ) );
+
+	return { points, segments, branch };
 
 }
 
-function createFineCracks( seed: number, dominantAngle: number, detailMask: NoiseSampler ): CrackSegment[] {
+export function createRockCrackPaths( seed: number, dominantAngle: number, detailMask: ( u: number, v: number ) => number ): RockCrackPath[] {
 
 	const random = createRandom( seed + 907 );
-	const segments: CrackSegment[] = [];
+	const paths: RockCrackPath[] = [];
 	const count = 150;
 
 	for ( let index = 0; index < count; index ++ ) {
@@ -250,61 +276,72 @@ function createFineCracks( seed: number, dominantAngle: number, detailMask: Nois
 		const start = { u: random(), v: 0.12 + random() * 0.76 };
 		if ( detailMask( start.u, start.v ) < 0.28 ) continue;
 		const angle = dominantAngle + ( random() - 0.5 ) * 1.5;
-		const width = 0.0035 + random() * 0.002;
+		const width = 0.001 + random() * 0.0009;
 		const length = 0.025 + random() * 0.045;
-		const points = addCrackPath( segments, start, angle, length, 2 + Math.floor( random() * 3 ), width, random );
+		const path = addCrackPath( start, angle, length, 2 + Math.floor( random() * 3 ), width, random, false );
+		paths.push( path );
 
-		if ( random() < 0.46 ) {
+		if ( random() < 0.22 ) {
 
-			const branchIndex = Math.floor( random() * ( points.length - 1 ) );
-			const branchStart = points[ branchIndex ]!;
+			const branchIndex = Math.floor( random() * ( path.points.length - 1 ) );
+			const branchStart = path.points[ branchIndex ]!;
 			const branchAngle = angle + ( random() < 0.5 ? - 1 : 1 ) * ( 0.55 + random() * 0.55 );
 
-			addCrackPath( segments, branchStart, branchAngle, 0.012 + random() * 0.022, 2 + Math.floor( random() * 2 ), width * 0.78, random );
+			paths.push( addCrackPath( branchStart, branchAngle, 0.012 + random() * 0.022, 2 + Math.floor( random() * 2 ), width * 0.78, random, true ) );
 
 		}
 
 	}
 
-	return segments;
+	return paths;
 
 }
 
-function createCrackDistanceMap( size: number, segments: CrackSegment[] ): Float32Array {
+function createCrackDistanceMap( size: number, paths: RockCrackPath[] ): { distances: Float32Array; sides: Int8Array } {
 
 	const distances = new Float32Array( size * size );
 	distances.fill( Infinity );
+	const sides = new Int8Array( size * size );
 
-	for ( const segment of segments ) {
+	for ( const path of paths ) {
 
-		const deltaU = segment.u1 - segment.u0;
-		const deltaV = segment.v1 - segment.v0;
-		const lengthSquared = deltaU * deltaU + deltaV * deltaV;
-		const inverseWidthSquared = 1 / ( segment.width * segment.width );
-		const margin = segment.width * 3.5;
+		for ( const segment of path.segments ) {
 
-		for ( const shift of [ - 1, 0, 1 ] ) {
+			const deltaU = segment.u1 - segment.u0;
+			const deltaV = segment.v1 - segment.v0;
+			const lengthSquared = deltaU * deltaU + deltaV * deltaV;
+			const margin = Math.max( segment.width0, segment.width1 ) * 3.5 + 1 / size;
 
-			const startU = segment.u0 + shift;
-			const endU = segment.u1 + shift;
-			const minimumX = Math.floor( ( Math.min( startU, endU ) - margin ) * size );
-			const maximumX = Math.ceil( ( Math.max( startU, endU ) + margin ) * size );
-			const minimumY = Math.max( 0, Math.floor( ( Math.min( segment.v0, segment.v1 ) - margin ) * size ) );
-			const maximumY = Math.min( size - 1, Math.ceil( ( Math.max( segment.v0, segment.v1 ) + margin ) * size ) );
+			for ( const shift of [ - 1, 0, 1 ] ) {
 
-			for ( let y = minimumY; y <= maximumY; y ++ ) {
+				const startU = segment.u0 + shift;
+				const endU = segment.u1 + shift;
+				const minimumX = Math.floor( ( Math.min( startU, endU ) - margin ) * size );
+				const maximumX = Math.ceil( ( Math.max( startU, endU ) + margin ) * size );
+				const minimumY = Math.max( 0, Math.floor( ( Math.min( segment.v0, segment.v1 ) - margin ) * size ) );
+				const maximumY = Math.min( size - 1, Math.ceil( ( Math.max( segment.v0, segment.v1 ) + margin ) * size ) );
 
-				for ( let x = minimumX; x <= maximumX; x ++ ) {
+				for ( let y = minimumY; y <= maximumY; y ++ ) {
 
-					const u = x / size;
-					const v = y / size;
-					const projection = clamp( ( ( u - startU ) * deltaU + ( v - segment.v0 ) * deltaV ) / lengthSquared, 0, 1 );
-					const deltaX = u - startU - deltaU * projection;
-					const deltaY = v - segment.v0 - deltaV * projection;
-					const distance = ( deltaX * deltaX + deltaY * deltaY ) * inverseWidthSquared;
-					const index = y * size + ( ( x % size ) + size ) % size;
+					for ( let x = minimumX; x <= maximumX; x ++ ) {
 
-					distances[ index ] = Math.min( distances[ index ]!, distance );
+						const u = x / size;
+						const v = y / size;
+						const projection = clamp( ( ( u - startU ) * deltaU + ( v - segment.v0 ) * deltaV ) / lengthSquared, 0, 1 );
+						const deltaX = u - startU - deltaU * projection;
+						const deltaY = v - segment.v0 - deltaV * projection;
+						const localWidth = Math.max( segment.width0 + ( segment.width1 - segment.width0 ) * projection, 0.00008 );
+						const distance = ( deltaX * deltaX + deltaY * deltaY ) / ( localWidth * localWidth );
+						const index = y * size + ( ( x % size ) + size ) % size;
+
+						if ( distance < distances[ index ]! ) {
+
+							distances[ index ] = distance;
+							sides[ index ] = deltaU * deltaY - deltaV * deltaX >= 0 ? 1 : - 1;
+
+						}
+
+					}
 
 				}
 
@@ -314,7 +351,7 @@ function createCrackDistanceMap( size: number, segments: CrackSegment[] ): Float
 
 	}
 
-	return distances;
+	return { distances, sides };
 
 }
 
@@ -373,7 +410,7 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 	const detailMaskNoise = createPeriodicNoise( seedOffset + 113, 3, 3, size );
 	const streakNoise = createPeriodicNoise( seedOffset + 127, 24, 72, size );
 	const detailMask = ( u: number, v: number ): number => smoothstep( - 0.25, 0.5, detailMaskNoise( u, v ) + 1 );
-	const cracks = createFineCracks( seed, dominantAngle, detailMask );
+	const cracks = createRockCrackPaths( seed, dominantAngle, detailMask );
 	const crackDistances = createCrackDistanceMap( size, cracks );
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
@@ -398,15 +435,20 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 			const along = fract( direction[ 0 ] * u + direction[ 1 ] * v + warp * 0.015 );
 			const across = fract( - direction[ 1 ] * u + direction[ 0 ] * v + warp * 0.02 );
 			const fineStreak = ( 1 - smoothstep( 0.2, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
-			const crackDistance = Math.sqrt( crackDistances[ y * size + x ]! );
-			const crack = 1 - smoothstep( 0.48, 1.25, crackDistance );
-			const crackHalo = 1 - smoothstep( 1.2, 3.2, crackDistance );
-			const fineCrack = crack * poleFade * detail;
-			const fineCrackHalo = crackHalo * poleFade * detail;
-			const brightness = broad * 15 + medium * 5.6 + localizedStrata * 2.2 + grain * 5.1 - fineStreak * 6 - fineCrack * 18 - fineCrackHalo * 3;
+			const crackIndex = y * size + x;
+			const crackDistance = Math.sqrt( crackDistances.distances[ crackIndex ]! );
+			const crackCore = 1 - smoothstep( 0.12, 0.78, crackDistance );
+			const crackEdge = smoothstep( 0.48, 0.82, crackDistance ) * ( 1 - smoothstep( 0.82, 1.55, crackDistance ) );
+			const crackRim = crackDistances.sides[ crackIndex ]! > 0
+				? smoothstep( 0.65, 0.92, crackDistance ) * ( 1 - smoothstep( 0.95, 1.6, crackDistance ) )
+				: 0;
+			const fineCrack = crackCore * poleFade * detail;
+			const fineCrackEdge = crackEdge * poleFade * detail;
+			const fineCrackRim = crackRim * poleFade * detail;
+			const brightness = broad * 15 + medium * 5.6 + localizedStrata * 2.2 + grain * 5.1 - fineStreak * 6 - fineCrack * 20 - fineCrackEdge * 5 + fineCrackRim * 7;
 			const index = y * size + x;
 
-			heightMap[ index ] = broad * 0.06 + medium * 0.025 + localizedStrata * 0.007 + grain * 0.005 - fineStreak * 0.003 - fineCrack * 0.025 - fineCrackHalo * 0.004;
+			heightMap[ index ] = broad * 0.06 + medium * 0.025 + localizedStrata * 0.007 + grain * 0.005 - fineStreak * 0.003 - fineCrack * 0.02 - fineCrackEdge * 0.006 + fineCrackRim * 0.003;
 			albedoData[ index * 4 ] = Math.round( clamp( 80 + brightness * 0.96, 0, 255 ) );
 			albedoData[ index * 4 + 1 ] = Math.round( clamp( 95 + brightness, 0, 255 ) );
 			albedoData[ index * 4 + 2 ] = Math.round( clamp( 102 + brightness * 1.04, 0, 255 ) );
