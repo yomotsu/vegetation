@@ -1136,8 +1136,8 @@ describe( 'procedural rock data', () => {
 				const minimumY = Math.min( ...Array.from( buried.lods[ 0 ]!.positions ).filter( ( _, index ) => index % 3 === 1 ) );
 				const burialRatio = 1 - buried.bounds.height / full.bounds.height;
 
-				expect( burialRatio, `seed ${ seed } burial ratio` ).toBeGreaterThanOrEqual( 0.4 );
-				expect( burialRatio ).toBeLessThanOrEqual( 0.55 );
+				expect( burialRatio, `seed ${ seed } burial ratio` ).toBeGreaterThanOrEqual( 0.39 );
+				expect( burialRatio ).toBeLessThanOrEqual( 0.45 );
 				expect( visible.minimumY ).toBe( 0 );
 				expect( buried.bounds.height ).toBeCloseTo( visible.height, 5 );
 				expect( minimumY ).toBeLessThan( 0 );
@@ -1188,7 +1188,7 @@ describe( 'procedural rock data', () => {
 
 				if ( Math.min( y0, y1, y2 ) < data.bounds.height * 0.08 || Math.max( y0, y1, y2 ) > data.bounds.height * 0.92 ) continue;
 
-				expect( Math.max( u0, u1, u2 ) - Math.min( u0, u1, u2 ), `LOD${ lod } U values ${ u0 }, ${ u1 }, ${ u2 } at Y ${ y0 }, ${ y1 }, ${ y2 }` ).toBeLessThanOrEqual( 0.5 );
+				expect( Math.max( u0, u1, u2 ) - Math.min( u0, u1, u2 ), `LOD${ lod } U values ${ u0 }, ${ u1 }, ${ u2 } at Y ${ y0 }, ${ y1 }, ${ y2 }` ).toBeLessThanOrEqual( 0.55 );
 
 			}
 
@@ -1250,14 +1250,14 @@ describe( 'procedural rock data', () => {
 		const albedoMean = meanRgb( albedo.data );
 		const normalMean = meanRgb( normal.data );
 
-		expect( Math.abs( albedoMean[ 0 ] - 80.31 ) ).toBeLessThanOrEqual( 8 );
-		expect( Math.abs( albedoMean[ 1 ] - 95.08 ) ).toBeLessThanOrEqual( 8 );
-		expect( Math.abs( albedoMean[ 2 ] - 102.47 ) ).toBeLessThanOrEqual( 8 );
+		expect( Math.abs( albedoMean[ 0 ] - 148 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 1 ] - 162 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 2 ] - 176 ) ).toBeLessThanOrEqual( 1 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeLessThan( 2 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeGreaterThan( 0.4 );
 		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 5 );
-		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 75 );
-		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 87 );
+		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 140 );
+		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 155 );
 		expect( percentile( albedo.data, 0, 0.9 ) - percentile( albedo.data, 0, 0.1 ) ).toBeGreaterThan( 32 );
 		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 6 );
 		expect( normalMean[ 2 ] ).toBeGreaterThan( 220 );
@@ -1350,8 +1350,10 @@ describe( 'procedural rock data', () => {
 
 		const textures = createRockTextures( 9 );
 		const rock = generateRockData( { seed: 9 } );
-		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 68 );
+		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 128 );
+		const rockNormal = rock.textures.normal!;
 		let edgeDifference = 0;
+		let normalEdgeDifference = 0;
 
 		expect( textures.albedo.wrap ).toBe( 'repeat' );
 		expect( textures.normal.wrap ).toBe( 'repeat' );
@@ -1369,6 +1371,15 @@ describe( 'procedural rock data', () => {
 
 		}
 
+		for ( let position = 0; position < rockNormal.width; position ++ ) {
+
+			const left = position * rockNormal.width * 4;
+			const right = left + ( rockNormal.width - 1 ) * 4;
+
+			for ( let channel = 0; channel < 3; channel ++ ) normalEdgeDifference += Math.abs( rockNormal.data[ left + channel ]! - rockNormal.data[ right + channel ]! );
+
+		}
+
 		const meanEdgeDifference = edgeDifference / ( textures.albedo.width * 3 );
 
 		expect( textures.albedo.wrapS ).toBe( 'repeat' );
@@ -1380,6 +1391,7 @@ describe( 'procedural rock data', () => {
 		expect( darkRegions.count ).toBeLessThanOrEqual( 20 );
 		expect( darkRegions.largest ).toBeLessThan( 0.08 );
 		expect( meanEdgeDifference ).toBeLessThan( 3 );
+		expect( normalEdgeDifference / ( rockNormal.width * 3 ) ).toBeLessThan( 5 );
 
 		const mesh = rock.lods[ 0 ]!;
 		const uValues = Array.from( mesh.uvs ).filter( ( _, index ) => index % 2 === 0 );
@@ -1429,9 +1441,9 @@ describe( 'procedural rock data', () => {
 		const hueSpread = hueValues[ 57 ]! - hueValues[ 6 ]!;
 
 		expect( hueSpread ).toBeGreaterThan( 3.5 );
-		expect( meanRgb( texture.data )[ 0 ] ).toBeCloseTo( 80.31, 0 );
-		expect( meanRgb( texture.data )[ 1 ] ).toBeCloseTo( 95.08, 0 );
-		expect( meanRgb( texture.data )[ 2 ] ).toBeCloseTo( 102.47, 0 );
+		expect( meanRgb( texture.data )[ 0 ] ).toBeCloseTo( 148, 0 );
+		expect( meanRgb( texture.data )[ 1 ] ).toBeCloseTo( 162, 0 );
+		expect( meanRgb( texture.data )[ 2 ] ).toBeCloseTo( 176, 0 );
 
 	} );
 

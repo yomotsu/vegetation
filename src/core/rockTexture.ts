@@ -166,6 +166,53 @@ function rasterizeRockSurfaceNormals( mesh: MeshData, size: number, normals: Flo
 
 	}
 
+	for ( let pass = 0; pass < 3; pass ++ ) {
+
+		const previousCoverage = covered.slice();
+		const filled: { pixel: number; normal: Vec3 }[] = [];
+
+		for ( let y = 0; y < size; y ++ ) {
+
+			for ( let x = 0; x < size; x ++ ) {
+
+				const pixel = y * size + x;
+				if ( previousCoverage[ pixel ] !== 0 ) continue;
+				const adjacent = [
+					y > 0 ? pixel - size : - 1,
+					y + 1 < size ? pixel + size : - 1,
+					y * size + ( x === 0 ? size - 1 : x - 1 ),
+					y * size + ( x + 1 === size ? 0 : x + 1 ),
+				].filter( ( neighbor ) => neighbor >= 0 && previousCoverage[ neighbor ] !== 0 );
+
+				if ( adjacent.length === 0 ) continue;
+				const normal: Vec3 = [ 0, 0, 0 ];
+
+				for ( const neighbor of adjacent ) {
+
+					normal[ 0 ] += normals[ neighbor * 3 ]! / adjacent.length;
+					normal[ 1 ] += normals[ neighbor * 3 + 1 ]! / adjacent.length;
+					normal[ 2 ] += normals[ neighbor * 3 + 2 ]! / adjacent.length;
+
+				}
+
+				const length = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) || 1;
+				filled.push( { pixel, normal: [ normal[ 0 ] / length, normal[ 1 ] / length, normal[ 2 ] / length ] } );
+
+			}
+
+		}
+
+		for ( const { pixel, normal } of filled ) {
+
+			normals[ pixel * 3 ] = normal[ 0 ];
+			normals[ pixel * 3 + 1 ] = normal[ 1 ];
+			normals[ pixel * 3 + 2 ] = normal[ 2 ];
+			covered[ pixel ] = 1;
+
+		}
+
+	}
+
 	for ( let pixel = 0; pixel < covered.length; pixel ++ ) {
 
 		if ( covered[ pixel ] === 0 ) continue;
@@ -185,21 +232,51 @@ function createRockRidgeMap( normals: Float32Array, size: number ): Float32Array
 	const readDot = ( first: number, second: number ): number => normals[ first * 3 ]! * normals[ second * 3 ]! + normals[ first * 3 + 1 ]! * normals[ second * 3 + 1 ]! + normals[ first * 3 + 2 ]! * normals[ second * 3 + 2 ]!;
 
 	for ( let y = 1; y < size - 1; y ++ ) {
+
 		for ( let x = 0; x < size; x ++ ) {
+
 			const pixel = y * size + x;
 			const left = y * size + ( x === 0 ? size - 1 : x - 1 );
 			const right = y * size + ( x + 1 === size ? 0 : x + 1 );
 			const up = ( y - 1 ) * size + x;
 			const down = ( y + 1 ) * size + x;
 			const curvature = Math.max( 1 - readDot( pixel, left ), 1 - readDot( pixel, right ), 1 - readDot( pixel, up ), 1 - readDot( pixel, down ) );
-		const highlight = smoothstep( 0.025, 0.12, curvature );
+			const highlight = smoothstep( 0.025, 0.12, curvature );
 			ridgeMap[ pixel ] = highlight;
 			ridgeMap[ left ] = Math.max( ridgeMap[ left ]!, highlight * 0.65 );
 			ridgeMap[ right ] = Math.max( ridgeMap[ right ]!, highlight * 0.65 );
 		}
+
 	}
 
-	return ridgeMap;
+	const smoothed = new Float32Array( size * size );
+	const kernel = [ 1, 2, 1 ];
+
+	for ( let y = 0; y < size; y ++ ) {
+
+		for ( let x = 0; x < size; x ++ ) {
+
+			let total = 0;
+
+			for ( let offsetY = - 1; offsetY <= 1; offsetY ++ ) {
+
+				for ( let offsetX = - 1; offsetX <= 1; offsetX ++ ) {
+
+					const sampleX = ( x + offsetX + size ) % size;
+					const sampleY = clamp( y + offsetY, 0, size - 1 );
+					total += ridgeMap[ sampleY * size + sampleX ]! * kernel[ offsetX + 1 ]! * kernel[ offsetY + 1 ]!;
+
+				}
+
+			}
+
+			smoothed[ y * size + x ] = total / 16;
+
+		}
+
+	}
+
+	return smoothed;
 
 }
 
@@ -488,7 +565,7 @@ function createCrackDistanceMap( size: number, paths: RockCrackPath[] ): { dista
 
 function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
 
-	const target = [ 80.31, 95.08, 102.47 ];
+	const target = [ 148, 162, 176 ];
 	const total = [ 0, 0, 0 ];
 
 	for ( let offset = 0; offset < data.length; offset += 4 ) {
@@ -508,6 +585,72 @@ function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
 		data[ offset + 2 ] = Math.round( clamp( data[ offset + 2 ]! + adjustment[ 2 ]!, 0, 255 ) );
 
 	}
+
+}
+
+function getTextureFacetNormals( seed: number, mesh?: MeshData ): Vec3[] {
+
+	if ( mesh === undefined ) return createRockFacetNormals( seed );
+
+	const clusters: { sum: Vec3; area: number }[] = [];
+	let totalArea = 0;
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		const first = mesh.indices[ offset ]! * 3;
+		const second = mesh.indices[ offset + 1 ]! * 3;
+		const third = mesh.indices[ offset + 2 ]! * 3;
+		const ab: Vec3 = [ mesh.positions[ second ]! - mesh.positions[ first ]!, mesh.positions[ second + 1 ]! - mesh.positions[ first + 1 ]!, mesh.positions[ second + 2 ]! - mesh.positions[ first + 2 ]! ];
+		const ac: Vec3 = [ mesh.positions[ third ]! - mesh.positions[ first ]!, mesh.positions[ third + 1 ]! - mesh.positions[ first + 1 ]!, mesh.positions[ third + 2 ]! - mesh.positions[ first + 2 ]! ];
+		const cross: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+		const area = Math.hypot( cross[ 0 ], cross[ 1 ], cross[ 2 ] ) * 0.5;
+		if ( area <= 1e-9 ) continue;
+
+		const normal: Vec3 = [ cross[ 0 ] / ( area * 2 ), cross[ 1 ] / ( area * 2 ), cross[ 2 ] / ( area * 2 ) ];
+		const cluster = clusters.find( ( candidate ) => {
+
+			const length = Math.hypot( candidate.sum[ 0 ], candidate.sum[ 1 ], candidate.sum[ 2 ] ) || 1;
+			return ( normal[ 0 ] * candidate.sum[ 0 ] + normal[ 1 ] * candidate.sum[ 1 ] + normal[ 2 ] * candidate.sum[ 2 ] ) / length >= 0.995;
+
+		} );
+
+		if ( cluster === undefined ) {
+
+			clusters.push( { sum: [ normal[ 0 ] * area, normal[ 1 ] * area, normal[ 2 ] * area ], area } );
+
+		} else {
+
+			cluster.sum[ 0 ] += normal[ 0 ] * area;
+			cluster.sum[ 1 ] += normal[ 1 ] * area;
+			cluster.sum[ 2 ] += normal[ 2 ] * area;
+			cluster.area += area;
+
+		}
+
+		totalArea += area;
+
+	}
+
+	const normals = clusters
+		.filter( ( cluster ) => cluster.area >= totalArea * 0.003 )
+		.sort( ( first, second ) => second.area - first.area )
+		.slice( 0, 36 )
+		.map( ( cluster ) => {
+
+			const length = Math.hypot( cluster.sum[ 0 ], cluster.sum[ 1 ], cluster.sum[ 2 ] ) || 1;
+			return [ cluster.sum[ 0 ] / length, cluster.sum[ 1 ] / length, cluster.sum[ 2 ] / length ] as Vec3;
+
+		} );
+
+	for ( const normal of createRockFacetNormals( seed ) ) {
+
+		if ( normals.length >= 24 ) break;
+		if ( normals.some( ( candidate ) => candidate[ 0 ] * normal[ 0 ] + candidate[ 1 ] * normal[ 1 ] + candidate[ 2 ] * normal[ 2 ] > 0.995 ) ) continue;
+		normals.push( normal );
+
+	}
+
+	return normals.length >= 20 ? normals : createRockFacetNormals( seed );
 
 }
 
@@ -543,14 +686,14 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	const fineBandNoise = createPeriodicNoise1D( seedOffset + 73, bandCount * 5 );
 	const detailMaskNoise = createPeriodicNoise( seedOffset + 113, 3, 3, size );
 	const streakNoise = createPeriodicNoise( seedOffset + 127, 12, 48, size );
-	const facetNormals = [ ...createRockFacetNormals( shapeSeed ), [ 0, - 1, 0 ] as Vec3 ];
+	const facetNormals = [ ...getTextureFacetNormals( shapeSeed, shapeMesh ), [ 0, - 1, 0 ] as Vec3 ];
 	const facetValues: number[] = [];
 	const facetHues: [ number, number, number ][] = [];
 	const facetBrushes: [ number, number ][] = [];
 
 	for ( const normal of facetNormals ) {
 
-		facetValues.push( normal[ 1 ] > 0.58 ? 12 + facetRandom() * 3 : normal[ 1 ] < - 0.32 ? - 5 + facetRandom() * 1.5 : 3 + facetRandom() * 4 );
+		facetValues.push( normal[ 1 ] > 0.58 ? 28 + facetRandom() * 7 : normal[ 1 ] < - 0.32 ? - 4 + facetRandom() * 2 : facetRandom() * 4 );
 		facetHues.push( [ ( facetRandom() - 0.5 ) * 8, ( facetRandom() - 0.5 ) * 6, ( facetRandom() - 0.5 ) * 10 ] );
 		const brushAngle = facetRandom() * Math.PI;
 		facetBrushes.push( [ Math.cos( brushAngle ), Math.sin( brushAngle ) ] );
@@ -649,8 +792,8 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			const hue = [ 0, 1, 2 ].map( ( channel ) => facetHues[ secondFacet ]![ channel ]! + ( facetHues[ firstFacet ]![ channel ]! - facetHues[ secondFacet ]![ channel ]! ) * facetBlend );
 			const keyLight = normalX * - 0.32 + normalY * 0.86 + normalZ * 0.4;
 			const planarTone = normalY * 0.68 + Math.max( 0, keyLight ) * 0.32;
-			const undersideShade = ( 1 - smoothstep( - 0.48, - 0.2, normalY ) ) * 6;
-			const planarValue = - 9 + smoothstep( - 0.34, - 0.2, planarTone ) * 4 + smoothstep( - 0.02, 0.12, planarTone ) * 6 + smoothstep( 0.42, 0.62, planarTone ) * 16 - undersideShade;
+			const undersideShade = ( 1 - smoothstep( - 0.48, - 0.2, normalY ) ) * 4;
+			const planarValue = - 9 + smoothstep( - 0.34, - 0.2, planarTone ) * 4 + smoothstep( - 0.02, 0.12, planarTone ) * 6 + smoothstep( 0.42, 0.62, planarTone ) * 22 - undersideShade;
 			const facetLighting = planarValue;
 			const warp = warpNoise.atPixel( x, y );
 			const brushDirection = facetBrushes[ firstFacet ]!;
@@ -664,7 +807,7 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			const across = fract( - brushDirection[ 1 ] * u + brushDirection[ 0 ] * v + warp * 0.02 );
 			const fineStreak = ( 1 - smoothstep( 0.18, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
 			const crackIndex = rowOffset + x;
-			const ridgeHighlight = ridgeMap[ crackIndex ]! * 16;
+			const ridgeHighlight = ridgeMap[ crackIndex ]! * 40;
 			const crackDistance = Math.sqrt( crackDistances.distances[ crackIndex ]! );
 			const crackCore = 1 - smoothstep( 0.12, 0.78, crackDistance );
 			const crackEdge = smoothstep( 0.48, 0.82, crackDistance ) * ( 1 - smoothstep( 0.82, 1.55, crackDistance ) );
@@ -695,10 +838,10 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 
 			}
 
-			const brightness = broad * 3 + medium * 0.9 + localizedStrata * 1.2 + facetValue + facetLighting + ridgeHighlight + chipRim * 5.5 - fineStreak * 1.8 - chipCore * 32 - fineCrack * 20 - fineCrackEdge * 5 + fineCrackRim * 7;
+			const brightness = broad * 3 + medium * 0.9 + localizedStrata * 1.2 + facetValue + facetLighting + ridgeHighlight + chipRim * 5.5 - fineStreak * 1.8 - chipCore * 32 - fineCrack * 14 - fineCrackEdge * 3 + fineCrackRim * 5;
 			const index = crackIndex;
 
-			heightMap[ index ] = broad * 0.014 + medium * 0.003 + localizedStrata * 0.0015 + ridgeMap[ index ]! * 0.011 - fineStreak * 0.0003 - chipCore * 0.006 + chipRim * 0.0015 - fineCrack * 0.02 - fineCrackEdge * 0.006 + fineCrackRim * 0.003;
+			heightMap[ index ] = broad * 0.014 + medium * 0.008 - fineStreak * 0.0003 - chipCore * 0.006 + chipRim * 0.0015 - fineCrack * 0.02 - fineCrackEdge * 0.006 + fineCrackRim * 0.003;
 			albedoData[ index * 4 ] = Math.round( clamp( 80 + brightness * 0.96 + hue[ 0 ]! * 0.8, 0, 255 ) );
 			albedoData[ index * 4 + 1 ] = Math.round( clamp( 95 + brightness + hue[ 1 ]!, 0, 255 ) );
 			albedoData[ index * 4 + 2 ] = Math.round( clamp( 102 + brightness * 1.04 + hue[ 2 ]!, 0, 255 ) );

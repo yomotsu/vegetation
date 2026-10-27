@@ -21,7 +21,7 @@ function getDefaultBurial( seed: number ): number {
 
 	const seedHash = Math.sin( Math.abs( seed ) * 127.1 + 311.7 ) * 43758.5453;
 	const variation = seedHash - Math.floor( seedHash );
-	return 0.41 + variation * 0.14;
+	return 0.39 + variation * 0.06;
 
 }
 
@@ -58,8 +58,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	const seed = options.seed ?? 1;
 	const internalSeed = seed + ROCK_SEED_SALT;
-	const seedBand = Math.floor( Math.abs( seed ) );
-	const size = options.size ?? ( seedBand % 2 === 0 ? 12.3 : 6.4 );
+	const size = options.size ?? 6.4;
 	const roughnessInput = options.roughness ?? 1.2;
 	const flatnessInput = options.flatness ?? 0.04;
 	const weatheringInput = options.weathering ?? 0.25;
@@ -79,7 +78,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const weathering = clamp( weatheringInput, 0, 1 );
 	const shape = createRockHullShape( internalSeed, size, roughness, flatness );
 	const hullFaces = buildConvexHullFaces( shape.points );
-	const bevelWidth = size * 0.04;
+	const bevelWidth = size * 0.02;
 	const lod0 = buildRockHullMesh( shape, hullFaces, 3, bevelWidth, weathering );
 	const lod1 = buildRockHullMesh( shape, hullFaces, 1, bevelWidth * 0.8, weathering );
 	const lod2 = buildRockHullMesh( shape, hullFaces, 0, bevelWidth * 0.8, weathering );
@@ -104,9 +103,9 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	sinkMesh( colliderMesh, burialHeight, Number.NEGATIVE_INFINITY );
 	const collider = buildCollider( colliderMesh );
-	recomputeCreasedNormals( lod0, 25 );
-	recomputeCreasedNormals( lod1, 25 );
-	recomputeCreasedNormals( lod2, 25 );
+	recomputeCreasedNormals( lod0, 35 );
+	recomputeCreasedNormals( lod1, 35 );
+	recomputeCreasedNormals( lod2, 35 );
 	applyRockSurfaceShading( lod0 );
 	applyRockSurfaceShading( lod1 );
 	applyRockSurfaceShading( lod2 );
@@ -115,7 +114,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	liftMesh( lod3, groundOffset );
 	sinkMesh( lod3, burialHeight, Number.NEGATIVE_INFINITY );
 	removeRockBottomCap( lod3, skirtFloor );
-	recomputeCreasedNormals( lod3, 25 );
+	recomputeCreasedNormals( lod3, 35 );
 	lod3.colors.fill( lod0.colors[ 0 ]! );
 
 	const bounds = getBounds( lod0 );

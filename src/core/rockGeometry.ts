@@ -502,6 +502,34 @@ function createPoissonDirections( seed: number, count: number ): Vec3[] {
 
 }
 
+function createTopEdgeDirections( seed: number, count: number ): Vec3[] {
+
+	const random = createRockRandom( seed );
+	const directions: Vec3[] = [];
+	const clusterCount = Math.ceil( count / 2 );
+	const rotation = random() * Math.PI * 2;
+
+	for ( let cluster = 0; directions.length < count; cluster ++ ) {
+
+		const centerAngle = rotation + cluster / clusterCount * Math.PI * 2 + ( random() - 0.5 ) * 0.16;
+		const centerY = 0.52 + random() * 0.22;
+
+		for ( let member = 0; member < 2 && directions.length < count; member ++ ) {
+
+			const side = member === 0 ? - 1 : 1;
+			const angle = centerAngle + side * ( 0.14 + random() * 0.09 );
+			const y = clamp( centerY + side * ( 0.04 + random() * 0.06 ), 0.4, 0.84 );
+			const horizontal = Math.sqrt( 1 - y * y );
+			directions.push( [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ] );
+
+		}
+
+	}
+
+	return directions;
+
+}
+
 export function createRockHullShape( seed: number, size: number, roughness = 1.2, flatness = 0 ): RockHullShape {
 
 	const random = createRockRandom( seed + 4711 );
@@ -509,7 +537,8 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 	const aspectZ = 0.76 + random() * 0.54;
 	const radiusX = size * 0.5 * aspectX;
 	const radiusZ = size * 0.5 * aspectZ;
-	const radiusY = Math.min( size * ( 0.36 + random() * 0.35 ) * ( 1 - clamp( flatness, 0, 1 ) * 0.65 ), Math.max( radiusX, radiusZ ) * 1.05 );
+	const squatScale = Math.floor( Math.abs( seed ) ) % 6 === 0 ? 0.72 : 1;
+	const radiusY = Math.min( size * ( 0.36 + random() * 0.35 ) * squatScale * ( 1 - clamp( flatness, 0, 1 ) * 0.65 ), Math.max( radiusX, radiusZ ) * 1.05 );
 	const leanX = ( random() - 0.5 ) * 0.82;
 	const leanZ = ( random() - 0.5 ) * 0.72;
 	const tiltX = ( random() - 0.5 ) * 0.62;
@@ -521,16 +550,19 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 	const tiltSineX = Math.sin( tiltX );
 	const tiltCosineZ = Math.cos( tiltZ );
 	const tiltSineZ = Math.sin( tiltZ );
-	const count = 26 + Math.floor( random() * 5 );
+	const count = 28 + Math.floor( random() * 5 );
 	const jitter = Math.min( 0.18, 0.1 + clamp( roughness, 0, 1.5 ) * 0.0666667 );
-	const radii: Vec3 = [ radiusX, radiusY, radiusZ ];
+	let radii: Vec3 = [ radiusX, radiusY, radiusZ ];
 	let directions: Vec3[] = [];
 	let points: Vec3[] = [];
-	const visibleFacetLimits = [ 15, 30 ];
+	const visibleFacetLimits = [ 20, 34 ];
 
 	for ( let attempt = 0; attempt < 24; attempt ++ ) {
 
-		directions = createPoissonDirections( seed + 8891 + attempt * 7919, count );
+		directions = [
+			...createPoissonDirections( seed + 8891 + attempt * 7919, count - 6 ),
+			...createTopEdgeDirections( seed + 37891 + attempt * 7919, 6 ),
+		];
 		const pointRandom = createRockRandom( seed + 22721 + attempt * 7919 );
 		points = directions.map( ( direction ) => {
 
@@ -549,14 +581,14 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 		const faces = buildConvexHullFaces( points );
 		const minimumAngle = getMinimumHullFaceAngle( points, faces );
 		const visibleFacets = getVisibleHullRegionCount( points, faces );
-		if ( minimumAngle >= 28 * Math.PI / 180 && visibleFacets >= visibleFacetLimits[ 0 ]! && visibleFacets <= visibleFacetLimits[ 1 ]! ) break;
+		if ( minimumAngle >= 20 * Math.PI / 180 && visibleFacets >= visibleFacetLimits[ 0 ]! && visibleFacets <= visibleFacetLimits[ 1 ]! ) break;
 
 	}
 
 	const scoopRandom = createRockRandom( seed + 13721 );
 	const scoops: RockScoop[] = [];
 
-	if ( scoopRandom() < 0.4 ) {
+	if ( scoopRandom() < 0.43 ) {
 
 		const hullFaces = buildConvexHullFaces( points );
 		for ( let attempt = 0; attempt < 12; attempt ++ ) {
@@ -575,7 +607,7 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 				candidate.push( {
 					direction: [ localX * cosine + localZ * sine, y, - localX * sine + localZ * cosine ],
 					angularRadius: 0.85 + candidateRandom() * 0.15,
-					depth: size * ( 0.15 + candidateRandom() * 0.03 ),
+					depth: size * ( 0.17 + candidateRandom() * 0.04 ),
 				} );
 
 			}
@@ -586,6 +618,41 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 			if ( getMinimumHullFaceAngle( scoopPoints, hullFaces ) >= 22 * Math.PI / 180 && visibleFacets >= 15 && visibleFacets <= 30 ) break;
 
 		}
+
+	}
+
+	let minimumX = Infinity;
+	let maximumX = - Infinity;
+	let minimumY = Infinity;
+	let maximumY = - Infinity;
+	let minimumZ = Infinity;
+	let maximumZ = - Infinity;
+
+	for ( const point of points ) {
+
+		minimumX = Math.min( minimumX, point[ 0 ] );
+		maximumX = Math.max( maximumX, point[ 0 ] );
+		minimumY = Math.min( minimumY, point[ 1 ] );
+		maximumY = Math.max( maximumY, point[ 1 ] );
+		minimumZ = Math.min( minimumZ, point[ 2 ] );
+		maximumZ = Math.max( maximumZ, point[ 2 ] );
+
+	}
+
+	const horizontalScale = size / Math.max( maximumX - minimumX, maximumZ - minimumZ );
+	const verticalScale = Math.min( 1, size * 1.3 / ( maximumY - minimumY ) );
+	const centerX = ( minimumX + maximumX ) * 0.5;
+	const centerY = ( minimumY + maximumY ) * 0.5;
+	const centerZ = ( minimumZ + maximumZ ) * 0.5;
+
+	if ( horizontalScale < 1 || verticalScale < 1 ) {
+
+		points = points.map( ( point ) => [
+			centerX + ( point[ 0 ] - centerX ) * horizontalScale,
+			centerY + ( point[ 1 ] - centerY ) * verticalScale,
+			centerZ + ( point[ 2 ] - centerZ ) * horizontalScale,
+		] );
+		radii = [ radii[ 0 ] * horizontalScale, radii[ 1 ] * verticalScale, radii[ 2 ] * horizontalScale ];
 
 	}
 
@@ -741,7 +808,6 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 		return index;
 
 	};
-
 	for ( let faceIndex = 0; faceIndex < faces.length; faceIndex ++ ) {
 
 		const face = faces[ faceIndex ]!;
@@ -787,7 +853,6 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 			continue;
 		}
 
-		const midpoints: Vec3[] = [];
 		const mids = face.map( ( first, edge ) => {
 
 			const second = face[ ( edge + 1 ) % 3 ]!;
@@ -795,7 +860,6 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 			const firstPoint = shape.points[ first ]!;
 			const secondPoint = shape.points[ second ]!;
 			const midpoint: Vec3 = [ ( firstPoint[ 0 ] + secondPoint[ 0 ] ) * 0.5, ( firstPoint[ 1 ] + secondPoint[ 1 ] ) * 0.5, ( firstPoint[ 2 ] + secondPoint[ 2 ] ) * 0.5 ];
-			midpoints.push( midpoint );
 			return getVertex( `e:${ key }`, midpoint, edgeOffsets.get( key )!, bevelWidth );
 
 		} );
@@ -855,9 +919,7 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 
 		const [ first, second, third ] = corners;
 		const [ ab, bc, ca ] = mids;
-		const detailTriangles: [ number, number, number ][] = [ [ first!, ab!, ca! ], [ ab!, second!, bc! ], [ ca!, bc!, third! ], [ ab!, bc!, ca! ] ];
-		const hasSliver = detailTriangles.some( ( triangle ) => minimumTriangleAngle( positions[ triangle[ 0 ] ]!, positions[ triangle[ 1 ] ]!, positions[ triangle[ 2 ] ]! ) < 12 * Math.PI / 180 );
-		triangles.push( ...( hasSliver ? [ corners as [ number, number, number ] ] : detailTriangles ) );
+		triangles.push( [ first!, ab!, ca! ], [ ab!, second!, bc! ], [ ca!, bc!, third! ], [ ab!, bc!, ca! ] );
 
 	}
 
@@ -1151,7 +1213,6 @@ function unwrapRockUvSeams( mesh: MeshData ): void {
 	const impostorCard = Array.from( mesh.impostorCard );
 	const indices: number[] = [];
 	const copiedVertices = new Map<string, number>();
-	const intersectionVertices = new Map<string, number>();
 	const copyVertex = ( vertex: number, u: number ): number => {
 
 		const key = `${ vertex }:${ u.toFixed( 6 ) }`;
@@ -1191,70 +1252,10 @@ function unwrapRockUvSeams( mesh: MeshData ): void {
 		}
 
 		const unwrapped = normalizedU.map( ( value ) => value < start ? value + 1 : value );
-		const minimum = Math.min( ...unwrapped );
-		const maximum = Math.max( ...unwrapped );
 		const localVertices = vertices.map( ( vertex, corner ) => Math.abs( unwrapped[ corner ]! - originalU[ corner ]! ) < 1e-6 ? vertex : copyVertex( vertex, unwrapped[ corner ]! ) );
 
-		if ( maximum - minimum <= 0.5 ) {
-
-			indices.push( localVertices[ 0 ]!, localVertices[ 1 ]!, localVertices[ 2 ]! );
-			continue;
-
-		}
-		const split = ( minimum + maximum ) * 0.5;
-		const intersect = ( first: { vertex: number; u: number }, second: { vertex: number; u: number } ): { vertex: number; u: number } => {
-
-			const edgeKey = first.vertex < second.vertex ? `${ first.vertex }:${ second.vertex }` : `${ second.vertex }:${ first.vertex }`;
-			const key = `${ edgeKey }:${ split.toFixed( 6 ) }`;
-			let vertex = intersectionVertices.get( key );
-
-			if ( vertex === undefined ) {
-
-				const amount = ( split - first.u ) / ( second.u - first.u );
-				vertex = positions.length / 3;
-				for ( let axis = 0; axis < 3; axis ++ ) {
-					positions.push( positions[ first.vertex * 3 + axis ]! + ( positions[ second.vertex * 3 + axis ]! - positions[ first.vertex * 3 + axis ]! ) * amount );
-					colors.push( colors[ first.vertex * 3 + axis ]! + ( colors[ second.vertex * 3 + axis ]! - colors[ first.vertex * 3 + axis ]! ) * amount );
-				}
-				const normal: Vec3 = [ 0, 1, 2 ].map( ( axis ) => normals[ first.vertex * 3 + axis ]! + ( normals[ second.vertex * 3 + axis ]! - normals[ first.vertex * 3 + axis ]! ) * amount ) as Vec3;
-				const normalLength = Math.hypot( ...normal ) || 1;
-				normals.push( normal[ 0 ] / normalLength, normal[ 1 ] / normalLength, normal[ 2 ] / normalLength );
-				uvs.push( split, uvs[ first.vertex * 2 + 1 ]! + ( uvs[ second.vertex * 2 + 1 ]! - uvs[ first.vertex * 2 + 1 ]! ) * amount );
-				windWeight.push( windWeight[ first.vertex ]! + ( windWeight[ second.vertex ]! - windWeight[ first.vertex ]! ) * amount );
-				impostorCard.push( impostorCard[ first.vertex ]! + ( impostorCard[ second.vertex ]! - impostorCard[ first.vertex ]! ) * amount );
-				intersectionVertices.set( key, vertex );
-
-			}
-
-			return { vertex, u: split };
-
-		};
-		const input = localVertices.map( ( vertex ) => ( { vertex, u: uvs[ vertex * 2 ]! } ) );
-		const clip = ( keepLow: boolean ): { vertex: number; u: number }[] => {
-
-			const output: { vertex: number; u: number }[] = [];
-			let previous = input[ input.length - 1 ]!;
-			let previousInside = keepLow ? previous.u <= split : previous.u >= split;
-
-			for ( const current of input ) {
-
-				const currentInside = keepLow ? current.u <= split : current.u >= split;
-				if ( currentInside !== previousInside ) output.push( intersect( previous, current ) );
-				if ( currentInside ) output.push( current );
-				previous = current;
-				previousInside = currentInside;
-
-			}
-
-			return output;
-
-		};
-
-		for ( const polygon of [ clip( true ), clip( false ) ] ) {
-
-			for ( let corner = 1; corner < polygon.length - 1; corner ++ ) indices.push( polygon[ 0 ]!.vertex, polygon[ corner ]!.vertex, polygon[ corner + 1 ]!.vertex );
-
-		}
+		// U座標はリピート範囲外でも使える。分割するとT字接合になる。
+		indices.push( localVertices[ 0 ]!, localVertices[ 1 ]!, localVertices[ 2 ]! );
 
 	}
 
