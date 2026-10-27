@@ -37,6 +37,7 @@ export const kinds: VegetationKind[] = [
 			size: 6.4,
 			roughness: 1.2,
 			flatness: 0.04,
+			weathering: 0.35,
 		},
 	},
 	{

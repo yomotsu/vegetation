@@ -531,6 +531,7 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	const seedOffset = seedKey + 419;
 	const random = createRandom( seed );
 	const facetRandom = createRandom( shapeSeed + 1439 );
+	const chipRandom = createRandom( shapeSeed + 1867 );
 	const directions: [ number, number ][] = [ [ 1, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, - 1 ], [ 2, 1 ], [ 2, - 1 ], [ 1, 2 ], [ 1, - 2 ] ];
 	const direction = directions[ Math.floor( random() * directions.length ) ]!;
 	const dominantAngle = Math.atan2( - direction[ 0 ], direction[ 1 ] );
@@ -549,7 +550,7 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 
 	for ( const normal of facetNormals ) {
 
-		facetValues.push( normal[ 1 ] > 0.58 ? 7 + facetRandom() * 3 : normal[ 1 ] < - 0.32 ? - 6 + facetRandom() * 1.5 : ( facetRandom() - 0.5 ) * 10 );
+		facetValues.push( normal[ 1 ] > 0.58 ? 12 + facetRandom() * 3 : normal[ 1 ] < - 0.32 ? - 5 + facetRandom() * 1.5 : 3 + facetRandom() * 4 );
 		facetHues.push( [ ( facetRandom() - 0.5 ) * 8, ( facetRandom() - 0.5 ) * 6, ( facetRandom() - 0.5 ) * 10 ] );
 		const brushAngle = facetRandom() * Math.PI;
 		facetBrushes.push( [ Math.cos( brushAngle ), Math.sin( brushAngle ) ] );
@@ -557,11 +558,11 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	}
 
 	const chips = Array.from( { length: 7 }, () => ( {
-		u: facetRandom(),
-		v: 0.16 + facetRandom() * 0.68,
-		radiusX: 0.016 + facetRandom() * 0.007,
-		radiusY: 0.011 + facetRandom() * 0.005,
-		angle: facetRandom() * Math.PI,
+		u: chipRandom(),
+		v: 0.16 + chipRandom() * 0.68,
+		radiusX: 0.016 + chipRandom() * 0.007,
+		radiusY: 0.011 + chipRandom() * 0.005,
+		angle: chipRandom() * Math.PI,
 	} ) );
 	const detailMask = ( u: number, v: number ): number => smoothstep( - 0.25, 0.5, detailMaskNoise( u, v ) + 1 );
 	const cracks = createRockCrackPaths( seed, dominantAngle, detailMask );
@@ -663,7 +664,7 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			const across = fract( - brushDirection[ 1 ] * u + brushDirection[ 0 ] * v + warp * 0.02 );
 			const fineStreak = ( 1 - smoothstep( 0.18, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
 			const crackIndex = rowOffset + x;
-			const ridgeHighlight = ridgeMap[ crackIndex ]! * 11;
+			const ridgeHighlight = ridgeMap[ crackIndex ]! * 16;
 			const crackDistance = Math.sqrt( crackDistances.distances[ crackIndex ]! );
 			const crackCore = 1 - smoothstep( 0.12, 0.78, crackDistance );
 			const crackEdge = smoothstep( 0.48, 0.82, crackDistance ) * ( 1 - smoothstep( 0.82, 1.55, crackDistance ) );

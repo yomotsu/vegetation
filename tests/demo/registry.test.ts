@@ -33,6 +33,7 @@ describe( 'demo registry', () => {
 			size: 6.4,
 			roughness: 1.2,
 			flatness: 0.04,
+			weathering: 0.35,
 		} );
 		expect( kinds[ 2 ]!.name ).toBe( 'Pebbles' );
 		expect( kinds[ 2 ]!.colorParts ).toEqual( [ 'stone' ] );

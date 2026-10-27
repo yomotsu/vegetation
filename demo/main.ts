@@ -191,6 +191,11 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 		return [ 0, 1, 0.01 ];
 
 	}
+	if ( name === 'weathering' ) {
+
+		return [ 0, 1, 0.01 ];
+
+	}
 
 	const value = state.options[ name ]!;
 	return [ 0, Math.max( 10, value * 2 ), 0.1 ];
