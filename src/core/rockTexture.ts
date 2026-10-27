@@ -565,7 +565,7 @@ function createCrackDistanceMap( size: number, paths: RockCrackPath[] ): { dista
 
 function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
 
-	const target = [ 148, 162, 176 ];
+	const target = [ 144, 158, 172 ];
 	const total = [ 0, 0, 0 ];
 
 	for ( let offset = 0; offset < data.length; offset += 4 ) {
@@ -687,14 +687,42 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	const detailMaskNoise = createPeriodicNoise( seedOffset + 113, 3, 3, size );
 	const streakNoise = createPeriodicNoise( seedOffset + 127, 12, 48, size );
 	const facetNormals = [ ...getTextureFacetNormals( shapeSeed, shapeMesh ), [ 0, - 1, 0 ] as Vec3 ];
-	const facetValues: number[] = [];
+	const facetValues: Vec3[] = [];
 	const facetHues: [ number, number, number ][] = [];
 	const facetBrushes: [ number, number ][] = [];
+	const downwardStone: Vec3 = [ 111, 131, 150 ];
+	const sideStone: Vec3 = [ 159, 176, 192 ];
+	const topStone: Vec3 = [ 223, 230, 236 ];
 
 	for ( const normal of facetNormals ) {
 
-		facetValues.push( normal[ 1 ] > 0.58 ? 28 + facetRandom() * 7 : normal[ 1 ] < - 0.32 ? - 4 + facetRandom() * 2 : facetRandom() * 4 );
-		facetHues.push( [ ( facetRandom() - 0.5 ) * 8, ( facetRandom() - 0.5 ) * 6, ( facetRandom() - 0.5 ) * 10 ] );
+		let low: Vec3;
+		let high: Vec3;
+		let amount = 0;
+
+		if ( normal[ 1 ] < - 0.12 ) {
+			low = downwardStone;
+			high = downwardStone;
+		} else if ( normal[ 1 ] < 0 ) {
+			low = downwardStone;
+			high = sideStone;
+			amount = smoothstep( - 0.12, 0, normal[ 1 ] );
+		} else if ( normal[ 1 ] < 0.58 ) {
+			low = sideStone;
+			high = sideStone;
+		} else {
+			low = sideStone;
+			high = topStone;
+			amount = smoothstep( 0.58, 0.82, normal[ 1 ] );
+		}
+
+		const valueOffset = 0.94 + facetRandom() * 0.12;
+		facetValues.push( [
+			( low[ 0 ] + ( high[ 0 ] - low[ 0 ] ) * amount ) * valueOffset,
+			( low[ 1 ] + ( high[ 1 ] - low[ 1 ] ) * amount ) * valueOffset,
+			( low[ 2 ] + ( high[ 2 ] - low[ 2 ] ) * amount ) * valueOffset,
+		] );
+		facetHues.push( [ ( facetRandom() - 0.5 ) * 4, ( facetRandom() - 0.5 ) * 4, ( facetRandom() - 0.5 ) * 5 ] );
 		const brushAngle = facetRandom() * Math.PI;
 		facetBrushes.push( [ Math.cos( brushAngle ), Math.sin( brushAngle ) ] );
 
@@ -785,16 +813,14 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			}
 
 			const facetGap = firstDot - secondDot;
-			const facetBlend = smoothstep( 0.004, 0.036, facetGap );
+			const facetBlend = smoothstep( 0.0005, 0.009, facetGap );
 			const firstValue = facetValues[ firstFacet ]!;
 			const secondValue = facetValues[ secondFacet ]!;
-			const facetValue = secondValue + ( firstValue - secondValue ) * facetBlend;
+			const facetValue = [ 0, 1, 2 ].map( ( channel ) => secondValue[ channel ]! + ( firstValue[ channel ]! - secondValue[ channel ]! ) * facetBlend );
 			const hue = [ 0, 1, 2 ].map( ( channel ) => facetHues[ secondFacet ]![ channel ]! + ( facetHues[ firstFacet ]![ channel ]! - facetHues[ secondFacet ]![ channel ]! ) * facetBlend );
-			const keyLight = normalX * - 0.32 + normalY * 0.86 + normalZ * 0.4;
-			const planarTone = normalY * 0.68 + Math.max( 0, keyLight ) * 0.32;
-			const undersideShade = ( 1 - smoothstep( - 0.48, - 0.2, normalY ) ) * 4;
-			const planarValue = - 9 + smoothstep( - 0.34, - 0.2, planarTone ) * 4 + smoothstep( - 0.02, 0.12, planarTone ) * 6 + smoothstep( 0.42, 0.62, planarTone ) * 22 - undersideShade;
-			const facetLighting = planarValue;
+			const crispRim = 1 - smoothstep( 0.0005, 0.005, facetGap );
+			const softRim = ( 1 - smoothstep( 0.005, 0.018, facetGap ) ) * 0.2;
+			const facetRim = Math.max( crispRim, softRim );
 			const warp = warpNoise.atPixel( x, y );
 			const brushDirection = facetBrushes[ firstFacet ]!;
 			const phase = fract( ( brushDirection[ 0 ] * u + brushDirection[ 1 ] * v ) * bandCount + warp * 0.09 );
@@ -807,7 +833,7 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			const across = fract( - brushDirection[ 1 ] * u + brushDirection[ 0 ] * v + warp * 0.02 );
 			const fineStreak = ( 1 - smoothstep( 0.18, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
 			const crackIndex = rowOffset + x;
-			const ridgeHighlight = ridgeMap[ crackIndex ]! * 40;
+			const ridgeHighlight = ridgeMap[ crackIndex ]! * 8;
 			const crackDistance = Math.sqrt( crackDistances.distances[ crackIndex ]! );
 			const crackCore = 1 - smoothstep( 0.12, 0.78, crackDistance );
 			const crackEdge = smoothstep( 0.48, 0.82, crackDistance ) * ( 1 - smoothstep( 0.82, 1.55, crackDistance ) );
@@ -838,13 +864,13 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 
 			}
 
-			const brightness = broad * 3 + medium * 0.9 + localizedStrata * 1.2 + facetValue + facetLighting + ridgeHighlight + chipRim * 5.5 - fineStreak * 1.8 - chipCore * 32 - fineCrack * 14 - fineCrackEdge * 3 + fineCrackRim * 5;
+			const textureVariation = broad * 2 + medium * 0.9 + localizedStrata * 0.8 + ridgeHighlight + chipRim * 5.5 - fineStreak * 1.8 - chipCore * 24 - fineCrack * 8 - fineCrackEdge * 2 + fineCrackRim * 3;
 			const index = crackIndex;
 
-			heightMap[ index ] = broad * 0.014 + medium * 0.008 - fineStreak * 0.0003 - chipCore * 0.006 + chipRim * 0.0015 - fineCrack * 0.02 - fineCrackEdge * 0.006 + fineCrackRim * 0.003;
-			albedoData[ index * 4 ] = Math.round( clamp( 80 + brightness * 0.96 + hue[ 0 ]! * 0.8, 0, 255 ) );
-			albedoData[ index * 4 + 1 ] = Math.round( clamp( 95 + brightness + hue[ 1 ]!, 0, 255 ) );
-			albedoData[ index * 4 + 2 ] = Math.round( clamp( 102 + brightness * 1.04 + hue[ 2 ]!, 0, 255 ) );
+			heightMap[ index ] = broad * 0.014 + medium * 0.008 + facetRim * 0.002 - fineStreak * 0.0003 - chipCore * 0.006 + chipRim * 0.0015 - fineCrack * 0.012 - fineCrackEdge * 0.004 + fineCrackRim * 0.002;
+			albedoData[ index * 4 ] = Math.round( clamp( facetValue[ 0 ]! * 0.965 * ( 1 + facetRim * 0.17 ) + textureVariation + hue[ 0 ]!, 0, 255 ) );
+			albedoData[ index * 4 + 1 ] = Math.round( clamp( facetValue[ 1 ]! * 0.965 * ( 1 + facetRim * 0.17 ) + textureVariation + hue[ 1 ]!, 0, 255 ) );
+			albedoData[ index * 4 + 2 ] = Math.round( clamp( facetValue[ 2 ]! * 0.965 * ( 1 + facetRim * 0.17 ) + textureVariation + hue[ 2 ]!, 0, 255 ) );
 			albedoData[ index * 4 + 3 ] = 255;
 
 		}

@@ -145,10 +145,21 @@ function getVisiblePlaneRegions( seed: number ): { normal: [ number, number, num
 	const size = seed % 2 === 0 ? 12.3 : 6.4;
 	const shape = createRockHullShape( seed + 62, size, 1.2, 0.04 );
 	const faces = buildConvexHullFaces( shape.points );
-	const regions = faces.flatMap( ( face ) => {
+	const minimumY = Math.min( ...shape.points.map( ( point ) => point[ 1 ] ) );
+	const maximumY = Math.max( ...shape.points.map( ( point ) => point[ 1 ] ) );
+	const seedHash = Math.sin( Math.abs( seed + 62 ) * 127.1 + 311.7 ) * 43758.5453;
+	const burial = 0.39 + ( seedHash - Math.floor( seedHash ) ) * 0.06;
+	const groundY = minimumY + ( maximumY - minimumY ) * burial;
+	let aboveGroundArea = 0;
+	const cameraDirection = [ 0, 0.3, 0.95 ];
+	const cameraLength = Math.hypot( ...cameraDirection );
+	for ( let axis = 0; axis < 3; axis ++ ) cameraDirection[ axis ]! /= cameraLength;
+	const regions: { normal: [ number, number, number ]; offset: number; area: number }[] = [];
+
+	for ( const face of faces ) {
 
 		const points = face.map( ( vertex ) => shape.points[ vertex ]! );
-		if ( points.reduce( ( total, point ) => total + point[ 1 ] / 3, 0 ) <= 0 ) return [];
+		if ( points.reduce( ( total, point ) => total + point[ 1 ] / 3, 0 ) <= groundY ) continue;
 		const first = points[ 0 ]!;
 		const second = points[ 1 ]!;
 		const third = points[ 2 ]!;
@@ -160,11 +171,49 @@ function getVisiblePlaneRegions( seed: number ): { normal: [ number, number, num
 			ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ],
 		];
 		const doubleArea = Math.hypot( ...cross );
-		return [ { normal: cross.map( ( value ) => value / doubleArea ) as [ number, number, number ], area: doubleArea * 0.5 } ];
+		const normal = cross.map( ( value ) => value / doubleArea ) as [ number, number, number ];
+		aboveGroundArea += doubleArea * 0.5;
+		if ( normal.reduce( ( total, value, axis ) => total + value * cameraDirection[ axis ]!, 0 ) <= 0.02 ) continue;
+		const offset = normal.reduce( ( total, value, axis ) => total + value * first[ axis ]!, 0 );
+		let region = regions.find( ( candidate ) => candidate.normal.reduce( ( dot, value, axis ) => dot + value * normal[ axis ]!, 0 ) > 0.9999 && Math.abs( candidate.offset - offset ) < size * 0.001 );
+		if ( region === undefined ) {
+			region = { normal, offset, area: 0 };
+			regions.push( region );
+		}
+		region.area += doubleArea * 0.5;
 
-	} );
+	}
 	const visibleArea = regions.reduce( ( total, region ) => total + region.area, 0 );
-	return regions.filter( ( region ) => region.area / visibleArea >= 0.01 ).map( ( region ) => ( { normal: region.normal, area: region.area / visibleArea } ) );
+	return regions.filter( ( region ) => region.area / visibleArea >= 0.002 ).map( ( region ) => ( { normal: region.normal, area: region.area / aboveGroundArea } ) );
+
+}
+
+function getMeshFacetLuminance( data: ReturnType<typeof generateRockData>, minimumNormalY: number, maximumNormalY: number ): number {
+
+	const texture = data.textures.albedo!;
+	const mesh = data.lods[ 0 ]!;
+	let total = 0;
+	let areaTotal = 0;
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		const triangle = getTriangle( mesh, offset );
+		const normalY = triangle.normal[ 1 ];
+		if ( normalY < minimumNormalY || normalY >= maximumNormalY ) continue;
+		const vertices = [ 0, 1, 2 ].map( ( corner ) => mesh.indices[ offset + corner ]! );
+		const uValues = vertices.map( ( vertex ) => mesh.uvs[ vertex * 2 ]! );
+		if ( Math.max( ...uValues ) - Math.min( ...uValues ) > 0.5 ) {
+			for ( let corner = 0; corner < uValues.length; corner ++ ) if ( uValues[ corner ]! <= 0.5 ) uValues[ corner ]! += 1;
+		}
+		const u = ( ( uValues.reduce( ( sum, value ) => sum + value, 0 ) / 3 ) % 1 + 1 ) % 1;
+		const v = Math.max( 0, Math.min( 1, vertices.reduce( ( sum, vertex ) => sum + mesh.uvs[ vertex * 2 + 1 ]! / 3, 0 ) ) );
+		const pixel = ( Math.min( texture.height - 1, Math.floor( v * texture.height ) ) * texture.width + Math.floor( u * texture.width ) ) * 4;
+		total += ( texture.data[ pixel ]! * 0.2126 + texture.data[ pixel + 1 ]! * 0.7152 + texture.data[ pixel + 2 ]! * 0.0722 ) * triangle.area;
+		areaTotal += triangle.area;
+
+	}
+
+	return total / areaTotal;
 
 }
 
@@ -258,13 +307,14 @@ describe( 'irregular polyhedron rocks', () => {
 			const aspect = height / width;
 			if ( aspect >= 0.8 && aspect <= 1.3 ) ovoidSeeds ++;
 
-			expect( shape.points.length, `seed ${ seed } hull points` ).toBeGreaterThanOrEqual( 24 );
-			expect( shape.points.length, `seed ${ seed } hull points` ).toBeLessThanOrEqual( 36 );
+			expect( shape.points.length, `seed ${ seed } hull points` ).toBeGreaterThanOrEqual( 40 );
+			expect( shape.points.length, `seed ${ seed } hull points` ).toBeLessThanOrEqual( 80 );
 			expect( maximum[ 0 ]! - minimum[ 0 ]!, `seed ${ seed } requested width` ).toBeLessThanOrEqual( size + 1e-4 );
 			expect( maximum[ 2 ]! - minimum[ 2 ]!, `seed ${ seed } requested depth` ).toBeLessThanOrEqual( size + 1e-4 );
 			expect( height, `seed ${ seed } requested height` ).toBeLessThanOrEqual( size * 1.3 + 1e-4 );
-			expect( getVisiblePlaneRegions( seed ).length, `seed ${ seed } visible facets` ).toBeGreaterThanOrEqual( 20 );
+			expect( getVisiblePlaneRegions( seed ).length, `seed ${ seed } visible facets from ${ shape.points.length } points` ).toBeGreaterThanOrEqual( 20 );
 			expect( getVisiblePlaneRegions( seed ).length, `seed ${ seed } visible facets` ).toBeLessThanOrEqual( 34 );
+			expect( Math.max( ...getVisiblePlaneRegions( seed ).map( ( region ) => region.area ) ), `seed ${ seed } largest visible facet` ).toBeLessThanOrEqual( 0.12 );
 
 		}
 
@@ -315,6 +365,24 @@ describe( 'irregular polyhedron rocks', () => {
 			expect( mean[ 1 ]! ).toBeGreaterThan( 145 );
 			expect( mean[ 2 ]! ).toBeGreaterThan( 158 );
 
+		} );
+
+	} );
+
+	it( 'bakes distinct top, side, and downward facet values into the albedo', () => {
+
+		withSharedRockTextures( () => {
+			const data = generateRockData( { seed: 1 } );
+			const top = getMeshFacetLuminance( data, 0.65, 0.98 );
+			const side = getMeshFacetLuminance( data, 0.2, 0.55 );
+			const downward = getMeshFacetLuminance( data, - 0.95, - 0.4 );
+
+			expect( top, 'top facet albedo' ).toBeGreaterThan( 195 );
+			expect( side, 'side facet albedo' ).toBeGreaterThanOrEqual( 165 );
+			expect( side, 'side facet albedo' ).toBeLessThanOrEqual( 185 );
+			expect( downward, 'downward facet albedo' ).toBeLessThan( 150 );
+			expect( top - side, 'top to side contrast' ).toBeGreaterThanOrEqual( 30 );
+			expect( side - downward, 'side to downward contrast' ).toBeGreaterThanOrEqual( 20 );
 		} );
 
 	} );

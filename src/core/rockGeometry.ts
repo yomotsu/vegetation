@@ -412,6 +412,10 @@ function getVisibleHullRegionCount( points: Vec3[], faces: [ number, number, num
 
 	const regions: { normal: Vec3; offset: number; area: number }[] = [];
 	let visibleArea = 0;
+	const cameraDirection = normalizeDirection( [ 0, 0.3, 0.95 ] );
+	const minimumY = Math.min( ...points.map( ( point ) => point[ 1 ] ) );
+	const maximumY = Math.max( ...points.map( ( point ) => point[ 1 ] ) );
+	const groundY = minimumY + ( maximumY - minimumY ) * 0.42;
 	const extent = Math.max( ...[ 0, 1, 2 ].map( ( axis ) => Math.max( ...points.map( ( point ) => point[ axis ]! ) ) - Math.min( ...points.map( ( point ) => point[ axis ]! ) ) ) );
 
 	for ( const face of faces ) {
@@ -419,12 +423,13 @@ function getVisibleHullRegionCount( points: Vec3[], faces: [ number, number, num
 		const first = points[ face[ 0 ] ]!;
 		const second = points[ face[ 1 ] ]!;
 		const third = points[ face[ 2 ] ]!;
-		if ( ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3 <= 0 ) continue;
+		if ( ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3 <= groundY ) continue;
 		const ab: Vec3 = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
 		const ac: Vec3 = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
 		const cross: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
 		const doubleArea = Math.hypot( ...cross );
 		const normal = cross.map( ( value ) => value / ( doubleArea || 1 ) ) as Vec3;
+		if ( normal[ 0 ] * cameraDirection[ 0 ] + normal[ 1 ] * cameraDirection[ 1 ] + normal[ 2 ] * cameraDirection[ 2 ] <= 0.02 ) continue;
 		const offset = normal[ 0 ] * first[ 0 ] + normal[ 1 ] * first[ 1 ] + normal[ 2 ] * first[ 2 ];
 		let region = regions.find( ( candidate ) => candidate.normal[ 0 ] * normal[ 0 ] + candidate.normal[ 1 ] * normal[ 1 ] + candidate.normal[ 2 ] * normal[ 2 ] > 0.9999 && Math.abs( candidate.offset - offset ) < extent * 0.001 );
 
@@ -440,7 +445,101 @@ function getVisibleHullRegionCount( points: Vec3[], faces: [ number, number, num
 
 	}
 
-	return regions.filter( ( region ) => region.area / visibleArea >= 0.01 ).length;
+	return regions.filter( ( region ) => region.area / visibleArea >= 0.002 ).length;
+
+}
+
+function getVisibleAxisAlignedFacetCount( points: Vec3[], faces: [ number, number, number ][], rotation = 0 ): number {
+
+	const cameraDirection = normalizeDirection( [ 0, 0.3, 0.95 ] );
+	const cosine = Math.cos( rotation );
+	const sine = Math.sin( rotation );
+	const minimumY = Math.min( ...points.map( ( point ) => point[ 1 ] ) );
+	const maximumY = Math.max( ...points.map( ( point ) => point[ 1 ] ) );
+	const groundY = minimumY + ( maximumY - minimumY ) * 0.42;
+	const visible: { normal: Vec3; area: number }[] = [];
+	let visibleArea = 0;
+
+	for ( const face of faces ) {
+
+		const first = points[ face[ 0 ] ]!;
+		const second = points[ face[ 1 ] ]!;
+		const third = points[ face[ 2 ] ]!;
+		if ( ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3 <= groundY ) continue;
+		const ab: Vec3 = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+		const ac: Vec3 = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+		const cross: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+		const doubleArea = Math.hypot( ...cross );
+		const normal = normalizeDirection( cross );
+		const rotatedNormal: Vec3 = [ normal[ 0 ] * cosine + normal[ 2 ] * sine, normal[ 1 ], - normal[ 0 ] * sine + normal[ 2 ] * cosine ];
+		if ( rotatedNormal[ 0 ] * cameraDirection[ 0 ] + rotatedNormal[ 1 ] * cameraDirection[ 1 ] + rotatedNormal[ 2 ] * cameraDirection[ 2 ] <= 0.02 ) continue;
+		const area = doubleArea * 0.5;
+		visible.push( { normal: rotatedNormal, area } );
+		visibleArea += area;
+
+	}
+
+	const axes: Vec3[] = [ [ 1, 0, 0 ], [ - 1, 0, 0 ], [ 0, 0, 1 ], [ 0, 0, - 1 ], [ 0, 1, 0 ] ];
+	return axes.filter( ( axis ) => visible.some( ( region ) => region.area / visibleArea >= 0.002 && region.normal[ 0 ] * axis[ 0 ] + region.normal[ 1 ] * axis[ 1 ] + region.normal[ 2 ] * axis[ 2 ] > Math.cos( 10 * Math.PI / 180 ) ) ).length;
+
+}
+
+function splitLargeAboveGroundHullFacets( points: Vec3[], directions: Vec3[], size: number ): void {
+
+	for ( let attempt = 0; attempt < 12 && points.length < 80; attempt ++ ) {
+
+		const minimumY = Math.min( ...points.map( ( point ) => point[ 1 ] ) );
+		const maximumY = Math.max( ...points.map( ( point ) => point[ 1 ] ) );
+		const groundY = minimumY + ( maximumY - minimumY ) * 0.42;
+		const faces = buildConvexHullFaces( points );
+		const hullCenter: Vec3 = [ 0, 0, 0 ];
+		for ( const point of points ) for ( let axis = 0; axis < 3; axis ++ ) hullCenter[ axis ] = hullCenter[ axis ]! + point[ axis ]! / points.length;
+		const regions: { normal: Vec3; offset: number; area: number; center: Vec3 }[] = [];
+		let visibleArea = 0;
+
+		for ( const face of faces ) {
+
+			const first = points[ face[ 0 ] ]!;
+			const second = points[ face[ 1 ] ]!;
+			const third = points[ face[ 2 ] ]!;
+			if ( ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3 <= groundY ) continue;
+
+			const ab: Vec3 = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+			const ac: Vec3 = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+			const cross: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+			const doubleArea = Math.hypot( ...cross );
+			const area = doubleArea * 0.5;
+			visibleArea += area;
+			if ( doubleArea < 1e-8 ) continue;
+
+			const normal = normalizeDirection( cross );
+			const center: Vec3 = [ ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3, ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3, ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 ];
+			const outward: Vec3 = [ center[ 0 ] - hullCenter[ 0 ], center[ 1 ] - hullCenter[ 1 ], center[ 2 ] - hullCenter[ 2 ] ];
+			if ( normal[ 0 ] * outward[ 0 ] + normal[ 1 ] * outward[ 1 ] + normal[ 2 ] * outward[ 2 ] < 0 ) {
+				normal[ 0 ] = - normal[ 0 ];
+				normal[ 1 ] = - normal[ 1 ];
+				normal[ 2 ] = - normal[ 2 ];
+			}
+			const offset = normal[ 0 ] * first[ 0 ] + normal[ 1 ] * first[ 1 ] + normal[ 2 ] * first[ 2 ];
+			let region = regions.find( ( candidate ) => candidate.normal[ 0 ] * normal[ 0 ] + candidate.normal[ 1 ] * normal[ 1 ] + candidate.normal[ 2 ] * normal[ 2 ] > 0.9999 && Math.abs( candidate.offset - offset ) < size * 0.001 );
+			if ( region === undefined ) {
+				region = { normal, offset, area: 0, center: [ 0, 0, 0 ] };
+				regions.push( region );
+			}
+			region.area += area;
+			for ( let axis = 0; axis < 3; axis ++ ) region.center[ axis ] = region.center[ axis ]! + center[ axis ]! * area;
+
+		}
+
+		const largestRegion = regions.reduce<{ normal: Vec3; offset: number; area: number; center: Vec3 } | undefined>( ( largest, region ) => largest === undefined || region.area > largest.area ? region : largest, undefined );
+		if ( largestRegion === undefined || largestRegion.area / visibleArea <= 0.1 ) return;
+		const splitPoint = largestRegion.center.map( ( value ) => value / largestRegion.area ) as Vec3;
+
+		const outward = size * 0.065;
+		points.push( [ splitPoint[ 0 ] + largestRegion.normal[ 0 ] * outward, splitPoint[ 1 ] + largestRegion.normal[ 1 ] * outward, splitPoint[ 2 ] + largestRegion.normal[ 2 ] * outward ] );
+		directions.push( largestRegion.normal );
+
+	}
 
 }
 
@@ -543,21 +642,21 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 	const leanZ = ( random() - 0.5 ) * 0.72;
 	const tiltX = ( random() - 0.5 ) * 0.62;
 	const tiltZ = ( random() - 0.5 ) * 0.62;
-	const rotationY = random() * Math.PI * 2;
+	let rotationY = random() * Math.PI * 2;
 	const cosine = Math.cos( rotationY );
 	const sine = Math.sin( rotationY );
 	const tiltCosineX = Math.cos( tiltX );
 	const tiltSineX = Math.sin( tiltX );
 	const tiltCosineZ = Math.cos( tiltZ );
 	const tiltSineZ = Math.sin( tiltZ );
-	const count = 28 + Math.floor( random() * 5 );
+	const count = 64 + Math.floor( random() * 5 );
 	const jitter = Math.min( 0.18, 0.1 + clamp( roughness, 0, 1.5 ) * 0.0666667 );
 	let radii: Vec3 = [ radiusX, radiusY, radiusZ ];
 	let directions: Vec3[] = [];
 	let points: Vec3[] = [];
 	const visibleFacetLimits = [ 20, 34 ];
 
-	for ( let attempt = 0; attempt < 24; attempt ++ ) {
+	for ( let attempt = 0; attempt < 12; attempt ++ ) {
 
 		directions = [
 			...createPoissonDirections( seed + 8891 + attempt * 7919, count - 6 ),
@@ -579,9 +678,9 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 		} );
 
 		const faces = buildConvexHullFaces( points );
-		const minimumAngle = getMinimumHullFaceAngle( points, faces );
 		const visibleFacets = getVisibleHullRegionCount( points, faces );
-		if ( minimumAngle >= 20 * Math.PI / 180 && visibleFacets >= visibleFacetLimits[ 0 ]! && visibleFacets <= visibleFacetLimits[ 1 ]! ) break;
+		if ( visibleFacets < visibleFacetLimits[ 0 ]! || visibleFacets > visibleFacetLimits[ 1 ]! ) continue;
+		if ( getMinimumHullFaceAngle( points, faces ) >= 12 * Math.PI / 180 ) break;
 
 	}
 
@@ -615,7 +714,31 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 			scoops.splice( 0, scoops.length, ...candidate );
 			const scoopPoints = points.map( ( point ) => applyRockScoops( point, radii, rotationY, scoops ) );
 			const visibleFacets = getVisibleHullRegionCount( scoopPoints, hullFaces );
-			if ( getMinimumHullFaceAngle( scoopPoints, hullFaces ) >= 22 * Math.PI / 180 && visibleFacets >= 15 && visibleFacets <= 30 ) break;
+			if ( visibleFacets < 15 || visibleFacets > 30 ) continue;
+			if ( getMinimumHullFaceAngle( scoopPoints, hullFaces ) >= 12 * Math.PI / 180 ) break;
+
+		}
+
+	}
+
+	splitLargeAboveGroundHullFacets( points, directions, size );
+	const finalFaces = buildConvexHullFaces( points );
+
+	if ( getVisibleAxisAlignedFacetCount( points, finalFaces ) >= 3 ) {
+
+		for ( let step = 1; step <= 36; step ++ ) {
+
+			const correction = step * Math.PI / 36;
+			const cosineCorrection = Math.cos( correction );
+			const sineCorrection = Math.sin( correction );
+			const rotateY = ( point: Vec3 ): Vec3 => [ point[ 0 ] * cosineCorrection + point[ 2 ] * sineCorrection, point[ 1 ], - point[ 0 ] * sineCorrection + point[ 2 ] * cosineCorrection ];
+			if ( getVisibleAxisAlignedFacetCount( points, finalFaces, correction ) >= 3 ) continue;
+
+			points = points.map( rotateY );
+			directions = directions.map( rotateY );
+			for ( const scoop of scoops ) scoop.direction = rotateY( scoop.direction );
+			rotationY += correction;
+			break;
 
 		}
 
@@ -864,7 +987,7 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 
 		} );
 		const scoopGrid = subdivision === 3 && scoopFaceDepths.has( faceIndex );
-		const useSixTriangles = subdivision === 2 || ( subdivision === 3 && ( scoopGrid || faceArea >= shape.size * shape.size * 0.1 ) );
+		const useSixTriangles = subdivision === 2 || ( subdivision === 3 && ( scoopGrid || faceArea >= shape.size * shape.size * 0.12 ) );
 
 		if ( useSixTriangles ) {
 
