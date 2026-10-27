@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bakeImpostor, generateRockData, hexToLinear } from '../../src/core';
 import type { MeshData } from '../../src/core';
-import { createRockCrackPaths, createRockTextures } from '../../src/core/rockTexture';
+import { createRockCrackPaths, createRockTextures, findRockFrontUv } from '../../src/core/rockTexture';
 import { sampleOutlineRadius } from '../helpers/meshOutline';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -385,6 +385,10 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 				y + 1 < width ? index + width : - 1,
 				x > 0 ? index - 1 : - 1,
 				x + 1 < width ? index + 1 : - 1,
+				y > 0 && x > 0 ? index - width - 1 : - 1,
+				y > 0 && x + 1 < width ? index - width + 1 : - 1,
+				y + 1 < width && x > 0 ? index + width - 1 : - 1,
+				y + 1 < width && x + 1 < width ? index + width + 1 : - 1,
 			];
 
 			for ( const neighbor of neighbors ) {
@@ -1039,7 +1043,7 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'keeps averaged rock vertex tint free of height gradients', () => {
+	it( 'keeps rock vertex color neutral for light-driven shading', () => {
 
 		const data = generateRockData( { seed: 9 } );
 		const mesh = data.lods[ 0 ]!;
@@ -1072,8 +1076,7 @@ describe( 'procedural rock data', () => {
 		expect( upperCount ).toBeGreaterThan( 0 );
 		expect( lowerCount ).toBeGreaterThan( 0 );
 		expect( upperColor / upperCount ).toBeCloseTo( lowerColor / lowerCount, 5 );
-		expect( minimumColor ).toBeLessThan( 0.98 );
-		expect( minimumColor ).toBeGreaterThan( 0.9 );
+		expect( minimumColor ).toBe( 1 );
 
 	} );
 
@@ -1234,7 +1237,7 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'generates a grayscale-blue albedo and normalized tangent-space normal texture', () => {
+	it( 'generates a light grayscale-blue albedo and normalized tangent-space normal texture', () => {
 
 		const data = generateRockData( { seed: 9 } );
 		const part = data.parts[ 0 ]!;
@@ -1250,15 +1253,15 @@ describe( 'procedural rock data', () => {
 		const albedoMean = meanRgb( albedo.data );
 		const normalMean = meanRgb( normal.data );
 
-		expect( Math.abs( albedoMean[ 0 ] - 109 ) ).toBeLessThanOrEqual( 1 );
-		expect( Math.abs( albedoMean[ 1 ] - 124 ) ).toBeLessThanOrEqual( 1 );
-		expect( Math.abs( albedoMean[ 2 ] - 141 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 0 ] - 158 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 1 ] - 168 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 2 ] - 180 ) ).toBeLessThanOrEqual( 1 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeLessThan( 2 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeGreaterThan( 0.4 );
 		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 14 );
-		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 140 );
-		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 155 );
-		expect( percentile( albedo.data, 0, 0.9 ) - percentile( albedo.data, 0, 0.1 ) ).toBeGreaterThan( 32 );
+		expect( percentile( albedo.data, 0, 0.1 ) ).toBeGreaterThan( 140 );
+		expect( percentile( albedo.data, 0, 0.9 ) ).toBeLessThan( 205 );
+		expect( percentile( albedo.data, 0, 0.9 ) - percentile( albedo.data, 0, 0.1 ) ).toBeGreaterThan( 12 );
 		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 6 );
 		expect( normalMean[ 2 ] ).toBeGreaterThan( 220 );
 		expect( normalMean[ 2 ] ).toBeLessThan( 255 );
@@ -1346,11 +1349,10 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'uses a horizontally tiling stone surface with clamped poles and chipped shadows', () => {
+	it( 'uses a horizontally tiling light stone surface with subtle chips and clamped poles', () => {
 
 		const textures = createRockTextures( 9 );
 		const rock = generateRockData( { seed: 9 } );
-		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 55 );
 		const rockNormal = rock.textures.normal!;
 		let edgeDifference = 0;
 		let normalEdgeDifference = 0;
@@ -1386,10 +1388,9 @@ describe( 'procedural rock data', () => {
 		expect( textures.albedo.wrapT ).toBe( 'clamp' );
 		expect( textures.normal.wrapS ).toBe( 'repeat' );
 		expect( textures.normal.wrapT ).toBe( 'clamp' );
-		expect( darkRegions.coverage ).toBeGreaterThan( 0.0005 );
-		expect( darkRegions.coverage ).toBeLessThan( 0.36 );
-		expect( darkRegions.count ).toBeLessThanOrEqual( 20 );
-		expect( darkRegions.largest ).toBeLessThan( 0.08 );
+		expect( meanRgb( textures.albedo.data )[ 0 ] ).toBeGreaterThan( 150 );
+		expect( percentile( textures.albedo.data, 0, 0.01 ) ).toBeGreaterThan( 130 );
+		expect( percentile( textures.albedo.data, 0, 0.99 ) ).toBeLessThan( 220 );
 		expect( meanEdgeDifference ).toBeLessThan( 3 );
 		expect( normalEdgeDifference / ( rockNormal.width * 3 ) ).toBeLessThan( 5 );
 
@@ -1441,13 +1442,13 @@ describe( 'procedural rock data', () => {
 		const hueSpread = hueValues[ 57 ]! - hueValues[ 6 ]!;
 
 		expect( hueSpread ).toBeGreaterThan( 3.5 );
-		expect( meanRgb( texture.data )[ 0 ] ).toBeCloseTo( 109, 0 );
-		expect( meanRgb( texture.data )[ 1 ] ).toBeCloseTo( 124, 0 );
-		expect( meanRgb( texture.data )[ 2 ] ).toBeCloseTo( 141, 0 );
+		expect( meanRgb( texture.data )[ 0 ] ).toBeCloseTo( 158, 0 );
+		expect( meanRgb( texture.data )[ 1 ] ).toBeCloseTo( 168, 0 );
+		expect( meanRgb( texture.data )[ 2 ] ).toBeCloseTo( 180, 0 );
 
 	} );
 
-	it( 'rasterizes the LOD0 facet normals into planar albedo bands', () => {
+	it( 'uses subtle facet value changes from the LOD0 normals', () => {
 
 		const smoothMesh = buildRockShell( 4, createRockRadiusFunction( 27, 2, 0.2, 0.82, 1, 'chiseled' ), 0.82 );
 		const chiseledMesh = buildRockShell( 4, createRockRadiusFunction( 27, 2, 1.45, 0.82, 1, 'chiseled' ), 0.82 );
@@ -1485,7 +1486,7 @@ describe( 'procedural rock data', () => {
 
 	}, 30000 );
 
-	it( 'makes broad planar value changes while keeping within-plane texture quiet', () => {
+	it( 'keeps albedo similar across top, side and underside facets', () => {
 
 		const data = generateRockData( { seed: 3 } );
 		const texture = data.textures[ data.parts[ 0 ]!.texture! ]!;
@@ -1509,29 +1510,29 @@ describe( 'procedural rock data', () => {
 		for ( let region = 0; region < means.length; region ++ ) means[ region ]! /= counts[ region ]!;
 		const fineContrast = meanNeighborDelta( texture.data, texture.width, texture.height, 1 );
 
-		expect( means[ 0 ]!, `up ${ means[ 0 ] }, side ${ means[ 1 ] }, underside ${ means[ 2 ] }` ).toBeGreaterThan( means[ 1 ]! + 12 );
-		if ( counts[ 2 ]! > 0 ) expect( means[ 1 ]! - means[ 2 ]! ).toBeGreaterThan( 15 );
+		expect( Math.abs( means[ 0 ]! - means[ 1 ]! ), `up ${ means[ 0 ] }, side ${ means[ 1 ] }` ).toBeLessThan( 20 );
+		if ( counts[ 2 ]! > 0 ) expect( Math.abs( means[ 1 ]! - means[ 2 ]! ) ).toBeLessThan( 20 );
 		expect( fineContrast ).toBeLessThan( 2.2 );
 
 	}, 30000 );
 
-	it( 'builds thin angular cracks with pointed ends and occasional short branches', () => {
+	it( 'builds a few long tapered recessed cracks that cross stone facets', () => {
 
 		const paths = createRockCrackPaths( 9, Math.PI / 4, () => 1 );
 		const mainPaths = paths.filter( ( path ) => ! path.branch );
-		const branches = paths.filter( ( path ) => path.branch );
 		let sharpTurns = 0;
 
-		expect( mainPaths ).toHaveLength( 150 );
-		expect( branches.length ).toBeGreaterThan( 20 );
-		expect( branches.length ).toBeLessThan( 50 );
+		expect( mainPaths.length ).toBeGreaterThanOrEqual( 2 );
+		expect( mainPaths.length ).toBeLessThanOrEqual( 4 );
+		expect( paths.every( ( path ) => ! path.branch ) ).toBe( true );
 
 		for ( const path of paths ) {
 
 			const widths = [ path.segments[ 0 ]!.width0, ...path.segments.map( ( segment ) => segment.width1 ) ];
 			expect( widths[ 0 ] ).toBe( 0 );
 			expect( widths[ widths.length - 1 ] ).toBe( 0 );
-			expect( Math.max( ...widths ) ).toBeLessThanOrEqual( 0.002 );
+			expect( Math.max( ...widths ) ).toBeGreaterThanOrEqual( 0.0058 );
+			expect( Math.max( ...widths ) ).toBeLessThanOrEqual( 0.0068 );
 			expect( new Set( widths ).size ).toBeGreaterThan( 1 );
 
 			const pathLength = path.points.slice( 1 ).reduce( ( length, point, index ) => {
@@ -1541,12 +1542,8 @@ describe( 'procedural rock data', () => {
 
 			}, 0 );
 
-			if ( path.branch ) {
-
-				expect( pathLength ).toBeGreaterThan( 0.01 );
-				expect( pathLength ).toBeLessThan( 0.04 );
-
-			}
+			expect( pathLength ).toBeGreaterThanOrEqual( 0.19 );
+			expect( pathLength ).toBeLessThanOrEqual( 0.32 );
 
 			for ( let index = 1; index < path.points.length - 1; index ++ ) {
 
@@ -1563,13 +1560,41 @@ describe( 'procedural rock data', () => {
 
 		}
 
-		expect( sharpTurns ).toBeGreaterThan( 30 );
+		expect( sharpTurns ).toBeGreaterThan( 1 );
 		expect( createRockCrackPaths( 9, Math.PI / 4, () => 1 ) ).toEqual( paths );
 		expect( createRockCrackPaths( 10, Math.PI / 4, () => 1 ) ).not.toEqual( paths );
+		const anchoredPaths = createRockCrackPaths( 9, Math.PI / 4, () => 1, { u: 0.75, v: 0.5 } );
+		const anchorDistance = Math.abs( anchoredPaths[ 0 ]!.points[ 0 ]!.u - 0.75 );
+		expect( Math.min( anchorDistance, 1 - anchorDistance ) ).toBeLessThan( 0.1 );
+		expect( Math.abs( anchoredPaths[ 0 ]!.points[ 0 ]!.v - 0.5 ) ).toBeLessThan( 0.1 );
 
 		const textures = createRockTextures( 9 );
 		expect( textures.albedo.width ).toBe( 1024 );
 		expect( textures.normal.width ).toBe( 1024 );
+
+	} );
+
+	it( 'anchors visible cracks on the camera-facing side of the rock', () => {
+
+		for ( let seed = 1; seed <= 8; seed ++ ) {
+
+			const frontUv = findRockFrontUv( generateRockData( { seed } ).lods[ 0 ]! );
+			expect( frontUv, `seed ${ seed } crack anchor` ).toBeDefined();
+			expect( Math.abs( frontUv!.v - 0.5 ), `seed ${ seed } side crack anchor` ).toBeLessThan( 0.06 );
+
+		}
+
+	}, 15000 );
+
+	it( 'keeps the few long crack grooves visible as narrow dark paths', () => {
+
+		const texture = createRockTextures( 9, 256 ).albedo;
+		const grooves = darkPixelComponents( texture.data, texture.width, 158 );
+
+		expect( grooves.coverage ).toBeGreaterThan( 0.001 );
+		expect( grooves.span ).toBeGreaterThan( 0.12 );
+		expect( grooves.span ).toBeLessThan( 0.45 );
+		expect( grooves.largest ).toBeLessThan( 0.02 );
 
 	} );
 

@@ -3,7 +3,8 @@ import { generateRockData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { minimumRockApexAngle } from '../helpers/rockSharpness';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
-import { buildConvexHullFaces, buildRockHullMesh, createRockHullShape, getRockScoopInfluence, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';
+import { buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, createRockHullShape, getRockScoopInfluence, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';
+import { createRockCrackPaths, createRockTextures } from '../../src/core/rockTexture';
 
 function vertexCount( mesh: MeshData ): number {
 
@@ -140,6 +141,70 @@ function getTriangle( mesh: MeshData, offset: number ): { points: [ number, numb
 
 }
 
+function countChamferTrianglesForHullEdges( mesh: MeshData, shape: ReturnType<typeof createRockHullShape>, faces: [ number, number, number ][] ): { edges: number; strips: number } {
+
+	const edgeFaces = new Map<string, { first: number; second: number; normals: [ number, number, number ][] }>();
+	const faceNormals = faces.map( ( face ) => {
+
+		const points = face.map( ( vertex ) => shape.points[ vertex ]! );
+		const ab = [ points[ 1 ]![ 0 ] - points[ 0 ]![ 0 ], points[ 1 ]![ 1 ] - points[ 0 ]![ 1 ], points[ 1 ]![ 2 ] - points[ 0 ]![ 2 ] ];
+		const ac = [ points[ 2 ]![ 0 ] - points[ 0 ]![ 0 ], points[ 2 ]![ 1 ] - points[ 0 ]![ 1 ], points[ 2 ]![ 2 ] - points[ 0 ]![ 2 ] ];
+		const normal = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+		const length = Math.hypot( ...normal );
+		return normal.map( ( value ) => value / length ) as [ number, number, number ];
+
+	} );
+
+	for ( let faceIndex = 0; faceIndex < faces.length; faceIndex ++ ) {
+
+		const face = faces[ faceIndex ]!;
+		for ( let edge = 0; edge < 3; edge ++ ) {
+			const first = face[ edge ]!;
+			const second = face[ ( edge + 1 ) % 3 ]!;
+			const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
+			const record = edgeFaces.get( key ) ?? { first: Math.min( first, second ), second: Math.max( first, second ), normals: [] };
+			record.normals.push( faceNormals[ faceIndex ]! );
+			edgeFaces.set( key, record );
+		}
+
+	}
+
+	let edges = 0;
+	let strips = 0;
+
+	for ( const edge of edgeFaces.values() ) {
+
+		if ( edge.normals.length !== 2 ) continue;
+		const average = [ edge.normals[ 0 ]![ 0 ] + edge.normals[ 1 ]![ 0 ], edge.normals[ 0 ]![ 1 ] + edge.normals[ 1 ]![ 1 ], edge.normals[ 0 ]![ 2 ] + edge.normals[ 1 ]![ 2 ] ];
+		const averageLength = Math.hypot( ...average );
+		const dot = edge.normals[ 0 ]![ 0 ] * edge.normals[ 1 ]![ 0 ] + edge.normals[ 0 ]![ 1 ] * edge.normals[ 1 ]![ 1 ] + edge.normals[ 0 ]![ 2 ] * edge.normals[ 1 ]![ 2 ];
+		const angle = Math.acos( Math.max( - 1, Math.min( 1, dot ) ) );
+		if ( angle < 15 * Math.PI / 180 || averageLength < 1e-8 ) continue;
+		edges ++;
+		for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+			const triangle = getTriangle( mesh, offset );
+			const alignment = triangle.normal[ 0 ] * average[ 0 ]! + triangle.normal[ 1 ] * average[ 1 ]! + triangle.normal[ 2 ] * average[ 2 ]!;
+			if ( alignment / averageLength < 0.995 ) continue;
+			const first = shape.points[ edge.first ]!;
+			const second = shape.points[ edge.second ]!;
+			const direction = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+			const lengthSquared = direction[ 0 ]! ** 2 + direction[ 1 ]! ** 2 + direction[ 2 ]! ** 2;
+			const center = triangle.points.reduce( ( sum, point ) => [ sum[ 0 ] + point[ 0 ] / 3, sum[ 1 ] + point[ 1 ] / 3, sum[ 2 ] + point[ 2 ] / 3 ], [ 0, 0, 0 ] );
+			const projection = ( ( center[ 0 ] - first[ 0 ] ) * direction[ 0 ]! + ( center[ 1 ] - first[ 1 ] ) * direction[ 1 ]! + ( center[ 2 ] - first[ 2 ] ) * direction[ 2 ]! ) / lengthSquared;
+			if ( projection < 0.1 || projection > 0.9 ) continue;
+			const nearest = [ first[ 0 ] + direction[ 0 ]! * projection, first[ 1 ] + direction[ 1 ]! * projection, first[ 2 ] + direction[ 2 ]! * projection ];
+			const distance = Math.hypot( center[ 0 ] - nearest[ 0 ]!, center[ 1 ] - nearest[ 1 ]!, center[ 2 ] - nearest[ 2 ]! );
+			if ( distance < shape.size * 0.1 ) strips ++;
+
+		}
+
+	}
+
+	return { edges, strips };
+
+}
+
 function getVisiblePlaneRegions( seed: number ): { normal: [ number, number, number ]; area: number }[] {
 
 	const size = seed % 2 === 0 ? 12.3 : 6.4;
@@ -224,6 +289,15 @@ function getMeshFacetLuminance( data: ReturnType<typeof generateRockData>, minim
 
 }
 
+function getTextureLuminance( data: Uint8Array, width: number, u: number, v: number ): number {
+
+	const x = ( Math.floor( u * width ) % width + width ) % width;
+	const y = Math.max( 0, Math.min( width - 1, Math.floor( v * width ) ) );
+	const offset = ( y * width + x ) * 4;
+	return data[ offset ]! * 0.2126 + data[ offset + 1 ]! * 0.7152 + data[ offset + 2 ]! * 0.0722;
+
+}
+
 function minimumVisibleTriangleAngle( mesh: MeshData ): number {
 
 	let visibleArea = 0;
@@ -291,7 +365,7 @@ function hasLargeConcaveSurface( seed: number ): boolean {
 
 describe( 'irregular polyhedron rocks', () => {
 
-	it( 'uses dense ovoid hulls with at least twenty visible facets', () => {
+	it( 'uses low-poly ovoid hulls with twelve to twenty visible facets', () => {
 
 		let ovoidSeeds = 0;
 
@@ -314,14 +388,14 @@ describe( 'irregular polyhedron rocks', () => {
 			const aspect = height / width;
 			if ( aspect >= 0.8 && aspect <= 1.3 ) ovoidSeeds ++;
 
-			expect( shape.points.length, `seed ${ seed } hull points` ).toBeGreaterThanOrEqual( 40 );
-			expect( shape.points.length, `seed ${ seed } hull points` ).toBeLessThanOrEqual( 80 );
+			expect( shape.points.length, `seed ${ seed } hull points` ).toBeGreaterThanOrEqual( 30 );
+			expect( shape.points.length, `seed ${ seed } hull points` ).toBeLessThanOrEqual( 46 );
 			expect( maximum[ 0 ]! - minimum[ 0 ]!, `seed ${ seed } requested width` ).toBeLessThanOrEqual( size + 1e-4 );
 			expect( maximum[ 2 ]! - minimum[ 2 ]!, `seed ${ seed } requested depth` ).toBeLessThanOrEqual( size + 1e-4 );
 			expect( height, `seed ${ seed } requested height` ).toBeLessThanOrEqual( size * 1.3 + 1e-4 );
-			expect( getVisiblePlaneRegions( seed ).length, `seed ${ seed } visible facets from ${ shape.points.length } points` ).toBeGreaterThanOrEqual( 20 );
-			expect( getVisiblePlaneRegions( seed ).length, `seed ${ seed } visible facets` ).toBeLessThanOrEqual( 34 );
-			expect( Math.max( ...getVisiblePlaneRegions( seed ).map( ( region ) => region.area ) ), `seed ${ seed } largest visible facet` ).toBeLessThanOrEqual( 0.12 );
+			expect( getVisiblePlaneRegions( seed ).length, `seed ${ seed } visible facets from ${ shape.points.length } points` ).toBeGreaterThanOrEqual( 12 );
+			expect( getVisiblePlaneRegions( seed ).length, `seed ${ seed } visible facets` ).toBeLessThanOrEqual( 20 );
+			expect( Math.max( ...getVisiblePlaneRegions( seed ).map( ( region ) => region.area ) ), `seed ${ seed } largest visible facet` ).toBeLessThanOrEqual( 0.18 );
 
 		}
 
@@ -355,7 +429,7 @@ describe( 'irregular polyhedron rocks', () => {
 
 	} );
 
-	it( 'keeps the darker cool blue-grey albedo in the target range', () => {
+	it( 'uses a light cool stone albedo with similar values across facet orientations', () => {
 
 		withSharedRockTextures( () => {
 
@@ -368,34 +442,29 @@ describe( 'irregular polyhedron rocks', () => {
 
 			}
 
-			expect( mean[ 0 ]! ).toBeGreaterThanOrEqual( 105 );
-			expect( mean[ 0 ]! ).toBeLessThanOrEqual( 120 );
-			expect( mean[ 1 ]! ).toBeGreaterThanOrEqual( 118 );
-			expect( mean[ 1 ]! ).toBeLessThanOrEqual( 133 );
-			expect( mean[ 2 ]! ).toBeGreaterThanOrEqual( 134 );
-			expect( mean[ 2 ]! ).toBeLessThanOrEqual( 150 );
+			expect( mean[ 0 ]! ).toBeGreaterThanOrEqual( 150 );
+			expect( mean[ 0 ]! ).toBeLessThanOrEqual( 165 );
+			expect( mean[ 1 ]! ).toBeGreaterThanOrEqual( 160 );
+			expect( mean[ 1 ]! ).toBeLessThanOrEqual( 175 );
+			expect( mean[ 2 ]! ).toBeGreaterThanOrEqual( 172 );
+			expect( mean[ 2 ]! ).toBeLessThanOrEqual( 187 );
 
 		} );
 
 	} );
 
-	it( 'bakes strong top, side, and downward value steps into the albedo', () => {
+	it( 'does not bake lighting or curvature darkening into facet albedo', () => {
 
 		withSharedRockTextures( () => {
 			const data = generateRockData( { seed: 1 } );
 			const top = getMeshFacetLuminance( data, 0.65, 0.98 );
 			const side = getMeshFacetLuminance( data, 0.2, 0.55 );
 			const downward = getMeshFacetLuminance( data, - 0.95, - 0.4 );
-			const sideColor = getMeshFacetColorMean( data, 0.2, 0.55 );
 			const downwardColor = getMeshFacetColorMean( data, - 0.95, - 0.4 );
 
-			expect( top, 'top facet albedo' ).toBeGreaterThan( 185 );
-			expect( side, 'side facet albedo' ).toBeGreaterThanOrEqual( 115 );
-			expect( side, 'side facet albedo' ).toBeLessThanOrEqual( 145 );
-			expect( downward, 'downward facet albedo' ).toBeLessThan( 112 );
-			expect( top - side, 'top to side contrast' ).toBeGreaterThanOrEqual( 55 );
-			expect( side - downward, 'side to downward contrast' ).toBeGreaterThanOrEqual( 25 );
-			expect( downwardColor[ 2 ]! - downwardColor[ 0 ]!, 'cooler tint in shadow facets' ).toBeGreaterThan( sideColor[ 2 ]! - sideColor[ 0 ]! );
+			expect( Math.abs( top - side ), 'top-to-side albedo difference' ).toBeLessThan( 20 );
+			expect( Math.abs( side - downward ), 'side-to-downward albedo difference' ).toBeLessThan( 20 );
+			expect( Math.abs( downwardColor[ 2 ]! - downwardColor[ 0 ]! ), 'subtle hue range in shadow-facing facets' ).toBeLessThan( 35 );
 		} );
 
 	} );
@@ -471,8 +540,8 @@ describe( 'irregular polyhedron rocks', () => {
 				const axis = [ [ 1, 0, 0 ], [ - 1, 0, 0 ], [ 0, 0, 1 ], [ 0, 0, - 1 ], [ 0, 1, 0 ] ];
 				const aligned = axis.filter( ( direction ) => regions.some( ( region ) => region.normal.reduce( ( dot, value, index ) => dot + value * direction[ index ]!, 0 ) > Math.cos( 10 * Math.PI / 180 ) ) );
 
-				expect( regions.length, `seed ${ seed } planar regions` ).toBeGreaterThanOrEqual( 20 );
-				expect( regions.length, `seed ${ seed } planar regions` ).toBeLessThanOrEqual( 34 );
+				expect( regions.length, `seed ${ seed } planar regions` ).toBeGreaterThanOrEqual( 12 );
+				expect( regions.length, `seed ${ seed } planar regions` ).toBeLessThanOrEqual( 20 );
 				expect( aligned.length, `seed ${ seed } box aligned facets` ).toBeLessThan( 3 );
 				expect( vertexCount( mesh ), `seed ${ seed } LOD0 vertex cap` ).toBeLessThanOrEqual( 260 );
 				expect( minimumRockApexAngle( mesh ), `seed ${ seed } apex angle` ).toBeGreaterThanOrEqual( 125 );
@@ -484,6 +553,85 @@ describe( 'irregular polyhedron rocks', () => {
 		} );
 
 	}, 60000 );
+
+	it( 'builds a dedicated chamfer face along each LOD0 hull ridge', () => {
+
+		const sourceShape = createRockHullShape( 63, 6.4, 1.2, 0.04 );
+		const shape = { ...sourceShape, scoops: [] };
+		const faces = buildConvexHullFaces( shape.points );
+		const mesh = buildRockHullMesh( shape, faces, 3, shape.size * 0.04, 0, false );
+		const chamfers = countChamferTrianglesForHullEdges( mesh, shape, faces );
+		const lowerLod = buildRockHullMesh( shape, faces, 2, 0, 0, false );
+		const lowerLodChamfers = countChamferTrianglesForHullEdges( lowerLod, shape, faces );
+
+		expect( chamfers.edges ).toBeGreaterThanOrEqual( 30 );
+		expect( chamfers.strips ).toBeGreaterThanOrEqual( chamfers.edges * 1.5 );
+		expect( lowerLodChamfers.strips ).toBe( 0 );
+
+	} );
+
+	it( 'paints a broad soft catch-light on only a few major chamfer ridges', () => {
+
+		const sourceShape = createRockHullShape( 63, 6.4, 1.2, 0.04 );
+		const shape = { ...sourceShape, scoops: [] };
+		const faces = buildConvexHullFaces( shape.points );
+		const chamfered = buildRockHullMeshWithChamfers( shape, faces, shape.size * 0.04, 0, false );
+		const texture = createRockTextures( 113, 512, 113, chamfered.mesh, 'ridge-profile-green', undefined, chamfered.ridgeUvSegments ).albedo;
+		const segment = chamfered.ridgeUvSegments.reduce( ( longest, candidate ) => {
+			const deltaU = Math.abs( candidate[ 1 ][ 0 ] - candidate[ 0 ][ 0 ] );
+			const wrappedDeltaU = deltaU > 0.5 ? 1 - deltaU : deltaU;
+			const deltaV = candidate[ 1 ][ 1 ] - candidate[ 0 ][ 1 ];
+			return Math.hypot( wrappedDeltaU, deltaV ) > Math.hypot( Math.abs( longest[ 1 ][ 0 ] - longest[ 0 ][ 0 ] ), longest[ 1 ][ 1 ] - longest[ 0 ][ 1 ] ) ? candidate : longest;
+		}, chamfered.ridgeUvSegments[ 0 ]! );
+		let firstU = segment[ 0 ][ 0 ];
+		let secondU = segment[ 1 ][ 0 ];
+		if ( secondU - firstU > 0.5 ) firstU += 1;
+		if ( firstU - secondU > 0.5 ) secondU += 1;
+		const middleU = ( firstU + secondU ) * 0.5;
+		const middleV = ( segment[ 0 ][ 1 ] + segment[ 1 ][ 1 ] ) * 0.5;
+		const latitude = ( middleV - 0.5 ) * Math.PI;
+		const scaleU = Math.PI * shape.size * Math.max( Math.cos( latitude ), 0.04 );
+		const scaleV = Math.PI * shape.size * 0.5;
+		const lineX = ( secondU - firstU ) * scaleU;
+		const lineY = ( segment[ 1 ][ 1 ] - segment[ 0 ][ 1 ] ) * scaleV;
+		const lineLength = Math.hypot( lineX, lineY );
+		const outsideDistance = shape.size * 0.055;
+		const insideDistance = shape.size * 0.01;
+		const outsideU = - lineY / lineLength * outsideDistance / scaleU;
+		const outsideV = lineX / lineLength * outsideDistance / scaleV;
+		const insideU = - lineY / lineLength * insideDistance / scaleU;
+		const insideV = lineX / lineLength * insideDistance / scaleV;
+		const center = getTextureLuminance( texture.data, texture.width, middleU, middleV );
+		const outside = ( getTextureLuminance( texture.data, texture.width, middleU + outsideU, middleV + outsideV ) + getTextureLuminance( texture.data, texture.width, middleU - outsideU, middleV - outsideV ) ) * 0.5;
+		const inside = ( getTextureLuminance( texture.data, texture.width, middleU + insideU, middleV + insideV ) + getTextureLuminance( texture.data, texture.width, middleU - insideU, middleV - insideV ) ) * 0.5;
+
+		expect( chamfered.ridgeUvSegments.length ).toBeGreaterThanOrEqual( 4 );
+		expect( chamfered.ridgeUvSegments.length ).toBeLessThanOrEqual( 10 );
+		expect( center - outside ).toBeGreaterThan( 10 );
+		expect( inside - outside ).toBeGreaterThan( 5 );
+		expect( Math.abs( center - inside ) ).toBeLessThan( 12 );
+
+	} );
+
+	it( 'uses two to four long recessed crack paths instead of scattered scratches', () => {
+
+		const paths = createRockCrackPaths( 9, Math.PI / 4, () => 1 );
+		const mainPaths = paths.filter( ( path ) => ! path.branch );
+		const branches = paths.filter( ( path ) => path.branch );
+		const lengths = mainPaths.map( ( path ) => path.points.slice( 1 ).reduce( ( length, point, index ) => {
+
+			const previous = path.points[ index ]!;
+			return length + Math.hypot( point.u - previous.u, point.v - previous.v );
+
+		}, 0 ) );
+
+		expect( mainPaths.length ).toBeGreaterThanOrEqual( 2 );
+		expect( mainPaths.length ).toBeLessThanOrEqual( 4 );
+		expect( branches ).toHaveLength( 0 );
+		expect( lengths.every( ( length ) => length >= 0.15 && length <= 0.32 ) ).toBe( true );
+		expect( createRockCrackPaths( 9, Math.PI / 4, () => 1 ) ).toEqual( paths );
+
+	} );
 
 	it( 'adds large concave scoops on about one third of seeds', () => {
 

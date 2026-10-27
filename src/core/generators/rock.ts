@@ -1,6 +1,6 @@
 import { createRockTextures } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
-import { applyRockSurfaceShading, applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, clamp, createRockHullShape, getBounds, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, removeRockBottomCap, recomputeCreasedNormals, sinkMesh } from '../rockGeometry';
+import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, removeRockBottomCap, recomputeCreasedNormals, sinkMesh } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -78,10 +78,11 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const weathering = clamp( weatheringInput, 0, 1 );
 	const shape = createRockHullShape( internalSeed, size, roughness, flatness );
 	const hullFaces = buildConvexHullFaces( shape.points );
-	const bevelWidth = size * 0.02;
-	const lod0 = buildRockHullMesh( shape, hullFaces, 3, bevelWidth, weathering );
-	const lod1 = buildRockHullMesh( shape, hullFaces, 1, bevelWidth * 0.8, weathering );
-	const lod2 = buildRockHullMesh( shape, hullFaces, 0, bevelWidth * 0.8, weathering );
+	const bevelWidth = size * 0.04;
+	const chamferedLod0 = buildRockHullMeshWithChamfers( shape, hullFaces, bevelWidth, weathering );
+	const lod0 = chamferedLod0.mesh;
+	const lod1 = buildRockHullMesh( shape, hullFaces, 1, 0, weathering );
+	const lod2 = buildRockHullMesh( shape, hullFaces, 0, 0, weathering );
 	const colliderMesh = buildRockHullMesh( shape, hullFaces, 0, 0, weathering, false );
 	const groundOffset = - getMinimumY( lod0.positions );
 
@@ -107,10 +108,6 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	recomputeCreasedNormals( lod0, 35, creaseOutsideScoops );
 	recomputeCreasedNormals( lod1, 35, creaseOutsideScoops );
 	recomputeCreasedNormals( lod2, 35, creaseOutsideScoops );
-	applyRockSurfaceShading( lod0 );
-	applyRockSurfaceShading( lod1 );
-	applyRockSurfaceShading( lod2 );
-
 	const lod3 = buildRockHullMesh( shape, hullFaces, 0, 0, 0, false );
 	liftMesh( lod3, groundOffset );
 	sinkMesh( lod3, burialHeight, Number.NEGATIVE_INFINITY );
@@ -136,7 +133,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		impostorPart(),
 	];
 	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }`;
-	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight } );
+	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments );
 
 	return {
 		kind: 'rock',

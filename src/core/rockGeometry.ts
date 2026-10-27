@@ -534,11 +534,12 @@ function getVisibleAxisAlignedFacetCount( points: Vec3[], faces: [ number, numbe
 
 function splitLargeAboveGroundHullFacets( points: Vec3[], directions: Vec3[], size: number ): void {
 
-	for ( let attempt = 0; attempt < 12 && points.length < 80; attempt ++ ) {
+	for ( let attempt = 0; attempt < 12 && points.length < 46; attempt ++ ) {
 
 		const minimumY = Math.min( ...points.map( ( point ) => point[ 1 ] ) );
 		const maximumY = Math.max( ...points.map( ( point ) => point[ 1 ] ) );
-		const groundY = minimumY + ( maximumY - minimumY ) * 0.42;
+		const groundY = minimumY + ( maximumY - minimumY ) * 0.46;
+		const cameraDirection = normalizeDirection( [ 0, 0.3, 0.95 ] );
 		const faces = buildConvexHullFaces( points );
 		const hullCenter: Vec3 = [ 0, 0, 0 ];
 		for ( const point of points ) for ( let axis = 0; axis < 3; axis ++ ) hullCenter[ axis ] = hullCenter[ axis ]! + point[ axis ]! / points.length;
@@ -557,7 +558,6 @@ function splitLargeAboveGroundHullFacets( points: Vec3[], directions: Vec3[], si
 			const cross: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
 			const doubleArea = Math.hypot( ...cross );
 			const area = doubleArea * 0.5;
-			visibleArea += area;
 			if ( doubleArea < 1e-8 ) continue;
 
 			const normal = normalizeDirection( cross );
@@ -568,6 +568,8 @@ function splitLargeAboveGroundHullFacets( points: Vec3[], directions: Vec3[], si
 				normal[ 1 ] = - normal[ 1 ];
 				normal[ 2 ] = - normal[ 2 ];
 			}
+			if ( normal[ 0 ] * cameraDirection[ 0 ] + normal[ 1 ] * cameraDirection[ 1 ] + normal[ 2 ] * cameraDirection[ 2 ] <= 0.02 ) continue;
+			visibleArea += area;
 			const offset = normal[ 0 ] * first[ 0 ] + normal[ 1 ] * first[ 1 ] + normal[ 2 ] * first[ 2 ];
 			let region = regions.find( ( candidate ) => candidate.normal[ 0 ] * normal[ 0 ] + candidate.normal[ 1 ] * normal[ 1 ] + candidate.normal[ 2 ] * normal[ 2 ] > 0.9999 && Math.abs( candidate.offset - offset ) < size * 0.001 );
 			if ( region === undefined ) {
@@ -580,7 +582,8 @@ function splitLargeAboveGroundHullFacets( points: Vec3[], directions: Vec3[], si
 		}
 
 		const largestRegion = regions.reduce<{ normal: Vec3; offset: number; area: number; center: Vec3 } | undefined>( ( largest, region ) => largest === undefined || region.area > largest.area ? region : largest, undefined );
-		if ( largestRegion === undefined || largestRegion.area / visibleArea <= 0.1 ) return;
+		const visibleFacetCount = regions.filter( ( region ) => region.area / visibleArea >= 0.002 ).length;
+		if ( largestRegion === undefined || ( largestRegion.area / visibleArea <= 0.18 && visibleFacetCount >= 12 ) ) return;
 		const splitPoint = largestRegion.center.map( ( value ) => value / largestRegion.area ) as Vec3;
 
 		const outward = size * 0.065;
@@ -649,12 +652,14 @@ function createPoissonDirections( seed: number, count: number ): Vec3[] {
 
 }
 
-function createTopEdgeDirections( seed: number, count: number ): Vec3[] {
+function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] = [] ): Vec3[] {
 
 	const random = createRockRandom( seed );
 	const directions: Vec3[] = [];
 	const clusterCount = Math.ceil( count / 2 );
 	const rotation = random() * Math.PI * 2;
+	const minimumDot = Math.cos( 0.3 );
+	const isSpaced = ( direction: Vec3 ): boolean => excluded.every( ( other ) => direction[ 0 ] * other[ 0 ] + direction[ 1 ] * other[ 1 ] + direction[ 2 ] * other[ 2 ] <= minimumDot ) && directions.every( ( other ) => direction[ 0 ] * other[ 0 ] + direction[ 1 ] * other[ 1 ] + direction[ 2 ] * other[ 2 ] <= minimumDot );
 
 	for ( let cluster = 0; directions.length < count; cluster ++ ) {
 
@@ -664,10 +669,36 @@ function createTopEdgeDirections( seed: number, count: number ): Vec3[] {
 		for ( let member = 0; member < 2 && directions.length < count; member ++ ) {
 
 			const side = member === 0 ? - 1 : 1;
-			const angle = centerAngle + side * ( 0.14 + random() * 0.09 );
-			const y = clamp( centerY + side * ( 0.04 + random() * 0.06 ), 0.4, 0.84 );
-			const horizontal = Math.sqrt( 1 - y * y );
-			directions.push( [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ] );
+			let candidate: Vec3 | undefined;
+			for ( let attempt = 0; attempt < 32; attempt ++ ) {
+				const angle = centerAngle + side * ( 0.2 + random() * 0.1 ) + ( random() - 0.5 ) * 0.12;
+				const y = clamp( centerY + side * ( 0.04 + random() * 0.04 ), 0.4, 0.84 );
+				const horizontal = Math.sqrt( 1 - y * y );
+				const direction: Vec3 = [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ];
+				if ( isSpaced( direction ) ) {
+					candidate = direction;
+					break;
+				}
+			}
+			if ( candidate === undefined ) {
+				for ( let attempt = 0; attempt < 64; attempt ++ ) {
+					const y = 0.4 + random() * 0.44;
+					const angle = random() * Math.PI * 2;
+					const horizontal = Math.sqrt( 1 - y * y );
+					const direction: Vec3 = [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ];
+					if ( isSpaced( direction ) ) {
+						candidate = direction;
+						break;
+					}
+				}
+			}
+			if ( candidate === undefined ) {
+				const angle = centerAngle + side * 0.25;
+				const y = clamp( centerY + side * 0.06, 0.4, 0.84 );
+				const horizontal = Math.sqrt( 1 - y * y );
+				candidate = [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ];
+			}
+			directions.push( candidate );
 
 		}
 
@@ -697,20 +728,21 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 	const tiltSineX = Math.sin( tiltX );
 	const tiltCosineZ = Math.cos( tiltZ );
 	const tiltSineZ = Math.sin( tiltZ );
-	const count = 64 + Math.floor( random() * 5 );
+	const count = 30 + Math.floor( random() * 5 );
 	const jitter = Math.min( 0.18, 0.1 + clamp( roughness, 0, 1.5 ) * 0.0666667 );
 	let radii: Vec3 = [ radiusX, radiusY, radiusZ ];
 	let translation: Vec3 = [ 0, 0, 0 ];
 	let directions: Vec3[] = [];
 	let points: Vec3[] = [];
-	const visibleFacetLimits = [ 20, 34 ];
+	let bestDirections: Vec3[] = [];
+	let bestPoints: Vec3[] = [];
+	let bestMinimumFaceAngle = - Infinity;
+	const visibleFacetLimits = [ 12, 20 ];
 
 	for ( let attempt = 0; attempt < 12; attempt ++ ) {
 
-		directions = [
-			...createPoissonDirections( seed + 8891 + attempt * 7919, count - 6 ),
-			...createTopEdgeDirections( seed + 37891 + attempt * 7919, 6 ),
-		];
+		const poissonDirections = createPoissonDirections( seed + 8891 + attempt * 7919, count - 6 );
+		directions = [ ...poissonDirections, ...createTopEdgeDirections( seed + 37891 + attempt * 7919, 6, poissonDirections ) ];
 		const pointRandom = createRockRandom( seed + 22721 + attempt * 7919 );
 		points = directions.map( ( direction ) => {
 
@@ -729,8 +761,18 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 		const faces = buildConvexHullFaces( points );
 		const visibleFacets = getVisibleHullRegionCount( points, faces );
 		if ( visibleFacets < visibleFacetLimits[ 0 ]! || visibleFacets > visibleFacetLimits[ 1 ]! ) continue;
-		if ( getMinimumHullFaceAngle( points, faces ) >= 12 * Math.PI / 180 ) break;
+		const minimumFaceAngle = getMinimumHullFaceAngle( points, faces );
+		if ( minimumFaceAngle > bestMinimumFaceAngle ) {
+			bestMinimumFaceAngle = minimumFaceAngle;
+			bestDirections = directions;
+			bestPoints = points;
+		}
+		if ( minimumFaceAngle >= 12 * Math.PI / 180 ) break;
 
+	}
+	if ( bestPoints.length > 0 ) {
+		directions = bestDirections;
+		points = bestPoints;
 	}
 
 	const scoopRandom = createRockRandom( seed + 13725 );
@@ -763,7 +805,7 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 			scoops.splice( 0, scoops.length, ...candidate );
 			const scoopPoints = points.map( ( point ) => applyRockScoops( point, radii, rotationY, scoops, tiltX, tiltZ ) );
 			const visibleFacets = getVisibleHullRegionCount( scoopPoints, hullFaces );
-			if ( visibleFacets < 15 || visibleFacets > 30 ) continue;
+			if ( visibleFacets < 12 || visibleFacets > 20 ) continue;
 			if ( getMinimumHullFaceAngle( scoopPoints, hullFaces ) >= 12 * Math.PI / 180 ) break;
 
 		}
@@ -883,7 +925,359 @@ function applyRockScoops( position: Vec3, radii: Vec3, rotationY: number, scoops
 
 }
 
+export type RockRidgeUvSegment = [ [ number, number ], [ number, number ] ];
+
+export interface ChamferedRockHullMesh {
+	mesh: MeshData;
+	ridgeUvSegments: RockRidgeUvSegment[];
+}
+
+interface RockHullFacet {
+	normal: Vec3;
+	offset: number;
+	faces: number[];
+	boundary: number[];
+	insets: Map<number, Vec3>;
+	vertices: Map<number, number>;
+}
+
+function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, number, number ][], bevelWidth: number, unwrapSeams: boolean ): ChamferedRockHullMesh {
+
+	const hullCenter: Vec3 = [ 0, 0, 0 ];
+	for ( const point of shape.points ) for ( let axis = 0; axis < 3; axis ++ ) hullCenter[ axis ] = hullCenter[ axis ]! + point[ axis ]! / shape.points.length;
+	const faceNormals = faces.map( ( face ) => {
+
+		const first = shape.points[ face[ 0 ] ]!;
+		const second = shape.points[ face[ 1 ] ]!;
+		const third = shape.points[ face[ 2 ] ]!;
+		const ab: Vec3 = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+		const ac: Vec3 = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+		const normal = normalizeDirection( [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ] );
+		const faceCenter: Vec3 = [ ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3, ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3, ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 ];
+		if ( ( faceCenter[ 0 ] - hullCenter[ 0 ] ) * normal[ 0 ] + ( faceCenter[ 1 ] - hullCenter[ 1 ] ) * normal[ 1 ] + ( faceCenter[ 2 ] - hullCenter[ 2 ] ) * normal[ 2 ] < 0 ) return [ - normal[ 0 ], - normal[ 1 ], - normal[ 2 ] ] as Vec3;
+		return normal;
+
+	} );
+	const facets: RockHullFacet[] = [];
+	const faceFacets = new Int32Array( faces.length );
+
+	for ( let faceIndex = 0; faceIndex < faces.length; faceIndex ++ ) {
+
+		const face = faces[ faceIndex ]!;
+		const normal = faceNormals[ faceIndex ]!;
+		const first = shape.points[ face[ 0 ] ]!;
+		const offset = normal[ 0 ] * first[ 0 ] + normal[ 1 ] * first[ 1 ] + normal[ 2 ] * first[ 2 ];
+		let facetIndex = facets.findIndex( ( facet ) => facet.normal[ 0 ] * normal[ 0 ] + facet.normal[ 1 ] * normal[ 1 ] + facet.normal[ 2 ] * normal[ 2 ] > 0.995 && Math.abs( facet.offset - offset ) < shape.size * 0.02 );
+		if ( facetIndex === - 1 ) {
+			facetIndex = facets.length;
+			facets.push( { normal, offset, faces: [], boundary: [], insets: new Map(), vertices: new Map() } );
+		}
+		facets[ facetIndex ]!.faces.push( faceIndex );
+		faceFacets[ faceIndex ] = facetIndex;
+
+	}
+
+	const boundaryEdges = new Map<string, { first: number; second: number; facets: number[] }>();
+
+	for ( let facetIndex = 0; facetIndex < facets.length; facetIndex ++ ) {
+
+		const facet = facets[ facetIndex ]!;
+		const counts = new Map<string, { first: number; second: number; count: number }>();
+		for ( const faceIndex of facet.faces ) {
+			const face = faces[ faceIndex ]!;
+			for ( let edge = 0; edge < 3; edge ++ ) {
+				const first = face[ edge ]!;
+				const second = face[ ( edge + 1 ) % 3 ]!;
+				const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
+				const record = counts.get( key ) ?? { first: Math.min( first, second ), second: Math.max( first, second ), count: 0 };
+				record.count ++;
+				counts.set( key, record );
+			}
+		}
+
+		for ( const [ key, edge ] of counts ) {
+			if ( edge.count !== 1 ) continue;
+			facet.boundary.push( edge.first, edge.second );
+			const adjacent = boundaryEdges.get( key ) ?? { first: edge.first, second: edge.second, facets: [] };
+			adjacent.facets.push( facetIndex );
+			boundaryEdges.set( key, adjacent );
+		}
+
+		facet.boundary = [ ...new Set( facet.boundary ) ];
+		const boundaryCenter: Vec3 = [ 0, 0, 0 ];
+		for ( const vertex of facet.boundary ) for ( let axis = 0; axis < 3; axis ++ ) boundaryCenter[ axis ] = boundaryCenter[ axis ]! + shape.points[ vertex ]![ axis ]! / facet.boundary.length;
+		const firstBoundaryVertex = facet.boundary[ 0 ]!;
+		const reference = normalizeDirection( [ shape.points[ firstBoundaryVertex ]![ 0 ] - boundaryCenter[ 0 ], shape.points[ firstBoundaryVertex ]![ 1 ] - boundaryCenter[ 1 ], shape.points[ firstBoundaryVertex ]![ 2 ] - boundaryCenter[ 2 ] ] );
+		const secondAxis = normalizeDirection( [ facet.normal[ 1 ] * reference[ 2 ] - facet.normal[ 2 ] * reference[ 1 ], facet.normal[ 2 ] * reference[ 0 ] - facet.normal[ 0 ] * reference[ 2 ], facet.normal[ 0 ] * reference[ 1 ] - facet.normal[ 1 ] * reference[ 0 ] ] );
+		facet.boundary.sort( ( first, second ) => {
+			const firstDirection = [ shape.points[ first ]![ 0 ] - boundaryCenter[ 0 ], shape.points[ first ]![ 1 ] - boundaryCenter[ 1 ], shape.points[ first ]![ 2 ] - boundaryCenter[ 2 ] ];
+			const secondDirection = [ shape.points[ second ]![ 0 ] - boundaryCenter[ 0 ], shape.points[ second ]![ 1 ] - boundaryCenter[ 1 ], shape.points[ second ]![ 2 ] - boundaryCenter[ 2 ] ];
+			const firstAngle = Math.atan2( firstDirection[ 0 ]! * secondAxis[ 0 ] + firstDirection[ 1 ]! * secondAxis[ 1 ] + firstDirection[ 2 ]! * secondAxis[ 2 ], firstDirection[ 0 ]! * reference[ 0 ] + firstDirection[ 1 ]! * reference[ 1 ] + firstDirection[ 2 ]! * reference[ 2 ] );
+			const secondAngle = Math.atan2( secondDirection[ 0 ]! * secondAxis[ 0 ] + secondDirection[ 1 ]! * secondAxis[ 1 ] + secondDirection[ 2 ]! * secondAxis[ 2 ], secondDirection[ 0 ]! * reference[ 0 ] + secondDirection[ 1 ]! * reference[ 1 ] + secondDirection[ 2 ]! * reference[ 2 ] );
+			return firstAngle - secondAngle;
+		} );
+
+		for ( let index = 0; index < facet.boundary.length; index ++ ) {
+
+			const vertex = facet.boundary[ index ]!;
+			const previous = facet.boundary[ ( index + facet.boundary.length - 1 ) % facet.boundary.length ]!;
+			const next = facet.boundary[ ( index + 1 ) % facet.boundary.length ]!;
+			const previousDirection = normalizeDirection( [ shape.points[ vertex ]![ 0 ] - shape.points[ previous ]![ 0 ], shape.points[ vertex ]![ 1 ] - shape.points[ previous ]![ 1 ], shape.points[ vertex ]![ 2 ] - shape.points[ previous ]![ 2 ] ] );
+			const nextDirection = normalizeDirection( [ shape.points[ next ]![ 0 ] - shape.points[ vertex ]![ 0 ], shape.points[ next ]![ 1 ] - shape.points[ vertex ]![ 1 ], shape.points[ next ]![ 2 ] - shape.points[ vertex ]![ 2 ] ] );
+			const previousInward = normalizeDirection( [ facet.normal[ 1 ] * previousDirection[ 2 ] - facet.normal[ 2 ] * previousDirection[ 1 ], facet.normal[ 2 ] * previousDirection[ 0 ] - facet.normal[ 0 ] * previousDirection[ 2 ], facet.normal[ 0 ] * previousDirection[ 1 ] - facet.normal[ 1 ] * previousDirection[ 0 ] ] );
+			const nextInward = normalizeDirection( [ facet.normal[ 1 ] * nextDirection[ 2 ] - facet.normal[ 2 ] * nextDirection[ 1 ], facet.normal[ 2 ] * nextDirection[ 0 ] - facet.normal[ 0 ] * nextDirection[ 2 ], facet.normal[ 0 ] * nextDirection[ 1 ] - facet.normal[ 1 ] * nextDirection[ 0 ] ] );
+			let insetDirection = normalizeDirection( [ previousInward[ 0 ] + nextInward[ 0 ], previousInward[ 1 ] + nextInward[ 1 ], previousInward[ 2 ] + nextInward[ 2 ] ] );
+			if ( insetDirection[ 0 ] * previousInward[ 0 ] + insetDirection[ 1 ] * previousInward[ 1 ] + insetDirection[ 2 ] * previousInward[ 2 ] < 0 ) insetDirection = [ - insetDirection[ 0 ], - insetDirection[ 1 ], - insetDirection[ 2 ] ];
+			const alignment = Math.min( insetDirection[ 0 ] * previousInward[ 0 ] + insetDirection[ 1 ] * previousInward[ 1 ] + insetDirection[ 2 ] * previousInward[ 2 ], insetDirection[ 0 ] * nextInward[ 0 ] + insetDirection[ 1 ] * nextInward[ 1 ] + insetDirection[ 2 ] * nextInward[ 2 ] );
+			const shortestEdge = Math.min( Math.hypot( shape.points[ vertex ]![ 0 ] - shape.points[ previous ]![ 0 ], shape.points[ vertex ]![ 1 ] - shape.points[ previous ]![ 1 ], shape.points[ vertex ]![ 2 ] - shape.points[ previous ]![ 2 ] ), Math.hypot( shape.points[ next ]![ 0 ] - shape.points[ vertex ]![ 0 ], shape.points[ next ]![ 1 ] - shape.points[ vertex ]![ 1 ], shape.points[ next ]![ 2 ] - shape.points[ vertex ]![ 2 ] ) );
+			const insetDistance = Math.min( bevelWidth / Math.max( alignment, 0.2 ), shortestEdge * 0.32 );
+			facet.insets.set( vertex, [ insetDirection[ 0 ] * insetDistance, insetDirection[ 1 ] * insetDistance, insetDirection[ 2 ] * insetDistance ] );
+
+		}
+
+	}
+
+	const positions: Vec3[] = [];
+	const triangles: [ number, number, number ][] = [];
+	const vertexKeys = new Map<string, number>();
+	const getVertex = ( key: string, position: Vec3 ): number => {
+		const existing = vertexKeys.get( key );
+		if ( existing !== undefined ) return existing;
+		const index = positions.length;
+		positions.push( position );
+		vertexKeys.set( key, index );
+		return index;
+	};
+	const getFacetVertex = ( facetIndex: number, vertex: number ): number => {
+		const facet = facets[ facetIndex ]!;
+		const existing = facet.vertices.get( vertex );
+		if ( existing !== undefined ) return existing;
+		const source = shape.points[ vertex ]!;
+		const inset = facet.insets.get( vertex ) ?? [ 0, 0, 0 ];
+		const position = applyRockScoops( [ source[ 0 ] + inset[ 0 ], source[ 1 ] + inset[ 1 ], source[ 2 ] + inset[ 2 ] ], shape.radii, shape.rotationY, shape.scoops, shape.tiltX, shape.tiltZ, shape.translation );
+		const index = getVertex( `f:${ facetIndex }:v:${ vertex }`, position );
+		facet.vertices.set( vertex, index );
+		return index;
+	};
+	const addOutwardTriangle = ( first: number, second: number, third: number ): void => {
+		const a = positions[ first ]!;
+		const b = positions[ second ]!;
+		const c = positions[ third ]!;
+		const ab: Vec3 = [ b[ 0 ] - a[ 0 ], b[ 1 ] - a[ 1 ], b[ 2 ] - a[ 2 ] ];
+		const ac: Vec3 = [ c[ 0 ] - a[ 0 ], c[ 1 ] - a[ 1 ], c[ 2 ] - a[ 2 ] ];
+		const normal: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+		if ( Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) < 1e-10 ) return;
+		const center: Vec3 = [ ( a[ 0 ] + b[ 0 ] + c[ 0 ] ) / 3, ( a[ 1 ] + b[ 1 ] + c[ 1 ] ) / 3, ( a[ 2 ] + b[ 2 ] + c[ 2 ] ) / 3 ];
+		if ( normal[ 0 ] * ( center[ 0 ] - hullCenter[ 0 ] ) + normal[ 1 ] * ( center[ 1 ] - hullCenter[ 1 ] ) + normal[ 2 ] * ( center[ 2 ] - hullCenter[ 2 ] ) < 0 ) triangles.push( [ first, third, second ] );
+		else triangles.push( [ first, second, third ] );
+	};
+
+	for ( let faceIndex = 0; faceIndex < faces.length; faceIndex ++ ) {
+
+		const face = faces[ faceIndex ]!;
+		const facetIndex = faceFacets[ faceIndex ]!;
+		const corners = face.map( ( vertex ) => getFacetVertex( facetIndex, vertex ) );
+		const first = shape.points[ face[ 0 ] ]!;
+		const second = shape.points[ face[ 1 ] ]!;
+		const third = shape.points[ face[ 2 ] ]!;
+		const centerPosition: Vec3 = [ ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3, ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3, ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 ];
+		const scoopDepth = getRockScoopDepth( centerPosition, shape.radii, shape.rotationY, shape.scoops, shape.tiltX, shape.tiltZ, shape.translation );
+
+		if ( scoopDepth > shape.size * 0.018 ) {
+			const scoopedCenter = applyRockScoops( centerPosition, shape.radii, shape.rotationY, shape.scoops, shape.tiltX, shape.tiltZ, shape.translation );
+			const baseCenter: Vec3 = [ 0, 1, 2 ].map( ( axis ) => ( positions[ corners[ 0 ]! ]![ axis ]! + positions[ corners[ 1 ]! ]![ axis ]! + positions[ corners[ 2 ]! ]![ axis ]! ) / 3 ) as Vec3;
+			const hasBroadTriangles = ( candidate: Vec3 ): boolean => {
+				for ( let edge = 0; edge < 3; edge ++ ) if ( minimumTriangleAngle( positions[ corners[ edge ]! ]!, positions[ corners[ ( edge + 1 ) % 3 ]! ]!, candidate ) < 10 * Math.PI / 180 ) return false;
+				return true;
+			};
+			let centerTarget = scoopedCenter;
+			if ( ! hasBroadTriangles( centerTarget ) ) {
+				let minimum = 0;
+				let maximum = 1;
+				for ( let iteration = 0; iteration < 12; iteration ++ ) {
+					const amount = ( minimum + maximum ) * 0.5;
+					const candidate: Vec3 = [ baseCenter[ 0 ] + ( scoopedCenter[ 0 ] - baseCenter[ 0 ] ) * amount, baseCenter[ 1 ] + ( scoopedCenter[ 1 ] - baseCenter[ 1 ] ) * amount, baseCenter[ 2 ] + ( scoopedCenter[ 2 ] - baseCenter[ 2 ] ) * amount ];
+					if ( hasBroadTriangles( candidate ) ) minimum = amount;
+					else maximum = amount;
+				}
+				centerTarget = [ baseCenter[ 0 ] + ( scoopedCenter[ 0 ] - baseCenter[ 0 ] ) * minimum, baseCenter[ 1 ] + ( scoopedCenter[ 1 ] - baseCenter[ 1 ] ) * minimum, baseCenter[ 2 ] + ( scoopedCenter[ 2 ] - baseCenter[ 2 ] ) * minimum ];
+			}
+			const center = getVertex( `s:${ faceIndex }`, centerTarget );
+			for ( let edge = 0; edge < 3; edge ++ ) triangles.push( [ corners[ edge ]!, corners[ ( edge + 1 ) % 3 ]!, center ] );
+		} else {
+			triangles.push( [ corners[ 0 ]!, corners[ 1 ]!, corners[ 2 ]! ] );
+		}
+
+	}
+
+	const ridgeVertices: { firstA: number; secondA: number; firstB: number; secondB: number; sharpness: number }[] = [];
+	const cornerFanRings: number[][] = [];
+
+	for ( const edge of boundaryEdges.values() ) {
+
+		if ( edge.facets.length !== 2 ) continue;
+		const firstFacet = edge.facets[ 0 ]!;
+		const secondFacet = edge.facets[ 1 ]!;
+		if ( firstFacet === secondFacet ) continue;
+		const firstNormal = facets[ firstFacet ]!.normal;
+		const secondNormal = facets[ secondFacet ]!.normal;
+		const sharpness = Math.acos( clamp( firstNormal[ 0 ] * secondNormal[ 0 ] + firstNormal[ 1 ] * secondNormal[ 1 ] + firstNormal[ 2 ] * secondNormal[ 2 ], - 1, 1 ) );
+		const firstA = getFacetVertex( firstFacet, edge.first );
+		const firstB = getFacetVertex( firstFacet, edge.second );
+		const secondA = getFacetVertex( secondFacet, edge.first );
+		const secondB = getFacetVertex( secondFacet, edge.second );
+		const firstDiagonal = Math.min(
+			minimumTriangleAngle( positions[ firstA ]!, positions[ firstB ]!, positions[ secondB ]! ),
+			minimumTriangleAngle( positions[ firstA ]!, positions[ secondB ]!, positions[ secondA ]! ),
+		);
+		const secondDiagonal = Math.min(
+			minimumTriangleAngle( positions[ firstA ]!, positions[ firstB ]!, positions[ secondA ]! ),
+			minimumTriangleAngle( positions[ firstB ]!, positions[ secondB ]!, positions[ secondA ]! ),
+		);
+		if ( firstDiagonal >= secondDiagonal ) {
+			addOutwardTriangle( firstA, firstB, secondB );
+			addOutwardTriangle( firstA, secondB, secondA );
+		} else {
+			addOutwardTriangle( firstA, firstB, secondA );
+			addOutwardTriangle( firstB, secondB, secondA );
+		}
+		ridgeVertices.push( { firstA, secondA, firstB, secondB, sharpness } );
+
+	}
+
+	const incidentFacets = shape.points.map( () => new Set<number>() );
+	for ( let facetIndex = 0; facetIndex < facets.length; facetIndex ++ ) for ( const vertex of facets[ facetIndex ]!.boundary ) incidentFacets[ vertex ]!.add( facetIndex );
+	const incidentFacetNeighbors = shape.points.map( () => new Map<number, Set<number>>() );
+	for ( const edge of boundaryEdges.values() ) {
+		if ( edge.facets.length !== 2 ) continue;
+		const firstFacet = edge.facets[ 0 ]!;
+		const secondFacet = edge.facets[ 1 ]!;
+		for ( const vertex of [ edge.first, edge.second ] ) {
+			const neighbors = incidentFacetNeighbors[ vertex ]!;
+			const firstNeighbors = neighbors.get( firstFacet ) ?? new Set<number>();
+			const secondNeighbors = neighbors.get( secondFacet ) ?? new Set<number>();
+			firstNeighbors.add( secondFacet );
+			secondNeighbors.add( firstFacet );
+			neighbors.set( firstFacet, firstNeighbors );
+			neighbors.set( secondFacet, secondNeighbors );
+		}
+	}
+
+	for ( let vertex = 0; vertex < incidentFacets.length; vertex ++ ) {
+
+		const connected = [ ...incidentFacets[ vertex ]! ];
+		if ( connected.length < 3 ) continue;
+		const facetNeighbors = incidentFacetNeighbors[ vertex ]!;
+		const ordered = [ connected[ 0 ]! ];
+		let previous = - 1;
+		let current = connected[ 0 ]!;
+		while ( ordered.length < connected.length ) {
+			const next = [ ...( facetNeighbors.get( current ) ?? [] ) ].find( ( candidate ) => candidate !== previous && ! ordered.includes( candidate ) );
+			if ( next === undefined ) break;
+			ordered.push( next );
+			previous = current;
+			current = next;
+		}
+		if ( ordered.length !== connected.length ) continue;
+		const ring = ordered.map( ( facetIndex ) => getFacetVertex( facetIndex, vertex ) );
+		cornerFanRings.push( ring );
+		for ( let index = 1; index < ring.length - 1; index ++ ) addOutwardTriangle( ring[ 0 ]!, ring[ index ]!, ring[ index + 1 ]! );
+
+	}
+
+	const edgeUses = new Map<string, { triangle: number; direction: number }[]>();
+	for ( let triangle = 0; triangle < triangles.length; triangle ++ ) {
+		const face = triangles[ triangle ]!;
+		for ( let edge = 0; edge < 3; edge ++ ) {
+			const first = face[ edge ]!;
+			const second = face[ ( edge + 1 ) % 3 ]!;
+			const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
+			const uses = edgeUses.get( key ) ?? [];
+			uses.push( { triangle, direction: first < second ? 1 : - 1 } );
+			edgeUses.set( key, uses );
+		}
+	}
+	const triangleNeighbors = triangles.map( () => [] as { triangle: number; sameDirection: boolean }[] );
+	for ( const uses of edgeUses.values() ) {
+		for ( let index = 0; index < uses.length; index ++ ) {
+			for ( let neighbor = index + 1; neighbor < uses.length; neighbor ++ ) {
+				const first = uses[ index ]!;
+				const second = uses[ neighbor ]!;
+				triangleNeighbors[ first.triangle ]!.push( { triangle: second.triangle, sameDirection: first.direction === second.direction } );
+				triangleNeighbors[ second.triangle ]!.push( { triangle: first.triangle, sameDirection: first.direction === second.direction } );
+			}
+		}
+	}
+	const winding = new Int8Array( triangles.length );
+	for ( let seed = 0; seed < triangles.length; seed ++ ) {
+		if ( winding[ seed ] !== 0 ) continue;
+		winding[ seed ] = 1;
+		const stack = [ seed ];
+		const component: number[] = [];
+		while ( stack.length > 0 ) {
+			const triangle = stack.pop()!;
+			component.push( triangle );
+			for ( const neighbor of triangleNeighbors[ triangle ]! ) {
+				const expected = winding[ triangle ]! * ( neighbor.sameDirection ? - 1 : 1 );
+				if ( winding[ neighbor.triangle ] === 0 ) {
+					winding[ neighbor.triangle ] = expected;
+					stack.push( neighbor.triangle );
+				}
+			}
+		}
+		let volume = 0;
+		for ( const triangle of component ) {
+			const face = triangles[ triangle ]!;
+			const first = positions[ face[ 0 ] ]!;
+			const second = positions[ face[ 1 ] ]!;
+			const third = positions[ face[ 2 ] ]!;
+			const cross: Vec3 = [ second[ 1 ] * third[ 2 ] - second[ 2 ] * third[ 1 ], second[ 2 ] * third[ 0 ] - second[ 0 ] * third[ 2 ], second[ 0 ] * third[ 1 ] - second[ 1 ] * third[ 0 ] ];
+			volume += winding[ triangle ]! * ( first[ 0 ] * cross[ 0 ] + first[ 1 ] * cross[ 1 ] + first[ 2 ] * cross[ 2 ] );
+		}
+		if ( volume < 0 ) for ( const triangle of component ) winding[ triangle ] = - winding[ triangle ]!;
+	}
+	for ( let triangle = 0; triangle < triangles.length; triangle ++ ) if ( winding[ triangle ]! < 0 ) [ triangles[ triangle ]![ 1 ], triangles[ triangle ]![ 2 ] ] = [ triangles[ triangle ]![ 2 ], triangles[ triangle ]![ 1 ] ];
+
+	const mesh = buildRockMeshFromFaces( positions, triangles );
+	if ( unwrapSeams ) unwrapRockUvSeams( mesh, true );
+	const midpointUv = ( first: number, second: number ): [ number, number ] => {
+
+		const firstU = mesh.uvs[ first * 2 ]!;
+		let secondU = mesh.uvs[ second * 2 ]!;
+		if ( secondU - firstU > 0.5 ) secondU -= 1;
+		if ( firstU - secondU > 0.5 ) secondU += 1;
+		return [ ( firstU + secondU ) * 0.5, ( mesh.uvs[ first * 2 + 1 ]! + mesh.uvs[ second * 2 + 1 ]! ) * 0.5 ];
+
+	};
+	const addRidgeUvSegment = ( first: [ number, number ], second: [ number, number ], segments: RockRidgeUvSegment[] ): void => {
+
+		let secondU = second[ 0 ];
+		if ( secondU - first[ 0 ] > 0.5 ) secondU -= 1;
+		if ( first[ 0 ] - secondU > 0.5 ) secondU += 1;
+		segments.push( [ first, [ secondU, second[ 1 ] ] ] );
+
+	};
+	const ridgeUvSegments: RockRidgeUvSegment[] = [];
+
+	const highlightCount = Math.min( 10, Math.max( 4, Math.round( ridgeVertices.length * 0.3 ) ) );
+	const highlightedRidges = ridgeVertices.slice().sort( ( first, second ) => second.sharpness - first.sharpness ).slice( 0, highlightCount );
+	for ( const ridge of highlightedRidges ) addRidgeUvSegment( midpointUv( ridge.firstA, ridge.secondA ), midpointUv( ridge.firstB, ridge.secondB ), ridgeUvSegments );
+
+	return { mesh, ridgeUvSegments };
+
+}
+
+export function buildRockHullMeshWithChamfers( shape: RockHullShape, faces: [ number, number, number ][], bevelWidth: number, weathering = 0.25, unwrapSeams = true ): ChamferedRockHullMesh {
+
+	if ( ! Number.isFinite( bevelWidth ) || bevelWidth <= 0 ) throw new RangeError( 'Rock chamfer width must be a positive finite number' );
+	if ( ! Number.isFinite( weathering ) || weathering < 0 || weathering > 1 ) throw new RangeError( 'Rock weathering must be from 0 to 1' );
+	return buildChamferedRockHullMesh( shape, faces, bevelWidth, unwrapSeams );
+
+}
+
 export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number, number ][], subdivision: 0 | 1 | 2 | 3, bevelWidth = 0, weathering = 0.25, unwrapSeams = true ): MeshData {
+
+	if ( subdivision === 3 && bevelWidth > 0 ) return buildRockHullMeshWithChamfers( shape, faces, bevelWidth, weathering, unwrapSeams ).mesh;
 
 	const faceNormals = faces.map( ( face ) => {
 
@@ -1352,11 +1746,53 @@ export function buildRockMeshFromFaces( positions: Vec3[], faces: [ number, numb
 
 }
 
-function unwrapRockUvSeams( mesh: MeshData ): void {
+function unwrapRockUvSeams( mesh: MeshData, optimizeSeam = false ): number {
+
+	let uvOffset = 0;
+
+	if ( optimizeSeam ) {
+
+		let minimumCopies = Infinity;
+
+		for ( let sample = 0; sample < 128; sample ++ ) {
+
+			const candidateOffset = sample / 128;
+			const copies = new Set<number>();
+
+			for ( let triangle = 0; triangle < mesh.indices.length; triangle += 3 ) {
+
+				const normalizedU = [ 0, 1, 2 ].map( ( corner ) => {
+					const u = mesh.uvs[ mesh.indices[ triangle + corner ]! * 2 ]! + candidateOffset;
+					return ( ( u % 1 ) + 1 ) % 1;
+				} );
+				const sorted = normalizedU.slice().sort( ( first, second ) => first - second );
+				let largestGap = - Infinity;
+				let start = sorted[ 0 ]!;
+				for ( let index = 0; index < sorted.length; index ++ ) {
+					const first = sorted[ index ]!;
+					const second = sorted[ ( index + 1 ) % sorted.length ]! + ( index === sorted.length - 1 ? 1 : 0 );
+					const gap = second - first;
+					if ( gap > largestGap ) {
+						largestGap = gap;
+						start = second % 1;
+					}
+				}
+				for ( let corner = 0; corner < normalizedU.length; corner ++ ) if ( normalizedU[ corner ]! < start ) copies.add( mesh.indices[ triangle + corner ]! );
+
+			}
+
+			if ( copies.size < minimumCopies ) {
+				minimumCopies = copies.size;
+				uvOffset = candidateOffset;
+			}
+
+		}
+
+	}
 
 	const positions = Array.from( mesh.positions );
 	const normals = Array.from( mesh.normals );
-	const uvs = Array.from( mesh.uvs );
+	const uvs = Array.from( mesh.uvs, ( value, index ) => index % 2 === 0 ? ( ( value + uvOffset ) % 1 + 1 ) % 1 : value );
 	const colors = Array.from( mesh.colors );
 	const windWeight = Array.from( mesh.windWeight );
 	const impostorCard = Array.from( mesh.impostorCard );
@@ -1416,6 +1852,8 @@ function unwrapRockUvSeams( mesh: MeshData ): void {
 	mesh.impostorCard = Float32Array.from( impostorCard );
 	mesh.indices = Uint32Array.from( indices );
 	mesh.groups = mesh.groups.map( ( group, index ) => index === 0 ? { ...group, count: indices.length } : { ...group, start: indices.length } );
+
+	return uvOffset;
 
 }
 
