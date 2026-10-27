@@ -215,25 +215,233 @@ export function createRockRandom( seed: number ): () => number {
 
 }
 
-function createCuttingPlanes( seed: number, radius: number ): { normal: Vec3; distance: number }[] {
+type RockFacetStyle = 'standard' | 'chiseled';
+
+interface RockChunk {
+	angle: number;
+	centerY: number;
+	halfHeight: number;
+	halfAngle: number;
+	bulge: number;
+}
+
+function createRockChunks( seed: number, radius: number ): RockChunk[] {
+
+	const random = createRockRandom( seed + 3847 );
+	const count = 3 + Math.floor( random() * 2 );
+	const rotation = random() * Math.PI * 2;
+
+	return Array.from( { length: count }, ( _, index ) => ( {
+		angle: rotation + index / count * Math.PI * 2 + ( random() - 0.5 ) * 0.55,
+		centerY: 0.02 + index / Math.max( count - 1, 1 ) * 0.84 + ( random() - 0.5 ) * 0.1,
+		halfHeight: 0.35 + random() * 0.12,
+		halfAngle: 0.96 + random() * 0.2,
+		bulge: radius * ( 0.19 + random() * 0.055 ),
+	} ) );
+
+}
+
+function getRockChunkRelief( direction: Vec3, chunks: RockChunk[], radius: number ): number {
+
+	const angle = Math.atan2( direction[ 2 ], direction[ 0 ] );
+	let first = 0;
+	let second = 0;
+	let edgeNotch = 0;
+
+	for ( const chunk of chunks ) {
+
+		const angularDistance = Math.abs( Math.atan2( Math.sin( angle - chunk.angle ), Math.cos( angle - chunk.angle ) ) );
+		const verticalDistance = Math.abs( direction[ 1 ] - chunk.centerY ) / chunk.halfHeight;
+		const angularRatio = angularDistance / chunk.halfAngle;
+		const distance = Math.max( verticalDistance, angularRatio );
+		const mask = 1 - smoothstep( 0.72, 1.04, distance );
+		const value = chunk.bulge * mask;
+
+		if ( value > first ) {
+
+			second = first;
+			first = value;
+
+		} else if ( value > second ) {
+
+			second = value;
+
+		}
+
+		const lip = smoothstep( 0.76, 0.9, distance ) * ( 1 - smoothstep( 0.98, 1.12, distance ) );
+		edgeNotch = Math.max( edgeNotch, chunk.bulge * lip * 0.58 );
+
+	}
+
+	const overlap = smoothstep( 0.035, 0.1, second / radius ) * ( 1 - smoothstep( 0.02, 0.09, Math.abs( first - second ) / radius ) );
+	const crevice = radius * 0.2 * overlap;
+
+	return first + second * 0.08 - Math.max( edgeNotch, crevice );
+
+}
+
+function createCuttingPlanes( seed: number, radius: number, style: RockFacetStyle = 'standard' ): { normal: Vec3; distance: number }[] {
 
 	const random = createRockRandom( seed );
 	const planes: { normal: Vec3; distance: number }[] = [];
 
-	for ( let index = 0; index < 7; index ++ ) {
+	if ( style === 'standard' ) {
 
-		const vertical = random() * 2 - 1;
+		const topAngle = random() * Math.PI * 2;
+		const topTilt = random() * 0.18;
+		const topHorizontal = Math.sin( topTilt );
+
+		planes.push( {
+			normal: [ topHorizontal * Math.cos( topAngle ), Math.cos( topTilt ), topHorizontal * Math.sin( topAngle ) ],
+			distance: radius * ( 0.66 + random() * 0.06 ),
+		} );
+
+		const sideRotation = random() * Math.PI * 2;
+
+		for ( let index = 0; index < 5; index ++ ) {
+
+			const vertical = index < 4 ? 0.12 + random() * 0.22 : - 0.32 - random() * 0.08;
+			const angle = sideRotation + index / 5 * Math.PI * 2 + ( random() - 0.5 ) * 0.16;
+			const horizontal = Math.sqrt( 1 - vertical * vertical );
+
+			planes.push( {
+				normal: [ horizontal * Math.cos( angle ), vertical, horizontal * Math.sin( angle ) ],
+				distance: radius * ( index < 4 ? 0.74 + random() * 0.12 : 0.9 + random() * 0.045 ),
+			} );
+
+		}
+
+		return planes;
+
+	}
+
+	const topCount = 3 + Math.floor( random() * 2 );
+	const sideCount = 5 + Math.floor( random() * 2 );
+	const topRotation = random() * Math.PI * 2;
+
+	for ( let index = 0; index < topCount; index ++ ) {
+
+		const angle = topRotation + index / topCount * Math.PI * 2 + ( random() - 0.5 ) * 0.42;
+		const vertical = 0.62 + random() * 0.2;
+		const horizontal = Math.sqrt( 1 - vertical * vertical );
+
+		planes.push( {
+			normal: [ horizontal * Math.cos( angle ), vertical, horizontal * Math.sin( angle ) ],
+			distance: radius * ( 0.53 + random() * 0.1 ),
+		} );
+
+	}
+
+	const sideRotation = random() * Math.PI * 2;
+
+	for ( let index = 0; index < sideCount; index ++ ) {
+
+		const vertical = - 0.28 + random() * 0.68;
+		const angle = sideRotation + index / sideCount * Math.PI * 2 + ( random() - 0.5 ) * 0.28;
+		const horizontal = Math.sqrt( 1 - vertical * vertical );
+
+		planes.push( {
+			normal: [ horizontal * Math.cos( angle ), vertical, horizontal * Math.sin( angle ) ],
+			distance: radius * ( 0.74 + random() * 0.15 ),
+		} );
+
+	}
+
+	const chipCount = 1 + Math.floor( random() * 2 );
+
+	for ( let index = 0; index < chipCount; index ++ ) {
+
+		const vertical = random() * 1.2 - 0.42;
 		const angle = random() * Math.PI * 2;
 		const horizontal = Math.sqrt( 1 - vertical * vertical );
 
 		planes.push( {
 			normal: [ horizontal * Math.cos( angle ), vertical, horizontal * Math.sin( angle ) ],
-			distance: radius * ( 0.63 + random() * 0.15 ),
+			distance: radius * ( 0.9 + random() * 0.07 ),
 		} );
 
 	}
 
 	return planes;
+
+}
+
+export function createRockFacetNormals( seed: number, style: RockFacetStyle = 'chiseled' ): Vec3[] {
+
+	return createCuttingPlanes( seed, 1, style ).map( ( plane ) => plane.normal );
+
+}
+
+export function createRockFacetEdgeFunction( seed: number, radius: number, style: RockFacetStyle = 'chiseled' ): ( direction: Vec3 ) => number {
+
+	const planes = createCuttingPlanes( seed, radius, style );
+
+	return ( direction: Vec3 ): number => {
+
+		let nearest = Infinity;
+		let nextNearest = Infinity;
+
+		for ( const plane of planes ) {
+
+			const projection = direction[ 0 ] * plane.normal[ 0 ] + direction[ 1 ] * plane.normal[ 1 ] + direction[ 2 ] * plane.normal[ 2 ];
+			if ( projection <= 0 ) continue;
+			const planeRadius = plane.distance / projection;
+
+			if ( planeRadius < nearest ) {
+
+				nextNearest = nearest;
+				nearest = planeRadius;
+
+			} else if ( planeRadius < nextNearest ) {
+
+				nextNearest = planeRadius;
+
+			}
+
+		}
+
+		if ( ! Number.isFinite( nextNearest ) ) return 0;
+
+		const planeGap = ( nextNearest - nearest ) / radius;
+
+		return 1 - smoothstep( 0.012, 0.14, planeGap );
+
+	};
+
+}
+
+export function createRockCreaseFunction( seed: number, radius: number, style: RockFacetStyle = 'chiseled' ): ( direction: Vec3 ) => number {
+
+	const facetEdgeAt = createRockFacetEdgeFunction( seed, radius, style );
+	const chunks = style === 'chiseled' ? createRockChunks( seed, radius ) : [];
+
+	return ( direction: Vec3 ): number => {
+
+		const angle = Math.atan2( direction[ 2 ], direction[ 0 ] );
+		let chunkEdge = 0;
+
+		for ( const chunk of chunks ) {
+
+			const angularDistance = Math.abs( Math.atan2( Math.sin( angle - chunk.angle ), Math.cos( angle - chunk.angle ) ) );
+			const verticalDistance = Math.abs( direction[ 1 ] - chunk.centerY ) / chunk.halfHeight;
+			const angularRatio = angularDistance / chunk.halfAngle;
+			const distance = Math.max( verticalDistance, angularRatio );
+			const edge = 1 - smoothstep( 0.08, 0.24, Math.abs( distance - 0.88 ) );
+			chunkEdge = Math.max( chunkEdge, edge );
+
+		}
+
+		return Math.max( facetEdgeAt( direction ), chunkEdge );
+
+	};
+
+}
+
+function softMinimum( first: number, second: number, softness: number ): number {
+
+	const blend = Math.max( softness - Math.abs( first - second ), 0 ) / softness;
+
+	return Math.min( first, second ) - blend * blend * softness * 0.25;
 
 }
 
@@ -622,11 +830,12 @@ export function removeRockBottomCap( mesh: MeshData, floor: number ): void {
 }
 
 /** detailScale attenuates medium and finer geometric displacement for coarser LODs. */
-export function createRockRadiusFunction( seed: number, radius: number, roughness: number, verticalScale: number, detailScale = 1 ): ( direction: Vec3 ) => number {
+export function createRockRadiusFunction( seed: number, radius: number, roughness: number, verticalScale: number, detailScale = 1, facetStyle: RockFacetStyle = 'standard' ): ( direction: Vec3 ) => number {
 
 	const noise = createNoise3D( seed + 71 );
 	const noiseOffset = [ ( seed * 17.13 ) % 71, ( seed * 31.7 ) % 89, ( seed * 53.9 ) % 97 ];
-	const cuttingPlanes = createCuttingPlanes( seed, radius );
+	const cuttingPlanes = createCuttingPlanes( seed, radius, facetStyle );
+	const chunks = facetStyle === 'chiseled' ? createRockChunks( seed, radius ) : [];
 
 	return ( direction: Vec3 ): number => {
 
@@ -635,19 +844,43 @@ export function createRockRadiusFunction( seed: number, radius: number, roughnes
 		const detail = noise( direction[ 0 ] * 5.1 + noiseOffset[ 1 ]!, direction[ 1 ] * 5.1 - noiseOffset[ 2 ]!, direction[ 2 ] * 5.1 + noiseOffset[ 0 ]! );
 		const relief = noise( direction[ 0 ] * 6.8 - noiseOffset[ 0 ]!, direction[ 1 ] * 6.8 + noiseOffset[ 2 ]!, direction[ 2 ] * 6.8 - noiseOffset[ 1 ]! );
 		const angle = Math.atan2( direction[ 2 ], direction[ 0 ] );
-		const lobes = ( Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.075 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.035 ) * detailScale;
-		let deformedRadius = radius * clamp( 0.97 + ( coarse * 0.25 + medium * 0.075 * detailScale + detail * 0.012 * detailScale + lobes ) * roughness, 0.62, 1.34 );
+		const lobes = ( Math.sin( angle * 3 + noiseOffset[ 1 ]! ) * 0.055 + Math.cos( angle * 5 - noiseOffset[ 2 ]! ) * 0.025 ) * detailScale;
+		const chunkRelief = chunks.length === 0 ? 0 : getRockChunkRelief( direction, chunks, radius );
+		const baseRadius = radius * clamp( 0.98 + ( coarse * 0.12 + medium * 0.018 * detailScale + detail * 0.003 * detailScale + lobes ) * roughness, 0.66, 1.28 );
+		let planeRadius = Infinity;
+		let nextPlaneRadius = Infinity;
 
 		for ( const plane of cuttingPlanes ) {
 
 			const projection = direction[ 0 ] * plane.normal[ 0 ] + direction[ 1 ] * plane.normal[ 1 ] + direction[ 2 ] * plane.normal[ 2 ];
 
-			if ( projection > 0 ) deformedRadius = Math.min( deformedRadius, plane.distance / projection );
+			if ( projection > 0 ) {
+
+				const candidate = plane.distance / projection;
+
+				if ( candidate < planeRadius ) {
+
+					nextPlaneRadius = planeRadius;
+					planeRadius = candidate;
+
+				} else if ( candidate < nextPlaneRadius ) {
+
+					nextPlaneRadius = candidate;
+
+				}
+
+			}
 
 		}
 
-		const reliefExposure = 0.35 + smoothstep( 0.08, 0.65, Math.abs( direction[ 1 ] ) ) * 0.65;
-		deformedRadius = clamp( deformedRadius + radius * relief * 0.072 * roughness * reliefExposure * detailScale, radius * 0.62, radius * 1.34 );
+		const bevelWidth = radius * 0.045;
+		let deformedRadius = softMinimum( baseRadius, planeRadius, bevelWidth ) + chunkRelief;
+		const planeGap = nextPlaneRadius - planeRadius;
+		const facetBulge = Number.isFinite( planeGap ) ? Math.min( radius * 0.014, planeGap * 0.12 ) * smoothstep( 0.015, 0.12, planeGap / radius ) : 0;
+		deformedRadius += facetBulge;
+		const edgeRelief = planeRadius < Infinity ? 1 - smoothstep( 0.012, 0.085, Math.abs( baseRadius - planeRadius ) / radius ) : 0;
+		const reliefExposure = 0.25 + smoothstep( 0.08, 0.65, Math.abs( direction[ 1 ] ) ) * 0.75;
+		deformedRadius = clamp( deformedRadius + radius * relief * 0.018 * roughness * reliefExposure * detailScale * edgeRelief, radius * 0.62, radius * 1.34 );
 
 		const floorHeight = - radius * verticalScale * 0.55;
 
@@ -830,6 +1063,145 @@ export function recomputeSmoothNormals( mesh: MeshData ): void {
 
 }
 
+export function recomputeCreasedNormals( mesh: MeshData, creaseAngle = 20, creaseAt?: ( position: Vec3 ) => boolean ): void {
+
+	const positions = Array.from( mesh.positions );
+	const normals = Array.from( mesh.normals );
+	const uvs = Array.from( mesh.uvs );
+	const colors = Array.from( mesh.colors );
+	const windWeight = Array.from( mesh.windWeight );
+	const indices = Array.from( mesh.indices );
+	const groups = new Map<string, { corners: { indexOffset: number; vertex: number; normal: Vec3; areaNormal: Vec3 }[] }>();
+	const creaseCosine = Math.cos( creaseAngle * Math.PI / 180 );
+
+	for ( let offset = 0; offset < indices.length; offset += 3 ) {
+
+		const first = indices[ offset ]! * 3;
+		const second = indices[ offset + 1 ]! * 3;
+		const third = indices[ offset + 2 ]! * 3;
+		const ab: Vec3 = [ positions[ second ]! - positions[ first ]!, positions[ second + 1 ]! - positions[ first + 1 ]!, positions[ second + 2 ]! - positions[ first + 2 ]! ];
+		const ac: Vec3 = [ positions[ third ]! - positions[ first ]!, positions[ third + 1 ]! - positions[ first + 1 ]!, positions[ third + 2 ]! - positions[ first + 2 ]! ];
+		const areaNormal: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+		const area = Math.hypot( areaNormal[ 0 ], areaNormal[ 1 ], areaNormal[ 2 ] ) || 1;
+		const normal: Vec3 = [ areaNormal[ 0 ] / area, areaNormal[ 1 ] / area, areaNormal[ 2 ] / area ];
+
+		for ( let corner = 0; corner < 3; corner ++ ) {
+
+			const indexOffset = offset + corner;
+			const vertex = indices[ indexOffset ]!;
+			const positionOffset = vertex * 3;
+			const key = `${ positions[ positionOffset ]!.toFixed( 6 ) },${ positions[ positionOffset + 1 ]!.toFixed( 6 ) },${ positions[ positionOffset + 2 ]!.toFixed( 6 ) }`;
+			const group = groups.get( key ) ?? { corners: [] };
+			group.corners.push( { indexOffset, vertex, normal, areaNormal } );
+			groups.set( key, group );
+
+		}
+
+	}
+
+	const vertexClusters = new Map<number, Set<number>>();
+
+	for ( const group of groups.values() ) {
+
+		const clusters: { areaNormal: Vec3; corners: typeof group.corners }[] = [];
+		const firstVertexOffset = group.corners[ 0 ]!.vertex * 3;
+		const creasePosition: Vec3 = [ positions[ firstVertexOffset ]!, positions[ firstVertexOffset + 1 ]!, positions[ firstVertexOffset + 2 ]! ];
+		const splitCrease = creaseAt === undefined || creaseAt( creasePosition );
+
+		for ( const corner of group.corners ) {
+
+			let clusterIndex = - 1;
+
+			for ( let index = 0; index < clusters.length; index ++ ) {
+
+				const clusterNormal = clusters[ index ]!.areaNormal;
+				const clusterLength = Math.hypot( clusterNormal[ 0 ], clusterNormal[ 1 ], clusterNormal[ 2 ] ) || 1;
+				const dot = ( corner.normal[ 0 ] * clusterNormal[ 0 ] + corner.normal[ 1 ] * clusterNormal[ 1 ] + corner.normal[ 2 ] * clusterNormal[ 2 ] ) / clusterLength;
+
+				if ( ! splitCrease || dot >= creaseCosine ) {
+
+					clusterIndex = index;
+					break;
+
+				}
+
+			}
+
+			if ( clusterIndex < 0 ) {
+
+				clusterIndex = clusters.length;
+				clusters.push( { areaNormal: [ 0, 0, 0 ], corners: [] } );
+
+			}
+
+			const cluster = clusters[ clusterIndex ]!;
+			cluster.areaNormal[ 0 ] += corner.areaNormal[ 0 ];
+			cluster.areaNormal[ 1 ] += corner.areaNormal[ 1 ];
+			cluster.areaNormal[ 2 ] += corner.areaNormal[ 2 ];
+			cluster.corners.push( corner );
+
+		}
+
+		for ( let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex ++ ) {
+
+			const cluster = clusters[ clusterIndex ]!;
+			const length = Math.hypot( cluster.areaNormal[ 0 ], cluster.areaNormal[ 1 ], cluster.areaNormal[ 2 ] ) || 1;
+			const normal: Vec3 = [ cluster.areaNormal[ 0 ] / length, cluster.areaNormal[ 1 ] / length, cluster.areaNormal[ 2 ] / length ];
+			const assigned = new Map<number, number>();
+
+			for ( const corner of cluster.corners ) {
+
+				let target = assigned.get( corner.vertex );
+
+				if ( target === undefined ) {
+
+					const previousClusters = vertexClusters.get( corner.vertex );
+
+					if ( previousClusters === undefined ) {
+
+						target = corner.vertex;
+						vertexClusters.set( corner.vertex, new Set( [ clusterIndex ] ) );
+
+					} else if ( ! previousClusters.has( clusterIndex ) ) {
+
+						target = positions.length / 3;
+						for ( let axis = 0; axis < 3; axis ++ ) {
+							positions.push( positions[ corner.vertex * 3 + axis ]! );
+							normals.push( normal[ axis ]! );
+						}
+						uvs.push( uvs[ corner.vertex * 2 ]!, uvs[ corner.vertex * 2 + 1 ]! );
+						colors.push( colors[ corner.vertex * 3 ]!, colors[ corner.vertex * 3 + 1 ]!, colors[ corner.vertex * 3 + 2 ]! );
+						windWeight.push( windWeight[ corner.vertex ]! );
+						previousClusters.add( clusterIndex );
+
+					} else {
+
+						target = corner.vertex;
+
+					}
+
+					assigned.set( corner.vertex, target );
+
+				}
+
+				indices[ corner.indexOffset ] = target;
+				for ( let axis = 0; axis < 3; axis ++ ) normals[ target * 3 + axis ] = normal[ axis ]!;
+
+			}
+
+		}
+
+	}
+
+	mesh.positions = Float32Array.from( positions );
+	mesh.normals = Float32Array.from( normals );
+	mesh.uvs = Float32Array.from( uvs );
+	mesh.colors = Float32Array.from( colors );
+	mesh.windWeight = Float32Array.from( windWeight );
+	mesh.indices = Uint32Array.from( indices );
+
+}
+
 export function applyRockSurfaceShading( mesh: MeshData ): void {
 
 	const groups = new Map<string, number>();
@@ -927,7 +1299,7 @@ export function applyRockSurfaceShading( mesh: MeshData ): void {
 
 	}
 
-	mesh.colors.fill( averageShade );
+	mesh.colors.fill( clamp( averageShade, 0.93, 0.97 ) );
 
 }
 

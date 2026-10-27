@@ -1,6 +1,6 @@
 import { createRockTextures } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
-import { applyRockSurfaceShading, buildConvexHullFaces, buildRockMeshFromFaces, buildRockRingShell, buildRockShell, clamp, createRockRadiusFunction, getBounds, getHorizontalMeshOutline, getHorizontalSpan, getMinimumY, getProjectedMeshOutline, liftMesh, limitRockPeakSharpness, recomputeSmoothNormals, removeRockBottomCap, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
+import { applyRockSurfaceShading, buildConvexHullFaces, buildRockMeshFromFaces, buildRockRingShell, buildRockShell, clamp, createRockCreaseFunction, createRockRadiusFunction, getBounds, getHorizontalMeshOutline, getHorizontalSpan, getMinimumY, liftMesh, limitRockPeakSharpness, recomputeCreasedNormals, recomputeSmoothNormals, removeRockBottomCap, scaleHeight, sinkMesh, smoothstep } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -31,7 +31,7 @@ function getTargetAspect( seed: number, flatness: number ): number {
 	const seedBand = Math.floor( Math.abs( seed ) );
 	const seedHash = Math.sin( seedBand * 78.233 + 12.9898 ) * 43758.5453;
 	const variation = ( seedHash - Math.floor( seedHash ) - 0.5 ) * 0.03;
-	const visibleAspect = seedBand % 2 === 0 ? 0.37 : 0.65;
+	const visibleAspect = seedBand % 2 === 0 ? 0.37 : 0.72;
 	const styleAspect = visibleAspect / 0.55;
 
 	return ( styleAspect + variation ) * ( 1 - flatness * 0.15 );
@@ -47,9 +47,29 @@ function getDefaultBurial( seed: number ): number {
 
 }
 
+function fitRockDepth( mesh: MeshData, targetDepth: number ): void {
+
+	let minimum = Infinity;
+	let maximum = - Infinity;
+
+	for ( let offset = 0; offset < mesh.positions.length; offset += 3 ) {
+
+		minimum = Math.min( minimum, mesh.positions[ offset + 2 ]! );
+		maximum = Math.max( maximum, mesh.positions[ offset + 2 ]! );
+
+	}
+
+	const span = maximum - minimum;
+	const scale = targetDepth / span;
+
+	for ( let offset = 0; offset < mesh.positions.length; offset += 3 ) mesh.positions[ offset + 2 ] = mesh.positions[ offset + 2 ]! * scale;
+
+}
+
 function refineVisibleRockSurface(
 	mesh: MeshData,
 	radiusAt: ( direction: Vec3 ) => number,
+	facetEdgeAt: ( direction: Vec3 ) => number,
 	verticalScale: number,
 	groundOffset: number,
 	heightScale: number,
@@ -116,7 +136,7 @@ function refineVisibleRockSurface(
 		candidates.push( {
 			offset,
 			position,
-			priority: Math.min( displacementLength / ( bounds.radius * 0.04 ), 1 ) + silhouette * 0.25 + tieBreaker * 0.02,
+			priority: Math.min( displacementLength / ( bounds.radius * 0.04 ), 1 ) + silhouette * 0.25 + facetEdgeAt( direction ) * 0.6 + tieBreaker * 0.02,
 		} );
 
 	}
@@ -255,12 +275,13 @@ function buildLowPolyRockShell( source: MeshData, size: number ): MeshData {
 	const bounds = getBounds( source );
 	const baseCount = 8;
 	const upperCount = 7;
-	const base = getProjectedMeshOutline( source, baseCount, - 0.03 * size );
-	const upper = getHorizontalMeshOutline( source, bounds.height * 0.48, upperCount );
+	const baseFloor = - 0.03 * size;
+	const base = getHorizontalMeshOutline( source, 0, baseCount ).map( ( point ) => [ point[ 0 ], baseFloor, point[ 2 ] ] as Vec3 );
+	const upper = getHorizontalMeshOutline( source, bounds.height * 0.32, upperCount );
 	const apex = positions.reduce( ( highest, position ) => position[ 1 ] > highest[ 1 ] ? position : highest, [ 0, - Infinity, 0 ] as Vec3 );
 	const vertices = [ ...base, ...upper, apex ];
 	const shell = buildRockMeshFromFaces( vertices, buildConvexHullFaces( vertices ) );
-	removeRockBottomCap( shell, - 0.03 * size );
+	removeRockBottomCap( shell, baseFloor );
 
 	return shell;
 
@@ -332,15 +353,21 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	const roughness = clamp( roughnessInput, 0, 1.5 );
 	const flatness = clamp( flatnessInput, 0, 1 );
-	const radius = size * 0.5;
+	const radius = size * 0.528;
+	const depthScale = Math.floor( Math.abs( seed ) ) % 2 === 0 ? 0.988 : 1.005;
 	const verticalScale = getVerticalScale( internalSeed, flatness );
-	const radiusAtLod0 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.9 );
-	const radiusAtLod1 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.3 );
-	const radiusAtLod2 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.08 );
+	const radiusAtLod0 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.9, 'chiseled' );
+	const radiusAtLod1 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.3, 'chiseled' );
+	const radiusAtLod2 = createRockRadiusFunction( internalSeed, radius, roughness, verticalScale, 0.08, 'chiseled' );
+	const creaseAt = createRockCreaseFunction( internalSeed, radius, 'chiseled' );
 	const shapeReference = buildRockShell( 4, radiusAtLod0, verticalScale );
-	const lod0 = buildRockShell( 5, radiusAtLod0, verticalScale );
+	const lod0 = buildRockShell( 3, radiusAtLod0, verticalScale );
 	const lod1 = buildRockShell( 2, radiusAtLod1, verticalScale );
 	const lod2 = buildRockRingShell( radiusAtLod2, verticalScale );
+	fitRockDepth( shapeReference, size * depthScale );
+	fitRockDepth( lod0, size * depthScale );
+	fitRockDepth( lod1, size * depthScale );
+	fitRockDepth( lod2, size * depthScale );
 	const groundOffset = - getMinimumY( shapeReference.positions );
 
 	liftMesh( shapeReference, groundOffset );
@@ -362,16 +389,29 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( lod0, burial * fullHeight, skirtFloor );
 	sinkMesh( lod1, burial * fullHeight, skirtFloor );
 	sinkMesh( lod2, burial * fullHeight, skirtFloor );
+	const splitCreaseAt = ( position: Vec3 ): boolean => {
+
+		if ( position[ 1 ] <= 0 ) return false;
+		const unburiedY = ( position[ 1 ] + burial * fullHeight ) / heightScale - groundOffset;
+		const direction: Vec3 = [ position[ 0 ], unburiedY / verticalScale, position[ 2 ] ];
+		const directionLength = Math.hypot( direction[ 0 ], direction[ 1 ], direction[ 2 ] ) || 1;
+		direction[ 0 ] /= directionLength;
+		direction[ 1 ] /= directionLength;
+		direction[ 2 ] /= directionLength;
+
+		return creaseAt( direction ) > 0.7;
+
+	};
 
 	removeRockBottomCap( lod0, skirtFloor );
-	refineVisibleRockSurface( lod0, radiusAtLod0, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 200 );
-	refineVisibleRockSurface( lod1, radiusAtLod1, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
+	refineVisibleRockSurface( lod0, radiusAtLod0, creaseAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 100 );
+	refineVisibleRockSurface( lod1, radiusAtLod1, creaseAt, verticalScale, groundOffset, heightScale, burial * fullHeight, skirtFloor, 56 );
 	removeRockBottomCap( lod1, skirtFloor );
 	removeRockBottomCap( lod2, skirtFloor );
 	limitRockPeakSharpness( lod0, 0.13 );
 	limitRockPeakSharpness( lod1, 0.04 );
 	limitRockPeakSharpness( lod2, 0.02 );
-	recomputeSmoothNormals( lod0 );
+	recomputeCreasedNormals( lod0, 20, splitCreaseAt );
 	recomputeSmoothNormals( lod1 );
 	recomputeSmoothNormals( lod2 );
 	applyRockSurfaceShading( lod0 );
@@ -400,7 +440,8 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		},
 		impostorPart(),
 	];
-	const textures = createRockTextures( seed );
+	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }`;
+	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey );
 
 	return {
 		kind: 'rock',

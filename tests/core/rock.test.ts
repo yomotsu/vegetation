@@ -7,6 +7,7 @@ import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
 import { topCardCoverageIou } from '../helpers/topCardCoverage';
 import { minimumRockApexAngle } from '../helpers/rockSharpness';
+import { buildConvexHullFaces, buildRockShell, createRockRadiusFunction, recomputeCreasedNormals } from '../../src/core/rockGeometry';
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -99,43 +100,14 @@ function getAboveGroundDimensions( mesh: MeshData ): { width: number; height: nu
 
 }
 
-function getShapeMetrics( mesh: MeshData ): { ratio: number; sideWallVerticality: number; roundness: number } {
+function getShapeMetrics( mesh: MeshData ): { ratio: number; roundness: number } {
 
 	const dimensions = getAboveGroundDimensions( mesh );
 	const ratio = dimensions.height / Math.max( dimensions.width, dimensions.depth );
 	const roundness = Math.min( dimensions.width, dimensions.depth ) / Math.max( dimensions.width, dimensions.depth );
-	const sideWalls: number[] = [];
-
-	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
-
-		const first = mesh.indices[ index ]! * 3;
-		const second = mesh.indices[ index + 1 ]! * 3;
-		const third = mesh.indices[ index + 2 ]! * 3;
-		const firstY = mesh.positions[ first + 1 ]!;
-		const secondY = mesh.positions[ second + 1 ]!;
-		const thirdY = mesh.positions[ third + 1 ]!;
-		const centerY = ( firstY + secondY + thirdY ) / 3;
-
-		if ( centerY <= 0 || centerY >= dimensions.height * 0.85 ) continue;
-
-		const abX = mesh.positions[ second ]! - mesh.positions[ first ]!;
-		const abY = secondY - firstY;
-		const abZ = mesh.positions[ second + 2 ]! - mesh.positions[ first + 2 ]!;
-		const acX = mesh.positions[ third ]! - mesh.positions[ first ]!;
-		const acY = thirdY - firstY;
-		const acZ = mesh.positions[ third + 2 ]! - mesh.positions[ first + 2 ]!;
-		const normalY = Math.abs( abZ * acX - abX * acZ );
-		const normalLength = Math.hypot( abY * acZ - abZ * acY, normalY, abX * acY - abY * acX ) || 1;
-
-		sideWalls.push( 1 - normalY / normalLength );
-
-	}
-
-	sideWalls.sort( ( first, second ) => first - second );
 
 	return {
 		ratio,
-		sideWallVerticality: sideWalls[ Math.floor( ( sideWalls.length - 1 ) * 0.9 ) ]!,
 		roundness,
 	};
 
@@ -382,107 +354,214 @@ function darkPixelComponents( data: Uint8Array, width: number, threshold: number
 
 }
 
-function getSurfaceStats( mesh: MeshData ): { relief: number; percentileRelief: number; spacing: number } {
+function getPlanarFacetCoverage( mesh: MeshData ): { visibleFacets: number; topPlateau: number; largestTopFacet: number } {
 
-	const groups = new Map<string, number>();
-	const vertexGroups = new Int32Array( vertexCount( mesh ) );
-	const positions: [ number, number, number ][] = [];
-	const neighbors: Set<number>[] = [];
-
-	for ( let vertex = 0; vertex < vertexGroups.length; vertex ++ ) {
-
-		const offset = vertex * 3;
-		const position: [ number, number, number ] = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
-		const key = position.map( ( value ) => value.toFixed( 6 ) ).join( ',' );
-		let group = groups.get( key );
-
-		if ( group === undefined ) {
-
-			group = positions.length;
-			groups.set( key, group );
-			positions.push( position );
-			neighbors.push( new Set<number>() );
-
-		}
-
-		vertexGroups[ vertex ] = group;
-
-	}
+	type Triangle = { normal: [ number, number, number ]; offset: number; area: number };
+	type Region = { normal: [ number, number, number ]; offset: number; area: number };
+	const triangles: Triangle[] = [];
+	let visibleArea = 0;
 
 	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
 
-		const first = vertexGroups[ mesh.indices[ index ]! ]!;
-		const second = vertexGroups[ mesh.indices[ index + 1 ]! ]!;
-		const third = vertexGroups[ mesh.indices[ index + 2 ]! ]!;
-		neighbors[ first ]!.add( second );
-		neighbors[ first ]!.add( third );
-		neighbors[ second ]!.add( first );
-		neighbors[ second ]!.add( third );
-		neighbors[ third ]!.add( first );
-		neighbors[ third ]!.add( second );
+		const vertices = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ];
+		const points = vertices.map( ( vertex ) => [ mesh.positions[ vertex * 3 ]!, mesh.positions[ vertex * 3 + 1 ]!, mesh.positions[ vertex * 3 + 2 ]! ] as [ number, number, number ] );
+		const visiblePoints: [ number, number, number ][] = [];
 
-	}
+		for ( let edge = 0; edge < 3; edge ++ ) {
 
-	const minimum = [ Infinity, Infinity, Infinity ];
-	const maximum = [ - Infinity, - Infinity, - Infinity ];
+			const first = points[ edge ]!;
+			const second = points[ ( edge + 1 ) % 3 ]!;
+			if ( first[ 1 ] >= 0 ) visiblePoints.push( first );
 
-	for ( const position of positions ) {
+			if ( ( first[ 1 ] < 0 && second[ 1 ] > 0 ) || ( first[ 1 ] > 0 && second[ 1 ] < 0 ) ) {
 
-		for ( let axis = 0; axis < 3; axis ++ ) {
+				const amount = - first[ 1 ] / ( second[ 1 ] - first[ 1 ] );
+				visiblePoints.push( [ first[ 0 ] + ( second[ 0 ] - first[ 0 ] ) * amount, 0, first[ 2 ] + ( second[ 2 ] - first[ 2 ] ) * amount ] );
 
-			minimum[ axis ] = Math.min( minimum[ axis ]!, position[ axis ]! );
-			maximum[ axis ] = Math.max( maximum[ axis ]!, position[ axis ]! );
+			}
 
 		}
 
-	}
+		if ( visiblePoints.length < 3 ) continue;
 
-	const size = Math.max( maximum[ 0 ]! - minimum[ 0 ]!, maximum[ 1 ]! - minimum[ 1 ]!, maximum[ 2 ]! - minimum[ 2 ]! );
-	const deviations: number[] = [];
-	const spacings: number[] = [];
+		const first = points[ 0 ]!;
+		const second = points[ 1 ]!;
+		const third = points[ 2 ]!;
+		const ab = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+		const ac = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+		const cross = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+		const doubleArea = Math.hypot( cross[ 0 ]!, cross[ 1 ]!, cross[ 2 ]! );
+		if ( doubleArea <= 1e-10 ) continue;
 
-	for ( let vertex = 0; vertex < positions.length; vertex ++ ) {
+		const normal: [ number, number, number ] = [ cross[ 0 ]! / doubleArea, cross[ 1 ]! / doubleArea, cross[ 2 ]! / doubleArea ];
+		const center: [ number, number, number ] = [ ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3, ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3, ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 ];
+		let area = 0;
 
-		const adjacent = [ ...neighbors[ vertex ]! ];
-		const average: [ number, number, number ] = [ 0, 0, 0 ];
+		for ( let point = 1; point < visiblePoints.length - 1; point ++ ) {
 
-		for ( const neighbor of adjacent ) {
-
-			average[ 0 ] += positions[ neighbor ]![ 0 ] / adjacent.length;
-			average[ 1 ] += positions[ neighbor ]![ 1 ] / adjacent.length;
-			average[ 2 ] += positions[ neighbor ]![ 2 ] / adjacent.length;
-			spacings.push( Math.hypot(
-				positions[ vertex ]![ 0 ] - positions[ neighbor ]![ 0 ],
-				positions[ vertex ]![ 1 ] - positions[ neighbor ]![ 1 ],
-				positions[ vertex ]![ 2 ] - positions[ neighbor ]![ 2 ],
-			) / size );
+			const visibleAb = [ visiblePoints[ point ]![ 0 ] - visiblePoints[ 0 ]![ 0 ], visiblePoints[ point ]![ 1 ] - visiblePoints[ 0 ]![ 1 ], visiblePoints[ point ]![ 2 ] - visiblePoints[ 0 ]![ 2 ] ];
+			const visibleAc = [ visiblePoints[ point + 1 ]![ 0 ] - visiblePoints[ 0 ]![ 0 ], visiblePoints[ point + 1 ]![ 1 ] - visiblePoints[ 0 ]![ 1 ], visiblePoints[ point + 1 ]![ 2 ] - visiblePoints[ 0 ]![ 2 ] ];
+			const visibleCross = [ visibleAb[ 1 ]! * visibleAc[ 2 ]! - visibleAb[ 2 ]! * visibleAc[ 1 ]!, visibleAb[ 2 ]! * visibleAc[ 0 ]! - visibleAb[ 0 ]! * visibleAc[ 2 ]!, visibleAb[ 0 ]! * visibleAc[ 1 ]! - visibleAb[ 1 ]! * visibleAc[ 0 ]! ];
+			area += Math.hypot( visibleCross[ 0 ]!, visibleCross[ 1 ]!, visibleCross[ 2 ]! ) * 0.5;
 
 		}
 
-		deviations.push( Math.hypot(
-			positions[ vertex ]![ 0 ] - average[ 0 ],
-			positions[ vertex ]![ 1 ] - average[ 1 ],
-			positions[ vertex ]![ 2 ] - average[ 2 ],
-		) / size );
+		triangles.push( { normal, offset: normal[ 0 ] * center[ 0 ] + normal[ 1 ] * center[ 1 ] + normal[ 2 ] * center[ 2 ], area } );
+		visibleArea += area;
 
 	}
 
-	spacings.sort( ( first, second ) => first - second );
-	deviations.sort( ( first, second ) => first - second );
+	const dimensions = getAboveGroundDimensions( mesh );
+	const planeTolerance = Math.max( dimensions.width, dimensions.height, dimensions.depth ) * 0.035;
+	const regions: Region[] = [];
 
-	return {
-		relief: deviations.reduce( ( total, value ) => total + value, 0 ) / deviations.length,
-		percentileRelief: deviations[ Math.floor( ( deviations.length - 1 ) * 0.95 ) ]!,
-		spacing: spacings[ Math.floor( spacings.length / 2 ) ]!,
-	};
+	for ( const triangle of triangles ) {
+
+		let best: Region | undefined;
+		let bestDot = 0.98;
+
+		for ( const region of regions ) {
+
+			const dot = triangle.normal[ 0 ] * region.normal[ 0 ] + triangle.normal[ 1 ] * region.normal[ 1 ] + triangle.normal[ 2 ] * region.normal[ 2 ];
+			if ( dot < bestDot || Math.abs( triangle.offset - region.offset ) > planeTolerance ) continue;
+			best = region;
+			bestDot = dot;
+
+		}
+
+		if ( best === undefined ) {
+
+			regions.push( { ...triangle, normal: [ ...triangle.normal ] } );
+			continue;
+
+		}
+
+		const total = best.area + triangle.area;
+		const normal: [ number, number, number ] = [
+			best.normal[ 0 ] * best.area + triangle.normal[ 0 ] * triangle.area,
+			best.normal[ 1 ] * best.area + triangle.normal[ 1 ] * triangle.area,
+			best.normal[ 2 ] * best.area + triangle.normal[ 2 ] * triangle.area,
+		];
+		const length = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) || 1;
+		best.normal = [ normal[ 0 ] / length, normal[ 1 ] / length, normal[ 2 ] / length ];
+		best.offset = ( best.offset * best.area + triangle.offset * triangle.area ) / total;
+		best.area = total;
+
+	}
+
+	const visibleFacets = regions.filter( ( region ) => region.area >= visibleArea * 0.017 ).length;
+	const topRegions = regions.filter( ( region ) => region.normal[ 1 ] > 0.8 );
+	const topPlateauArea = topRegions.reduce( ( total, region ) => total + region.area, 0 );
+	const largestTopFacet = Math.max( 0, ...topRegions.map( ( region ) => region.area ) ) / visibleArea;
+
+	return { visibleFacets, topPlateau: topPlateauArea / visibleArea, largestTopFacet };
 
 }
 
-// 参照GLBの隣接頂点平均からの距離を最大寸法で割り、隣接辺長の中央値も測定した。
-const ROCK_SURFACE_STATS = [
-	{ seed: 1, relief: 0.02405, spacing: 0.12071 },
-	{ seed: 2, relief: 0.02761, spacing: 0.07854 },
-];
+function getMaximumSplitNormalAngle( mesh: MeshData ): number {
+
+	const normalsByPosition = new Map<string, [ number, number, number ][]>();
+
+	for ( let vertex = 0; vertex < vertexCount( mesh ); vertex ++ ) {
+
+		const offset = vertex * 3;
+		const key = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ].map( ( value ) => value.toFixed( 6 ) ).join( ',' );
+		const normals = normalsByPosition.get( key ) ?? [];
+		normals.push( [ mesh.normals[ offset ]!, mesh.normals[ offset + 1 ]!, mesh.normals[ offset + 2 ]! ] );
+		normalsByPosition.set( key, normals );
+
+	}
+
+	let maximumAngle = 0;
+
+	for ( const normals of normalsByPosition.values() ) {
+		for ( let first = 0; first < normals.length; first ++ ) {
+			for ( let second = first + 1; second < normals.length; second ++ ) {
+				const dot = normals[ first ]![ 0 ] * normals[ second ]![ 0 ] + normals[ first ]![ 1 ] * normals[ second ]![ 1 ] + normals[ first ]![ 2 ] * normals[ second ]![ 2 ];
+				maximumAngle = Math.max( maximumAngle, Math.acos( Math.max( - 1, Math.min( 1, dot ) ) ) * 180 / Math.PI );
+			}
+		}
+	}
+
+	return maximumAngle;
+
+}
+
+function getMaximumConvexHullDeviation( mesh: MeshData ): number {
+
+	const unique = new Map<string, [ number, number, number ]>();
+
+	for ( let vertex = 0; vertex < vertexCount( mesh ); vertex ++ ) {
+
+		const offset = vertex * 3;
+		const point: [ number, number, number ] = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ];
+		unique.set( point.map( ( value ) => value.toFixed( 5 ) ).join( ',' ), point );
+
+	}
+
+	const fullPoints = [ ...unique.values() ];
+	const allPoints = fullPoints.filter( ( point ) => point[ 1 ] > 0 );
+	const center: [ number, number, number ] = [ 0, 0, 0 ];
+
+	for ( const point of fullPoints ) {
+		center[ 0 ] += point[ 0 ] / fullPoints.length;
+		center[ 1 ] += point[ 1 ] / fullPoints.length;
+		center[ 2 ] += point[ 2 ] / fullPoints.length;
+	}
+
+	const bins = new Array<{ point: [ number, number, number ]; radius: number } | undefined>( 48 );
+
+	for ( const point of fullPoints ) {
+
+		const offset: [ number, number, number ] = [ point[ 0 ] - center[ 0 ], point[ 1 ] - center[ 1 ], point[ 2 ] - center[ 2 ] ];
+		const radius = Math.hypot( offset[ 0 ], offset[ 1 ], offset[ 2 ] );
+		const angle = Math.atan2( offset[ 2 ], offset[ 0 ] );
+		const latitude = Math.acos( offset[ 1 ] / radius );
+		const column = Math.floor( ( angle + Math.PI ) / ( Math.PI * 2 ) * 8 ) % 8;
+		const row = Math.min( 5, Math.floor( latitude / Math.PI * 6 ) );
+		const index = row * 8 + column;
+		if ( bins[ index ] === undefined || radius > bins[ index ]!.radius ) bins[ index ] = { point, radius };
+
+	}
+
+	const sampledPoints = bins.filter( ( value ) => value !== undefined ).map( ( value ) => value.point );
+	const faces = buildConvexHullFaces( sampledPoints );
+	const planes = faces.map( ( face ) => {
+
+		const first = sampledPoints[ face[ 0 ] ]!;
+		const second = sampledPoints[ face[ 1 ] ]!;
+		const third = sampledPoints[ face[ 2 ] ]!;
+		const ab = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+		const ac = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+		const normal: [ number, number, number ] = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+		const length = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) || 1;
+		normal[ 0 ] /= length;
+		normal[ 1 ] /= length;
+		normal[ 2 ] /= length;
+		const faceCenter = [ ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3, ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3, ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 ];
+		const centerSide = ( center[ 0 ] - faceCenter[ 0 ]! ) * normal[ 0 ] + ( center[ 1 ] - faceCenter[ 1 ]! ) * normal[ 1 ] + ( center[ 2 ] - faceCenter[ 2 ]! ) * normal[ 2 ];
+		if ( centerSide > 0 ) {
+			normal[ 0 ] *= - 1;
+			normal[ 1 ] *= - 1;
+			normal[ 2 ] *= - 1;
+		}
+
+		return { normal, offset: first[ 0 ] * normal[ 0 ] + first[ 1 ] * normal[ 1 ] + first[ 2 ] * normal[ 2 ] };
+
+	} );
+	let maximumDeviation = 0;
+
+	for ( const point of allPoints ) {
+
+		let nearestPlane = Infinity;
+		for ( const plane of planes ) nearestPlane = Math.min( nearestPlane, plane.offset - point[ 0 ] * plane.normal[ 0 ] - point[ 1 ] * plane.normal[ 1 ] - point[ 2 ] * plane.normal[ 2 ] );
+		maximumDeviation = Math.max( maximumDeviation, nearestPlane );
+
+	}
+
+	return maximumDeviation;
+
+}
 
 function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): number {
 
@@ -609,7 +688,8 @@ describe( 'procedural rock data', () => {
 					if ( lod === 3 ) {
 
 						for ( let sample = 0; sample < outline.length; sample ++ ) {
-							expect( Math.abs( outline[ sample ]! - lod0Outline[ sample ]! ), `seed ${ seed } LOD3 footprint sample ${ sample }` ).toBeLessThanOrEqual( 6.4 * 0.2 );
+							const difference = Math.abs( outline[ sample ]! - lod0Outline[ sample ]! );
+							expect( difference, `seed ${ seed } LOD3 footprint sample ${ sample }: ${ outline[ sample ] } vs ${ lod0Outline[ sample ] }` ).toBeLessThanOrEqual( 6.4 * 0.2 );
 						}
 
 					}
@@ -724,7 +804,7 @@ describe( 'procedural rock data', () => {
 			const lods = generateRockData( { seed } ).lods;
 			const vertices = lods.slice( 0, 3 ).map( vertexCount );
 			const triangles = lods.map( triangleCount );
-			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 200 );
+			expect( vertices[ 0 ] ).toBeLessThanOrEqual( 260 );
 			expect( vertices[ 1 ] ).toBeLessThanOrEqual( 56 );
 			expect( vertices[ 2 ] ).toBeLessThanOrEqual( 36 );
 			expect( vertices[ 0 ] ).toBeGreaterThan( vertices[ 1 ]! );
@@ -739,48 +819,60 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'matches reference LOD0 relief and bump spacing', () => {
+	it( 'forms 10 to 20 chiseled facets and preserves their crease normals', () => {
 
-		const results: { reference: typeof ROCK_SURFACE_STATS[number]; vertices: number; stats: ReturnType<typeof getSurfaceStats> }[] = [];
+		for ( const seed of [ 1, 2, 3, 4, 5 ] ) {
 
-		for ( const reference of ROCK_SURFACE_STATS ) {
+			const data = generateRockData( { seed } );
+			const mesh = data.lods[ 0 ]!;
+			const coverage = getPlanarFacetCoverage( mesh );
 
-			const mesh = generateRockData( { seed: reference.seed } ).lods[ 0 ]!;
-			const stats = getSurfaceStats( mesh );
-			results.push( { reference, vertices: vertexCount( mesh ), stats } );
-
-		}
-
-		for ( const { reference, vertices, stats } of results ) {
-
-			expect( vertices ).toBeGreaterThan( 130 );
-			expect( vertices ).toBeLessThanOrEqual( 200 );
-			expect( stats.relief ).toBeGreaterThanOrEqual( reference.relief * 0.75 );
-			expect( stats.relief ).toBeLessThanOrEqual( reference.relief * 1.25 );
-			expect( stats.spacing ).toBeGreaterThanOrEqual( reference.spacing * 0.75 );
-			expect( stats.spacing ).toBeLessThanOrEqual( reference.spacing * 1.25 );
+			expect( vertexCount( mesh ), `seed ${ seed } LOD0 vertex cap` ).toBeLessThanOrEqual( 260 );
+			expect( coverage.visibleFacets, `seed ${ seed } visible medium facets` ).toBeGreaterThanOrEqual( 10 );
+			expect( coverage.visibleFacets, `seed ${ seed } visible medium facets` ).toBeLessThanOrEqual( 20 );
+			expect( coverage.topPlateau, `seed ${ seed } top-facing facets` ).toBeGreaterThanOrEqual( 0.02 );
+			expect( coverage.topPlateau, `seed ${ seed } top-facing facets` ).toBeLessThan( 0.45 );
+			expect( coverage.largestTopFacet, `seed ${ seed } single broad top-plane coverage` ).toBeLessThan( 0.3 );
+			expect( getMaximumSplitNormalAngle( mesh ), `seed ${ seed } facet crease` ).toBeGreaterThanOrEqual( 35 );
+			expect( getPlanarFacetCoverage( data.lods[ 1 ]! ).visibleFacets, `seed ${ seed } LOD1 main facets` ).toBeGreaterThanOrEqual( 5 );
+			expect( getPlanarFacetCoverage( data.lods[ 2 ]! ).visibleFacets, `seed ${ seed } LOD2 main facets` ).toBeGreaterThanOrEqual( 4 );
 
 		}
 
 	} );
 
-	it( 'keeps seed 2 relief as gentle bumps instead of stacked ledges', () => {
+	it( 'cuts deep ledges into most seeded rock silhouettes', () => {
 
-		const stats = getSurfaceStats( generateRockData( { seed: 2 } ).lods[ 0 ]! );
+		withSharedRockTextures( () => {
 
-		expect( stats.percentileRelief ).toBeLessThan( 0.09 );
+			const ratios = [ 1, 2, 3, 4, 5 ].map( ( seed ) => {
+
+				const mesh = generateRockData( { seed } ).lods[ 0 ]!;
+				return getMaximumConvexHullDeviation( mesh ) / getAboveGroundDimensions( mesh ).height;
+
+			} );
+
+			expect( ratios.filter( ( ratio ) => ratio >= 0.12 ).length, ratios.map( ( ratio ) => ratio.toFixed( 3 ) ).join( ', ' ) ).toBeGreaterThanOrEqual( 4 );
+
+		} );
 
 	} );
 
-	it( 'uses shared smooth normals for each shell LOD', () => {
+	it( 'smooths normals within facets and splits LOD0 creases', () => {
 
 		const data = generateRockData( { seed: 6 } );
 
 		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
 
-		for ( const mesh of data.lods.slice( 0, 3 ) ) {
+		for ( const [ lod, mesh ] of data.lods.slice( 0, 3 ).entries() ) {
 
 			expect( vertexCount( mesh ) ).toBeLessThan( triangleCount( mesh ) * 2 );
+			if ( lod === 0 ) {
+
+				expect( getMaximumSplitNormalAngle( mesh ) ).toBeGreaterThanOrEqual( 35 );
+				continue;
+
+			}
 
 			const normalsByPosition = new Map<string, number[]>();
 
@@ -843,25 +935,28 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'uses a rounded seed 1 mound and varied silhouettes across seeds 2–5', () => {
+	it( 'uses a polygonal seed 1 mound and varied stylized silhouettes across seeds 2–5', () => {
 
-		const samples = Array.from( { length: 5 }, ( _, index ) => getShapeMetrics( generateRockData( { seed: index + 1 } ).lods[ 0 ]! ) );
+		const meshes = Array.from( { length: 5 }, ( _, index ) => generateRockData( { seed: index + 1 } ).lods[ 0 ]! );
+		const samples = meshes.map( getShapeMetrics );
 		const defaultRock = samples[ 0 ]!;
 		const lowElongatedRock = samples.slice( 1 ).some( ( sample ) => sample.ratio < 0.65 && sample.roundness < 0.94 );
 		const shapeSignatures = new Set( samples.slice( 1 ).map( ( sample ) => `${ sample.ratio.toFixed( 2 ) },${ sample.roundness.toFixed( 2 ) }` ) );
 
-		for ( const sample of samples ) {
+		for ( let index = 0; index < samples.length; index ++ ) {
+
+			const sample = samples[ index ]!;
+			const coverage = getPlanarFacetCoverage( meshes[ index ]! );
 
 			expect( sample.ratio ).toBeGreaterThan( 0.3 );
 			expect( sample.ratio ).toBeLessThan( 0.9 );
-			expect( sample.sideWallVerticality ).toBeLessThan( 0.97 );
 			expect( sample.roundness ).toBeGreaterThan( 0.77 );
+			expect( coverage.visibleFacets ).toBeGreaterThanOrEqual( 10 );
 
 		}
 
 		expect( defaultRock.ratio ).toBeGreaterThanOrEqual( 0.55 );
 		expect( defaultRock.ratio ).toBeLessThanOrEqual( 0.85 );
-		expect( defaultRock.sideWallVerticality ).toBeLessThan( 0.9 );
 		expect( defaultRock.roundness ).toBeGreaterThan( 0.77 );
 		expect( lowElongatedRock ).toBe( true );
 		expect( shapeSignatures.size ).toBeGreaterThanOrEqual( 3 );
@@ -900,7 +995,7 @@ describe( 'procedural rock data', () => {
 			expect( seedOne.ratio ).toBeLessThan( 0.85 );
 			expect( seedTwo.ratio ).toBeGreaterThan( 0.3 );
 			expect( seedTwo.ratio ).toBeLessThan( 0.8 );
-			expect( chunky.length ).toBeGreaterThanOrEqual( 2 );
+			expect( chunky.length, samples.map( ( sample ) => sample.ratio.toFixed( 3 ) ).join( ', ' ) ).toBeGreaterThanOrEqual( 2 );
 			expect( low.length ).toBeGreaterThanOrEqual( 4 );
 			expect( groundVertices ).toBeGreaterThanOrEqual( 8 );
 
@@ -1051,12 +1146,13 @@ describe( 'procedural rock data', () => {
 		expect( Math.abs( albedoMean[ 2 ] - 102.47 ) ).toBeLessThanOrEqual( 8 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeLessThan( 2 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeGreaterThan( 0.6 );
-		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 2.5 );
+		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 5 );
 		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 75 );
 		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 87 );
-		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 12 );
+		expect( percentile( albedo.data, 0, 0.9 ) - percentile( albedo.data, 0, 0.1 ) ).toBeGreaterThan( 32 );
+		expect( percentile( normal.data, 0, 0.9 ) - percentile( normal.data, 0, 0.1 ) ).toBeGreaterThan( 6 );
 		expect( normalMean[ 2 ] ).toBeGreaterThan( 220 );
-		expect( normalMean[ 2 ] ).toBeLessThan( 254 );
+		expect( normalMean[ 2 ] ).toBeLessThan( 255 );
 
 		let averageRed = 0;
 		let averageGreen = 0;
@@ -1141,7 +1237,7 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'uses one non-repeating stone surface with localized dark detail', () => {
+	it( 'uses a horizontally tiling stone surface with clamped poles and chipped shadows', () => {
 
 		const textures = createRockTextures( 9 );
 		const rock = generateRockData( { seed: 9 } );
@@ -1153,26 +1249,27 @@ describe( 'procedural rock data', () => {
 
 		for ( let position = 0; position < textures.albedo.width; position ++ ) {
 
-			const top = position * 4;
-			const bottom = ( ( textures.albedo.height - 1 ) * textures.albedo.width + position ) * 4;
 			const left = position * textures.albedo.width * 4;
 			const right = left + ( textures.albedo.width - 1 ) * 4;
 
 			for ( let channel = 0; channel < 3; channel ++ ) {
 
-				edgeDifference += Math.abs( textures.albedo.data[ top + channel ]! - textures.albedo.data[ bottom + channel ]! );
 				edgeDifference += Math.abs( textures.albedo.data[ left + channel ]! - textures.albedo.data[ right + channel ]! );
 
 			}
 
 		}
 
-		const meanEdgeDifference = edgeDifference / ( textures.albedo.width * 6 );
+		const meanEdgeDifference = edgeDifference / ( textures.albedo.width * 3 );
 
+		expect( textures.albedo.wrapS ).toBe( 'repeat' );
+		expect( textures.albedo.wrapT ).toBe( 'clamp' );
+		expect( textures.normal.wrapS ).toBe( 'repeat' );
+		expect( textures.normal.wrapT ).toBe( 'clamp' );
 		expect( darkRegions.coverage ).toBeGreaterThan( 0.002 );
 		expect( darkRegions.coverage ).toBeLessThan( 0.06 );
 		expect( darkRegions.count ).toBeLessThanOrEqual( 20 );
-		expect( darkRegions.largest ).toBeLessThan( 0.025 );
+		expect( darkRegions.largest ).toBeLessThan( 0.06 );
 		expect( meanEdgeDifference ).toBeLessThan( 3 );
 
 		const mesh = rock.lods[ 0 ]!;
@@ -1188,20 +1285,112 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'localizes fine stone detail and avoids bold long cracks', () => {
+	it( 'adds broad blue-grey, purple and warm hue shifts inside the stone planes', () => {
+
+		const texture = createRockTextures( 17, 256 ).albedo;
+		const tileSize = texture.width / 8;
+		const hueValues: number[] = [];
+
+		for ( let tileY = 0; tileY < 8; tileY ++ ) {
+
+			for ( let tileX = 0; tileX < 8; tileX ++ ) {
+
+				let hue = 0;
+				let pixels = 0;
+
+				for ( let y = tileY * tileSize; y < ( tileY + 1 ) * tileSize; y ++ ) {
+
+					for ( let x = tileX * tileSize; x < ( tileX + 1 ) * tileSize; x ++ ) {
+
+						const offset = ( y * texture.width + x ) * 4;
+						hue += texture.data[ offset + 2 ]! - texture.data[ offset ]!;
+						pixels ++;
+
+					}
+
+				}
+
+				hueValues.push( hue / pixels );
+
+			}
+
+		}
+
+		hueValues.sort( ( first, second ) => first - second );
+		const hueSpread = hueValues[ 57 ]! - hueValues[ 6 ]!;
+
+		expect( hueSpread ).toBeGreaterThan( 3.5 );
+		expect( meanRgb( texture.data )[ 0 ] ).toBeCloseTo( 80.31, 0 );
+		expect( meanRgb( texture.data )[ 1 ] ).toBeCloseTo( 95.08, 0 );
+		expect( meanRgb( texture.data )[ 2 ] ).toBeCloseTo( 102.47, 0 );
+
+	} );
+
+	it( 'rasterizes the LOD0 facet normals into planar albedo bands', () => {
+
+		const smoothMesh = buildRockShell( 4, createRockRadiusFunction( 27, 2, 0.2, 0.82, 1, 'chiseled' ), 0.82 );
+		const chiseledMesh = buildRockShell( 4, createRockRadiusFunction( 27, 2, 1.45, 0.82, 1, 'chiseled' ), 0.82 );
+		recomputeCreasedNormals( smoothMesh );
+		recomputeCreasedNormals( chiseledMesh );
+		const smoothTexture = createRockTextures( 27, 128, 27, smoothMesh ).albedo;
+		const chiseledTexture = createRockTextures( 27, 128, 27, chiseledMesh ).albedo;
+		let changedPixels = 0;
+
+		for ( let pixel = 0; pixel < smoothTexture.width * smoothTexture.height; pixel ++ ) {
+
+			const offset = pixel * 4;
+			const difference = Math.abs( smoothTexture.data[ offset ]! - chiseledTexture.data[ offset ]! )
+				+ Math.abs( smoothTexture.data[ offset + 1 ]! - chiseledTexture.data[ offset + 1 ]! )
+				+ Math.abs( smoothTexture.data[ offset + 2 ]! - chiseledTexture.data[ offset + 2 ]! );
+			if ( difference > 12 ) changedPixels ++;
+
+		}
+
+		expect( changedPixels ).toBeGreaterThan( smoothTexture.width * smoothTexture.height * 0.08 );
+
+	} );
+
+	it( 'keeps brush detail subordinate to broad stone facets', () => {
 
 		const rockOne = createRockTextures( 1 );
 		const textures = createRockTextures( 2 );
 		const contrasts = tileTextureContrasts( textures.albedo.data, textures.albedo.width, textures.albedo.width / 8 ).sort( ( first, second ) => first - second );
 		const quietContrast = contrasts.slice( 0, 16 ).reduce( ( total, value ) => total + value, 0 ) / 16;
 		const detailedContrast = contrasts.slice( - 16 ).reduce( ( total, value ) => total + value, 0 ) / 16;
-		const rockOneDarkRegions = darkPixelComponents( rockOne.albedo.data, rockOne.albedo.width, 68 );
-		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 68 );
 
 		expect( detailedContrast ).toBeGreaterThan( quietContrast * 1.2 );
-		expect( rockOneDarkRegions.span ).toBeLessThan( 0.12 );
-		expect( darkRegions.largest ).toBeLessThan( 0.01 );
-		expect( darkRegions.span ).toBeLessThan( 0.12 );
+		expect( meanNeighborDelta( rockOne.albedo.data, rockOne.albedo.width, rockOne.albedo.height, 1 ) ).toBeLessThan( 2.2 );
+		expect( meanNeighborDelta( textures.albedo.data, textures.albedo.width, textures.albedo.height, 1 ) ).toBeLessThan( 2.2 );
+
+	} );
+
+	it( 'makes broad planar value changes while keeping within-plane texture quiet', () => {
+
+		const data = generateRockData( { seed: 3 } );
+		const texture = data.textures[ data.parts[ 0 ]!.texture! ]!;
+		const mesh = data.lods[ 0 ]!;
+		const means = [ 0, 0, 0 ];
+		const counts = [ 0, 0, 0 ];
+
+		for ( let vertex = 0; vertex < vertexCount( mesh ); vertex ++ ) {
+
+			const normalY = mesh.normals[ vertex * 3 + 1 ]!;
+			const region = normalY > 0.7 ? 0 : normalY < - 0.3 ? 2 : Math.abs( normalY ) < 0.2 ? 1 : - 1;
+			if ( region < 0 ) continue;
+			const u = ( ( mesh.uvs[ vertex * 2 ]! % 1 ) + 1 ) % 1;
+			const v = Math.max( 0, Math.min( 1, mesh.uvs[ vertex * 2 + 1 ]! ) );
+			const pixel = ( Math.min( texture.height - 1, Math.floor( v * texture.height ) ) * texture.width + Math.floor( u * texture.width ) ) * 4;
+			means[ region ]! += ( texture.data[ pixel ]! + texture.data[ pixel + 1 ]! + texture.data[ pixel + 2 ]! ) / 3;
+			counts[ region ]! ++;
+
+		}
+
+		for ( let region = 0; region < means.length; region ++ ) means[ region ]! /= counts[ region ]!;
+		const fineContrast = meanNeighborDelta( texture.data, texture.width, texture.height, 1 );
+
+		expect( means[ 0 ]!, `up ${ means[ 0 ] }, side ${ means[ 1 ] }, underside ${ means[ 2 ] }` ).toBeGreaterThan( means[ 1 ]! + 12 );
+		expect( means[ 1 ]! ).toBeGreaterThan( means[ 2 ]! + 5 );
+		expect( fineContrast ).toBeLessThan( 2.2 );
 
 	} );
 

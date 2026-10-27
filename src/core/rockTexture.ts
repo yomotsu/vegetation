@@ -1,4 +1,5 @@
-import type { TextureData } from './types';
+import type { MeshData, TextureData, Vec3 } from './types';
+import { createRockFacetNormals } from './rockGeometry';
 
 type NoiseSampler = ( u: number, v: number ) => number;
 
@@ -69,6 +70,136 @@ function copyTextureData( texture: TextureData ): TextureData {
 function copyTexturePair( textures: RockTexturePair ): RockTexturePair {
 
 	return { albedo: copyTextureData( textures.albedo ), normal: copyTextureData( textures.normal ) };
+
+}
+
+function getMeshTextureKey( mesh: MeshData ): string {
+
+	let hash = 2166136261;
+	const values = [ ...mesh.positions, ...mesh.normals, ...mesh.uvs, ...mesh.indices ];
+
+	for ( const value of values ) {
+		hash = Math.imul( hash ^ Math.round( value * 4096 ), 16777619 );
+	}
+
+	return `${ mesh.positions.length / 3 }:${ mesh.indices.length / 3 }:${ hash >>> 0 }`;
+
+}
+
+function rasterizeRockSurfaceNormals( mesh: MeshData, size: number, normals: Float32Array ): void {
+
+	const covered = new Uint8Array( size * size );
+	const counts = new Uint8Array( size * size );
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		const vertices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
+		const uvs = vertices.map( ( vertex ) => [ mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! ] as [ number, number ] );
+		const minimumU = Math.min( ...uvs.map( ( uv ) => uv[ 0 ] ) );
+		const maximumU = Math.max( ...uvs.map( ( uv ) => uv[ 0 ] ) );
+
+		if ( maximumU - minimumU > 0.5 ) {
+			for ( const uv of uvs ) if ( uv[ 0 ] <= 0.5 ) uv[ 0 ] += 1;
+		}
+
+		const first = uvs[ 0 ]!;
+		const second = uvs[ 1 ]!;
+		const third = uvs[ 2 ]!;
+		const determinant = ( second[ 1 ] - third[ 1 ] ) * ( first[ 0 ] - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( first[ 1 ] - third[ 1 ] );
+		if ( Math.abs( determinant ) < 1e-10 ) continue;
+
+		const minimumX = Math.floor( Math.min( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
+		const maximumX = Math.ceil( Math.max( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
+		const minimumY = Math.max( 0, Math.floor( Math.min( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
+		const maximumY = Math.min( size - 1, Math.ceil( Math.max( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
+
+		for ( let y = minimumY; y <= maximumY; y ++ ) {
+
+			const v = ( y + 0.5 ) / size;
+
+			for ( let x = minimumX; x <= maximumX; x ++ ) {
+
+				const u = ( x + 0.5 ) / size;
+				const firstWeight = ( ( second[ 1 ] - third[ 1 ] ) * ( u - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
+				const secondWeight = ( ( third[ 1 ] - first[ 1 ] ) * ( u - third[ 0 ] ) + ( first[ 0 ] - third[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
+				const thirdWeight = 1 - firstWeight - secondWeight;
+				if ( firstWeight < - 0.001 || secondWeight < - 0.001 || thirdWeight < - 0.001 ) continue;
+
+				const normal: Vec3 = [ 0, 0, 0 ];
+
+				for ( let corner = 0; corner < 3; corner ++ ) {
+
+					const vertex = vertices[ corner ]! * 3;
+					const weight = corner === 0 ? firstWeight : corner === 1 ? secondWeight : thirdWeight;
+					normal[ 0 ] += mesh.normals[ vertex ]! * weight;
+					normal[ 1 ] += mesh.normals[ vertex + 1 ]! * weight;
+					normal[ 2 ] += mesh.normals[ vertex + 2 ]! * weight;
+
+				}
+
+				const length = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) || 1;
+				const pixelX = ( ( x % size ) + size ) % size;
+				const pixel = y * size + pixelX;
+				const normalOffset = pixel * 3;
+
+				if ( covered[ pixel ] === 0 ) {
+
+					normals[ normalOffset ] = normal[ 0 ] / length;
+					normals[ normalOffset + 1 ] = normal[ 1 ] / length;
+					normals[ normalOffset + 2 ] = normal[ 2 ] / length;
+					covered[ pixel ] = 1;
+					counts[ pixel ] = 1;
+
+				} else {
+
+					const count = counts[ pixel ]!;
+					normals[ normalOffset ] = normals[ normalOffset ]! + normal[ 0 ] / length;
+					normals[ normalOffset + 1 ] = normals[ normalOffset + 1 ]! + normal[ 1 ] / length;
+					normals[ normalOffset + 2 ] = normals[ normalOffset + 2 ]! + normal[ 2 ] / length;
+					counts[ pixel ] = Math.min( count + 1, 255 );
+
+				}
+
+			}
+
+		}
+
+	}
+
+	for ( let pixel = 0; pixel < covered.length; pixel ++ ) {
+
+		if ( covered[ pixel ] === 0 ) continue;
+		const offset = pixel * 3;
+		const length = Math.hypot( normals[ offset ]!, normals[ offset + 1 ]!, normals[ offset + 2 ]! ) || 1;
+		normals[ offset ] = normals[ offset ]! / length;
+		normals[ offset + 1 ] = normals[ offset + 1 ]! / length;
+		normals[ offset + 2 ] = normals[ offset + 2 ]! / length;
+
+	}
+
+}
+
+function createRockRidgeMap( normals: Float32Array, size: number ): Float32Array {
+
+	const ridgeMap = new Float32Array( size * size );
+	const readDot = ( first: number, second: number ): number => normals[ first * 3 ]! * normals[ second * 3 ]! + normals[ first * 3 + 1 ]! * normals[ second * 3 + 1 ]! + normals[ first * 3 + 2 ]! * normals[ second * 3 + 2 ]!;
+
+	for ( let y = 1; y < size - 1; y ++ ) {
+		for ( let x = 0; x < size; x ++ ) {
+			const pixel = y * size + x;
+			const left = y * size + ( x === 0 ? size - 1 : x - 1 );
+			const right = y * size + ( x + 1 === size ? 0 : x + 1 );
+			const up = ( y - 1 ) * size + x;
+			const down = ( y + 1 ) * size + x;
+			const curvature = Math.max( 1 - readDot( pixel, left ), 1 - readDot( pixel, right ), 1 - readDot( pixel, up ), 1 - readDot( pixel, down ) );
+		const highlight = smoothstep( 0.025, 0.12, curvature );
+			ridgeMap[ pixel ] = highlight;
+			ridgeMap[ left ] = Math.max( ridgeMap[ left ]!, highlight * 0.65 );
+			ridgeMap[ right ] = Math.max( ridgeMap[ right ]!, highlight * 0.65 );
+		}
+	}
+
+	return ridgeMap;
 
 }
 
@@ -380,9 +511,12 @@ function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
 
 }
 
-export function createRockTextures( seed: number, size = 1024 ): { albedo: TextureData; normal: TextureData } {
+export function createRockTextures( seed: number, size = 1024, shapeSeed = seed, shapeMesh?: MeshData, shapeVariant?: string ): { albedo: TextureData; normal: TextureData } {
 
-	const textureKey = `${ Math.floor( Math.abs( seed ) * 1000 ) }:${ size }`;
+	const seedKey = Math.floor( Math.abs( seed ) * 1000 );
+	const shapeKey = Math.floor( Math.abs( shapeSeed ) * 1000 );
+	const meshKey = shapeVariant ?? ( shapeMesh === undefined ? 'analytic' : getMeshTextureKey( shapeMesh ) );
+	const textureKey = `${ seedKey }:${ shapeKey }:${ size }:${ meshKey }`;
 	const cachedTextures = textureCache.get( textureKey );
 
 	if ( cachedTextures !== undefined ) {
@@ -394,8 +528,9 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 
 	}
 
-	const seedOffset = Math.floor( Math.abs( seed ) * 1000 ) + 419;
+	const seedOffset = seedKey + 419;
 	const random = createRandom( seed );
+	const facetRandom = createRandom( shapeSeed + 1439 );
 	const directions: [ number, number ][] = [ [ 1, 0 ], [ 0, 1 ], [ 1, 1 ], [ 1, - 1 ], [ 2, 1 ], [ 2, - 1 ], [ 1, 2 ], [ 1, - 2 ] ];
 	const direction = directions[ Math.floor( random() * directions.length ) ]!;
 	const dominantAngle = Math.atan2( - direction[ 0 ], direction[ 1 ] );
@@ -405,13 +540,63 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 	const warpNoise = createPeriodicNoise( seedOffset + 47, 3, 3, size );
 	const bandNoise = createPeriodicNoise1D( seedOffset + 61, bandCount );
 	const fineBandNoise = createPeriodicNoise1D( seedOffset + 73, bandCount * 5 );
-	const grainNoise = createPeriodicNoise( seedOffset + 89, 80, 80, size );
-	const fineGrainNoise = createPeriodicNoise( seedOffset + 101, 128, 128, size );
 	const detailMaskNoise = createPeriodicNoise( seedOffset + 113, 3, 3, size );
-	const streakNoise = createPeriodicNoise( seedOffset + 127, 24, 72, size );
+	const streakNoise = createPeriodicNoise( seedOffset + 127, 12, 48, size );
+	const facetNormals = [ ...createRockFacetNormals( shapeSeed ), [ 0, - 1, 0 ] as Vec3 ];
+	const facetValues: number[] = [];
+	const facetHues: [ number, number, number ][] = [];
+	const facetBrushes: [ number, number ][] = [];
+
+	for ( const normal of facetNormals ) {
+
+		facetValues.push( normal[ 1 ] > 0.58 ? 7 + facetRandom() * 3 : normal[ 1 ] < - 0.32 ? - 6 + facetRandom() * 1.5 : ( facetRandom() - 0.5 ) * 10 );
+		facetHues.push( [ ( facetRandom() - 0.5 ) * 8, ( facetRandom() - 0.5 ) * 6, ( facetRandom() - 0.5 ) * 10 ] );
+		const brushAngle = facetRandom() * Math.PI;
+		facetBrushes.push( [ Math.cos( brushAngle ), Math.sin( brushAngle ) ] );
+
+	}
+
+	const chips = Array.from( { length: 7 }, () => ( {
+		u: facetRandom(),
+		v: 0.16 + facetRandom() * 0.68,
+		radiusX: 0.016 + facetRandom() * 0.007,
+		radiusY: 0.011 + facetRandom() * 0.005,
+		angle: facetRandom() * Math.PI,
+	} ) );
 	const detailMask = ( u: number, v: number ): number => smoothstep( - 0.25, 0.5, detailMaskNoise( u, v ) + 1 );
 	const cracks = createRockCrackPaths( seed, dominantAngle, detailMask );
 	const crackDistances = createCrackDistanceMap( size, cracks );
+	const longitudeCos = new Float32Array( size );
+	const longitudeSin = new Float32Array( size );
+	const latitudeCos = new Float32Array( size );
+	const latitudeSin = new Float32Array( size );
+
+	for ( let index = 0; index < size; index ++ ) {
+
+		const longitude = ( index / size - 0.5 ) * Math.PI * 2;
+		const latitude = ( index / size - 0.5 ) * Math.PI;
+		longitudeCos[ index ] = Math.cos( longitude );
+		longitudeSin[ index ] = Math.sin( longitude );
+		latitudeCos[ index ] = Math.cos( latitude );
+		latitudeSin[ index ] = Math.sin( latitude );
+
+	}
+
+	const surfaceNormals = new Float32Array( size * size * 3 );
+
+	for ( let y = 0; y < size; y ++ ) {
+		for ( let x = 0; x < size; x ++ ) {
+			const offset = ( y * size + x ) * 3;
+			surfaceNormals[ offset ] = latitudeCos[ y ]! * longitudeCos[ x ]!;
+			surfaceNormals[ offset + 1 ] = latitudeSin[ y ]!;
+			surfaceNormals[ offset + 2 ] = latitudeCos[ y ]! * longitudeSin[ x ]!;
+		}
+	}
+
+	if ( shapeMesh !== undefined ) rasterizeRockSurfaceNormals( shapeMesh, size, surfaceNormals );
+
+	const ridgeMap = shapeMesh === undefined ? new Float32Array( size * size ) : createRockRidgeMap( surfaceNormals, size );
+
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
 	const normalData = new Uint8Array( size * size * 4 );
@@ -420,22 +605,65 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 
 		const v = y / size;
 		const poleFade = smoothstep( 0, 0.075, v ) * smoothstep( 0, 0.075, 1 - v );
+		const rowOffset = y * size;
 
 		for ( let x = 0; x < size; x ++ ) {
 
 			const u = x / size;
+			const surfaceOffset = ( rowOffset + x ) * 3;
+			const normalX = surfaceNormals[ surfaceOffset ]!;
+			const normalY = surfaceNormals[ surfaceOffset + 1 ]!;
+			const normalZ = surfaceNormals[ surfaceOffset + 2 ]!;
+			let firstDot = - Infinity;
+			let secondDot = - Infinity;
+			let firstFacet = 0;
+			let secondFacet = 0;
+
+			for ( let facet = 0; facet < facetNormals.length; facet ++ ) {
+
+				const normal = facetNormals[ facet ]!;
+				const dot = normalX * normal[ 0 ] + normalY * normal[ 1 ] + normalZ * normal[ 2 ];
+
+				if ( dot > firstDot ) {
+
+					secondDot = firstDot;
+					secondFacet = firstFacet;
+					firstDot = dot;
+					firstFacet = facet;
+
+				} else if ( dot > secondDot ) {
+
+					secondDot = dot;
+					secondFacet = facet;
+
+				}
+
+			}
+
+			const facetGap = firstDot - secondDot;
+			const facetBlend = smoothstep( 0.004, 0.036, facetGap );
+			const firstValue = facetValues[ firstFacet ]!;
+			const secondValue = facetValues[ secondFacet ]!;
+			const facetValue = secondValue + ( firstValue - secondValue ) * facetBlend;
+			const hue = [ 0, 1, 2 ].map( ( channel ) => facetHues[ secondFacet ]![ channel ]! + ( facetHues[ firstFacet ]![ channel ]! - facetHues[ secondFacet ]![ channel ]! ) * facetBlend );
+			const keyLight = normalX * - 0.32 + normalY * 0.86 + normalZ * 0.4;
+			const planarTone = normalY * 0.68 + Math.max( 0, keyLight ) * 0.32;
+			const undersideShade = ( 1 - smoothstep( - 0.48, - 0.2, normalY ) ) * 6;
+			const planarValue = - 9 + smoothstep( - 0.34, - 0.2, planarTone ) * 4 + smoothstep( - 0.02, 0.12, planarTone ) * 6 + smoothstep( 0.42, 0.62, planarTone ) * 16 - undersideShade;
+			const facetLighting = planarValue;
 			const warp = warpNoise.atPixel( x, y );
-			const phase = fract( ( direction[ 0 ] * u + direction[ 1 ] * v ) * bandCount + warp * 0.09 );
+			const brushDirection = facetBrushes[ firstFacet ]!;
+			const phase = fract( ( brushDirection[ 0 ] * u + brushDirection[ 1 ] * v ) * bandCount + warp * 0.09 );
 			const strata = bandNoise( phase ) * 0.82 + fineBandNoise( fract( phase * 3 + warp * 0.24 ) ) * 0.18;
 			const broad = broadNoise.atPixel( x, y );
 			const medium = mediumNoise.atPixel( x, y );
-			const grain = grainNoise.atPixel( x, y ) * 0.68 + fineGrainNoise.atPixel( x, y ) * 0.32;
 			const detail = smoothstep( - 0.25, 0.5, detailMaskNoise.atPixel( x, y ) + 1 );
-			const localizedStrata = strata * ( 0.2 + detail * 0.8 );
-			const along = fract( direction[ 0 ] * u + direction[ 1 ] * v + warp * 0.015 );
-			const across = fract( - direction[ 1 ] * u + direction[ 0 ] * v + warp * 0.02 );
-			const fineStreak = ( 1 - smoothstep( 0.2, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
-			const crackIndex = y * size + x;
+			const localizedStrata = strata * ( 0.25 + detail * 0.75 );
+			const along = fract( brushDirection[ 0 ] * u + brushDirection[ 1 ] * v + warp * 0.015 );
+			const across = fract( - brushDirection[ 1 ] * u + brushDirection[ 0 ] * v + warp * 0.02 );
+			const fineStreak = ( 1 - smoothstep( 0.18, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
+			const crackIndex = rowOffset + x;
+			const ridgeHighlight = ridgeMap[ crackIndex ]! * 11;
 			const crackDistance = Math.sqrt( crackDistances.distances[ crackIndex ]! );
 			const crackCore = 1 - smoothstep( 0.12, 0.78, crackDistance );
 			const crackEdge = smoothstep( 0.48, 0.82, crackDistance ) * ( 1 - smoothstep( 0.82, 1.55, crackDistance ) );
@@ -445,13 +673,34 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 			const fineCrack = crackCore * poleFade * detail;
 			const fineCrackEdge = crackEdge * poleFade * detail;
 			const fineCrackRim = crackRim * poleFade * detail;
-			const brightness = broad * 15 + medium * 5.6 + localizedStrata * 2.2 + grain * 5.1 - fineStreak * 6 - fineCrack * 20 - fineCrackEdge * 5 + fineCrackRim * 7;
-			const index = y * size + x;
+			let chipCore = 0;
+			let chipRim = 0;
 
-			heightMap[ index ] = broad * 0.06 + medium * 0.025 + localizedStrata * 0.007 + grain * 0.005 - fineStreak * 0.003 - fineCrack * 0.02 - fineCrackEdge * 0.006 + fineCrackRim * 0.003;
-			albedoData[ index * 4 ] = Math.round( clamp( 80 + brightness * 0.96, 0, 255 ) );
-			albedoData[ index * 4 + 1 ] = Math.round( clamp( 95 + brightness, 0, 255 ) );
-			albedoData[ index * 4 + 2 ] = Math.round( clamp( 102 + brightness * 1.04, 0, 255 ) );
+			for ( const chip of chips ) {
+
+				const rawDeltaU = Math.abs( u - chip.u );
+				const deltaU = Math.min( rawDeltaU, 1 - rawDeltaU );
+				const deltaV = v - chip.v;
+				const cosine = Math.cos( chip.angle );
+				const sine = Math.sin( chip.angle );
+				const chipX = ( deltaU * cosine + deltaV * sine ) / chip.radiusX;
+				const chipY = ( - deltaU * sine + deltaV * cosine ) / chip.radiusY;
+				const chipDistance = Math.hypot( chipX, chipY );
+				const shadow = 1 - smoothstep( 0.52, 0.92, chipDistance );
+				const rim = smoothstep( 0.72, 0.98, chipDistance ) * ( 1 - smoothstep( 0.98, 1.25, chipDistance ) ) * smoothstep( - 0.2, 0.5, chipX );
+
+				chipCore = Math.max( chipCore, shadow );
+				chipRim = Math.max( chipRim, rim );
+
+			}
+
+			const brightness = broad * 3 + medium * 0.9 + localizedStrata * 1.2 + facetValue + facetLighting + ridgeHighlight + chipRim * 5.5 - fineStreak * 1.8 - chipCore * 32 - fineCrack * 20 - fineCrackEdge * 5 + fineCrackRim * 7;
+			const index = crackIndex;
+
+			heightMap[ index ] = broad * 0.014 + medium * 0.003 + localizedStrata * 0.0015 + ridgeMap[ index ]! * 0.011 - fineStreak * 0.0003 - chipCore * 0.006 + chipRim * 0.0015 - fineCrack * 0.02 - fineCrackEdge * 0.006 + fineCrackRim * 0.003;
+			albedoData[ index * 4 ] = Math.round( clamp( 80 + brightness * 0.96 + hue[ 0 ]! * 0.8, 0, 255 ) );
+			albedoData[ index * 4 + 1 ] = Math.round( clamp( 95 + brightness + hue[ 1 ]!, 0, 255 ) );
+			albedoData[ index * 4 + 2 ] = Math.round( clamp( 102 + brightness * 1.04 + hue[ 2 ]!, 0, 255 ) );
 			albedoData[ index * 4 + 3 ] = 255;
 
 		}
@@ -462,9 +711,9 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 
 	for ( let y = 0; y < size; y ++ ) {
 
-		const topRow = ( y === 0 ? size - 1 : y - 1 ) * size;
+		const topRow = ( y === 0 ? 0 : y - 1 ) * size;
 		const middleRow = y * size;
-		const bottomRow = ( y + 1 === size ? 0 : y + 1 ) * size;
+		const bottomRow = ( y + 1 === size ? size - 1 : y + 1 ) * size;
 
 		for ( let x = 0; x < size; x ++ ) {
 
@@ -481,8 +730,8 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 			const bottomRight = heightMap[ bottomRow + right ]!;
 			const gradientX = ( topRight + 2 * middleRight + bottomRight - topLeft - 2 * middleLeft - bottomLeft ) / 8;
 			const gradientY = ( bottomLeft + 2 * bottomCenter + bottomRight - topLeft - 2 * topCenter - topRight ) / 8;
-			const normalX = - gradientX * size * 0.2;
-			const normalY = - gradientY * size * 0.2;
+			const normalX = - gradientX * size * 0.3;
+			const normalY = - gradientY * size * 0.3;
 			const inverseLength = 1 / Math.hypot( normalX, normalY, 1 );
 
 			normalData[ index * 4 ] = Math.round( ( normalX * inverseLength * 0.5 + 0.5 ) * 255 );
@@ -495,8 +744,8 @@ export function createRockTextures( seed: number, size = 1024 ): { albedo: Textu
 	}
 
 	const textures: RockTexturePair = {
-		albedo: { width: size, height: size, data: albedoData, wrap: 'repeat' },
-		normal: { width: size, height: size, data: normalData, wrap: 'repeat' },
+		albedo: { width: size, height: size, data: albedoData, wrap: 'repeat', wrapS: 'repeat', wrapT: 'clamp' },
+		normal: { width: size, height: size, data: normalData, wrap: 'repeat', wrapS: 'repeat', wrapT: 'clamp' },
 	};
 	textureCache.set( textureKey, copyTexturePair( textures ) );
 	if ( textureCache.size > 4 ) textureCache.delete( textureCache.keys().next().value! );
