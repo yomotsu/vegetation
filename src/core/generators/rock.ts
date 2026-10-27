@@ -1,6 +1,6 @@
 import { createRockTextures } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
-import { applyRockSurfaceShading, applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, clamp, createRockHullShape, getBounds, getMinimumY, liftMesh, limitRockPeakSharpness, removeRockBottomCap, recomputeCreasedNormals, sinkMesh } from '../rockGeometry';
+import { applyRockSurfaceShading, applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, clamp, createRockHullShape, getBounds, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, removeRockBottomCap, recomputeCreasedNormals, sinkMesh } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -103,9 +103,10 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	sinkMesh( colliderMesh, burialHeight, Number.NEGATIVE_INFINITY );
 	const collider = buildCollider( colliderMesh );
-	recomputeCreasedNormals( lod0, 35 );
-	recomputeCreasedNormals( lod1, 35 );
-	recomputeCreasedNormals( lod2, 35 );
+	const creaseOutsideScoops = ( position: [ number, number, number ] ): boolean => ! isRockScoopInterior( position, shape, groundOffset - burialHeight );
+	recomputeCreasedNormals( lod0, 35, creaseOutsideScoops );
+	recomputeCreasedNormals( lod1, 35, creaseOutsideScoops );
+	recomputeCreasedNormals( lod2, 35, creaseOutsideScoops );
 	applyRockSurfaceShading( lod0 );
 	applyRockSurfaceShading( lod1 );
 	applyRockSurfaceShading( lod2 );
@@ -135,7 +136,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		impostorPart(),
 	];
 	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }`;
-	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey );
+	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight } );
 
 	return {
 		kind: 'rock',

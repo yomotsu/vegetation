@@ -368,6 +368,12 @@ export function smoothstep( minimum: number, maximum: number, value: number ): n
 
 }
 
+export function getRockScoopInfluence( angularDistance: number, angularRadius: number ): number {
+
+	return 1 - smoothstep( 0, angularRadius, angularDistance );
+
+}
+
 export function createRockRandom( seed: number ): () => number {
 
 	let state = ( Math.floor( Math.abs( seed ) * 1000 ) + 0x6d2b79f5 ) >>> 0;
@@ -396,8 +402,50 @@ export interface RockHullShape {
 	directions: Vec3[];
 	radii: Vec3;
 	rotationY: number;
+	tiltX: number;
+	tiltZ: number;
+	translation: Vec3;
 	scoops: RockScoop[];
 	size: number;
+}
+
+function transformRockPositionToLocal( position: Vec3, rotationY: number, tiltX: number, tiltZ: number, translation: Vec3 = [ 0, 0, 0 ] ): Vec3 {
+
+	const cosineY = Math.cos( rotationY );
+	const sineY = Math.sin( rotationY );
+	const translatedX = position[ 0 ] - translation[ 0 ];
+	const translatedY = position[ 1 ] - translation[ 1 ];
+	const translatedZ = position[ 2 ] - translation[ 2 ];
+	const yawX = translatedX * cosineY - translatedZ * sineY;
+	const yawZ = translatedX * sineY + translatedZ * cosineY;
+	const cosineZ = Math.cos( tiltZ );
+	const sineZ = Math.sin( tiltZ );
+	const tiltZX = yawX * cosineZ + translatedY * sineZ;
+	const tiltZY = - yawX * sineZ + translatedY * cosineZ;
+	const cosineX = Math.cos( tiltX );
+	const sineX = Math.sin( tiltX );
+	const localY = tiltZY * cosineX + yawZ * sineX;
+	const localZ = - tiltZY * sineX + yawZ * cosineX;
+
+	return [ tiltZX, localY, localZ ];
+
+}
+
+function transformRockNormalToWorld( normal: Vec3, rotationY: number, tiltX: number, tiltZ: number ): Vec3 {
+
+	const cosineX = Math.cos( tiltX );
+	const sineX = Math.sin( tiltX );
+	const tiltXY = normal[ 1 ] * cosineX - normal[ 2 ] * sineX;
+	const tiltXZ = normal[ 1 ] * sineX + normal[ 2 ] * cosineX;
+	const cosineZ = Math.cos( tiltZ );
+	const sineZ = Math.sin( tiltZ );
+	const tiltZX = normal[ 0 ] * cosineZ - tiltXY * sineZ;
+	const tiltZY = normal[ 0 ] * sineZ + tiltXY * cosineZ;
+	const cosineY = Math.cos( rotationY );
+	const sineY = Math.sin( rotationY );
+
+	return [ tiltZX * cosineY + tiltXZ * sineY, tiltZY, - tiltZX * sineY + tiltXZ * cosineY ];
+
 }
 
 function getMinimumHullFaceAngle( points: Vec3[], faces = buildConvexHullFaces( points ) ): number {
@@ -652,6 +700,7 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 	const count = 64 + Math.floor( random() * 5 );
 	const jitter = Math.min( 0.18, 0.1 + clamp( roughness, 0, 1.5 ) * 0.0666667 );
 	let radii: Vec3 = [ radiusX, radiusY, radiusZ ];
+	let translation: Vec3 = [ 0, 0, 0 ];
 	let directions: Vec3[] = [];
 	let points: Vec3[] = [];
 	const visibleFacetLimits = [ 20, 34 ];
@@ -684,7 +733,7 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 
 	}
 
-	const scoopRandom = createRockRandom( seed + 13721 );
+	const scoopRandom = createRockRandom( seed + 13725 );
 	const scoops: RockScoop[] = [];
 
 	if ( scoopRandom() < 0.43 ) {
@@ -704,7 +753,7 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 				const localX = horizontal * Math.cos( angle );
 				const localZ = horizontal * Math.sin( angle );
 				candidate.push( {
-					direction: [ localX * cosine + localZ * sine, y, - localX * sine + localZ * cosine ],
+					direction: [ localX, y, localZ ],
 					angularRadius: 0.85 + candidateRandom() * 0.15,
 					depth: size * ( 0.17 + candidateRandom() * 0.04 ),
 				} );
@@ -712,7 +761,7 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 			}
 
 			scoops.splice( 0, scoops.length, ...candidate );
-			const scoopPoints = points.map( ( point ) => applyRockScoops( point, radii, rotationY, scoops ) );
+			const scoopPoints = points.map( ( point ) => applyRockScoops( point, radii, rotationY, scoops, tiltX, tiltZ ) );
 			const visibleFacets = getVisibleHullRegionCount( scoopPoints, hullFaces );
 			if ( visibleFacets < 15 || visibleFacets > 30 ) continue;
 			if ( getMinimumHullFaceAngle( scoopPoints, hullFaces ) >= 12 * Math.PI / 180 ) break;
@@ -736,7 +785,6 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 
 			points = points.map( rotateY );
 			directions = directions.map( rotateY );
-			for ( const scoop of scoops ) scoop.direction = rotateY( scoop.direction );
 			rotationY += correction;
 			break;
 
@@ -770,6 +818,7 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 
 	if ( horizontalScale < 1 || verticalScale < 1 ) {
 
+		translation = [ centerX * ( 1 - horizontalScale ), centerY * ( 1 - verticalScale ), centerZ * ( 1 - horizontalScale ) ];
 		points = points.map( ( point ) => [
 			centerX + ( point[ 0 ] - centerX ) * horizontalScale,
 			centerY + ( point[ 1 ] - centerY ) * verticalScale,
@@ -779,32 +828,58 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 
 	}
 
-	return { points, directions, radii, rotationY, scoops, size };
+	return { points, directions, radii, rotationY, tiltX, tiltZ, translation, scoops, size };
 
 }
 
-function applyRockScoops( position: Vec3, radii: Vec3, rotationY: number, scoops: RockScoop[] ): Vec3 {
-
-	if ( scoops.length === 0 ) return position;
-	const cosine = Math.cos( rotationY );
-	const sine = Math.sin( rotationY );
-	const localPosition: Vec3 = [ position[ 0 ] * cosine - position[ 2 ] * sine, position[ 1 ], position[ 0 ] * sine + position[ 2 ] * cosine ];
-	const scaled = normalizeDirection( [ localPosition[ 0 ] / radii[ 0 ], localPosition[ 1 ] / radii[ 1 ], localPosition[ 2 ] / radii[ 2 ] ] );
-	const surfaceNormal = normalizeDirection( [ scaled[ 0 ] / radii[ 0 ], scaled[ 1 ] / radii[ 1 ], scaled[ 2 ] / radii[ 2 ] ] );
+function getRockScoopDepthFromDirection( scaled: Vec3, scoops: RockScoop[] ): number {
 	let depth = 0;
 
 	for ( const scoop of scoops ) {
 
 		const dot = clamp( scaled[ 0 ] * scoop.direction[ 0 ] + scaled[ 1 ] * scoop.direction[ 1 ] + scaled[ 2 ] * scoop.direction[ 2 ], - 1, 1 );
 		const angle = Math.acos( dot );
-		const influence = 1 - smoothstep( scoop.angularRadius * 0.35, scoop.angularRadius, angle );
+		const influence = getRockScoopInfluence( angle, scoop.angularRadius );
 		depth = Math.max( depth, scoop.depth * influence );
 
 	}
+	return depth;
 
-	const normalX = surfaceNormal[ 0 ] * cosine + surfaceNormal[ 2 ] * sine;
-	const normalZ = - surfaceNormal[ 0 ] * sine + surfaceNormal[ 2 ] * cosine;
-	return [ position[ 0 ] - normalX * depth, position[ 1 ] - surfaceNormal[ 1 ] * depth, position[ 2 ] - normalZ * depth ];
+}
+
+function getRockScoopDepth( position: Vec3, radii: Vec3, rotationY: number, scoops: RockScoop[], tiltX = 0, tiltZ = 0, translation: Vec3 = [ 0, 0, 0 ] ): number {
+
+	if ( scoops.length === 0 ) return 0;
+	const localPosition = transformRockPositionToLocal( position, rotationY, tiltX, tiltZ, translation );
+	const scaled = normalizeDirection( [ localPosition[ 0 ] / radii[ 0 ], localPosition[ 1 ] / radii[ 1 ], localPosition[ 2 ] / radii[ 2 ] ] );
+	return getRockScoopDepthFromDirection( scaled, scoops );
+
+}
+
+export function isRockScoopInterior( position: Vec3, shape: RockHullShape, verticalOffset = 0 ): boolean {
+
+	const restored: Vec3 = [ position[ 0 ], position[ 1 ] - verticalOffset, position[ 2 ] ];
+	const localPosition = transformRockPositionToLocal( restored, shape.rotationY, shape.tiltX, shape.tiltZ, shape.translation );
+	const scaled = normalizeDirection( [ localPosition[ 0 ] / shape.radii[ 0 ], localPosition[ 1 ] / shape.radii[ 1 ], localPosition[ 2 ] / shape.radii[ 2 ] ] );
+
+	return shape.scoops.some( ( scoop ) => {
+
+		const dot = clamp( scaled[ 0 ] * scoop.direction[ 0 ] + scaled[ 1 ] * scoop.direction[ 1 ] + scaled[ 2 ] * scoop.direction[ 2 ], - 1, 1 );
+		return dot > Math.cos( scoop.angularRadius * 0.98 );
+
+	} );
+
+}
+
+function applyRockScoops( position: Vec3, radii: Vec3, rotationY: number, scoops: RockScoop[], tiltX = 0, tiltZ = 0, translation: Vec3 = [ 0, 0, 0 ] ): Vec3 {
+
+	if ( scoops.length === 0 ) return position;
+	const localPosition = transformRockPositionToLocal( position, rotationY, tiltX, tiltZ, translation );
+	const scaled = normalizeDirection( [ localPosition[ 0 ] / radii[ 0 ], localPosition[ 1 ] / radii[ 1 ], localPosition[ 2 ] / radii[ 2 ] ] );
+	const surfaceNormal = normalizeDirection( [ scaled[ 0 ] / radii[ 0 ], scaled[ 1 ] / radii[ 1 ], scaled[ 2 ] / radii[ 2 ] ] );
+	const depth = getRockScoopDepthFromDirection( scaled, scoops );
+	const worldNormal = transformRockNormalToWorld( surfaceNormal, rotationY, tiltX, tiltZ );
+	return [ position[ 0 ] - worldNormal[ 0 ] * depth, position[ 1 ] - worldNormal[ 1 ] * depth, position[ 2 ] - worldNormal[ 2 ] * depth ];
 
 }
 
@@ -851,71 +926,22 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 		edgeOffsets.set( key, normalizeDirection( normal ) );
 
 	}
-	const scoopFaceDepths = new Map<number, number>();
-	const scoopVertexOffsets = new Map<string, Vec3>();
-	const addScoopOffset = ( key: string, offset: Vec3 ): void => {
+	const scoopGridFaces = new Set<number>();
 
-		const current = scoopVertexOffsets.get( key ) ?? [ 0, 0, 0 ];
-		scoopVertexOffsets.set( key, [ current[ 0 ] + offset[ 0 ], current[ 1 ] + offset[ 1 ], current[ 2 ] + offset[ 2 ] ] );
+	if ( subdivision === 3 && shape.scoops.length > 0 ) {
 
-	};
+		const scoopGridCandidates = faces.map( ( face, faceIndex ) => {
 
-	for ( const scoop of shape.scoops ) {
+			const center: Vec3 = [ 0, 1, 2 ].map( ( axis ) => ( shape.points[ face[ 0 ] ]![ axis ]! + shape.points[ face[ 1 ] ]![ axis ]! + shape.points[ face[ 2 ] ]![ axis ]! ) / 3 ) as Vec3;
+			return { faceIndex, depth: getRockScoopDepth( center, shape.radii, shape.rotationY, shape.scoops, shape.tiltX, shape.tiltZ, shape.translation ) };
 
-		let selectedFace = - 1;
-		let selectedAltitude = 0;
-		let selectedScore = - Infinity;
+		} )
+			.filter( ( candidate ) => candidate.depth > shape.size * 0.04 )
+			.sort( ( first, second ) => second.depth - first.depth );
 
-		for ( let faceIndex = 0; faceIndex < faces.length; faceIndex ++ ) {
-
-			if ( scoopFaceDepths.has( faceIndex ) ) continue;
-			const face = faces[ faceIndex ]!;
-			const first = shape.points[ face[ 0 ] ]!;
-			const second = shape.points[ face[ 1 ] ]!;
-			const third = shape.points[ face[ 2 ] ]!;
-			const centerY = ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3;
-			if ( centerY <= 0 ) continue;
-			const normal = faceNormals[ faceIndex ]!;
-			const alignment = normal[ 0 ] * scoop.direction[ 0 ] + normal[ 1 ] * scoop.direction[ 1 ] + normal[ 2 ] * scoop.direction[ 2 ];
-			if ( alignment < 0.25 ) continue;
-			const lengths = [
-				Math.hypot( first[ 0 ] - second[ 0 ], first[ 1 ] - second[ 1 ], first[ 2 ] - second[ 2 ] ),
-				Math.hypot( second[ 0 ] - third[ 0 ], second[ 1 ] - third[ 1 ], second[ 2 ] - third[ 2 ] ),
-				Math.hypot( third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ),
-			];
-			const edge: Vec3 = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
-			const other: Vec3 = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
-			const areaTwice = Math.hypot( edge[ 1 ] * other[ 2 ] - edge[ 2 ] * other[ 1 ], edge[ 2 ] * other[ 0 ] - edge[ 0 ] * other[ 2 ], edge[ 0 ] * other[ 1 ] - edge[ 1 ] * other[ 0 ] );
-			const altitude = areaTwice / Math.max( ...lengths );
-			const score = alignment + Math.min( altitude / shape.size, 0.6 ) * 0.35;
-
-			if ( score > selectedScore ) {
-				selectedFace = faceIndex;
-				selectedAltitude = altitude;
-				selectedScore = score;
-			}
-
-		}
-
-		if ( selectedFace < 0 ) continue;
-		const depth = Math.min( scoop.depth, selectedAltitude * 0.9 );
-		if ( depth < shape.size * 0.12 ) continue;
-		scoopFaceDepths.set( selectedFace, depth );
-		const face = faces[ selectedFace ]!;
-		const normal = faceNormals[ selectedFace ]!;
-		addScoopOffset( `f:${ selectedFace }`, [ - normal[ 0 ] * depth, - normal[ 1 ] * depth, - normal[ 2 ] * depth ] );
-
-		for ( let edge = 0; edge < 3; edge ++ ) {
-
-			const first = face[ edge ]!;
-			const second = face[ ( edge + 1 ) % 3 ]!;
-			const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
-			addScoopOffset( `e:${ key }`, [ - normal[ 0 ] * depth * 0.12, - normal[ 1 ] * depth * 0.12, - normal[ 2 ] * depth * 0.12 ] );
-
-		}
+		for ( const candidate of scoopGridCandidates.slice( 0, 8 ) ) scoopGridFaces.add( candidate.faceIndex );
 
 	}
-
 	const positions: Vec3[] = [];
 	const vertexKeys = new Map<string, number>();
 	const triangles: [ number, number, number ][] = [];
@@ -924,9 +950,9 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 
 		const existing = vertexKeys.get( key );
 		if ( existing !== undefined ) return existing;
-		const scooped = scoopVertexOffsets.get( key ) ?? [ 0, 0, 0 ];
+		const scooped = applyRockScoops( position, shape.radii, shape.rotationY, shape.scoops, shape.tiltX, shape.tiltZ, shape.translation );
 		const index = positions.length;
-		positions.push( [ position[ 0 ] + scooped[ 0 ] - inset[ 0 ] * amount, position[ 1 ] + scooped[ 1 ] - inset[ 1 ] * amount, position[ 2 ] + scooped[ 2 ] - inset[ 2 ] * amount ] );
+		positions.push( [ scooped[ 0 ] - inset[ 0 ] * amount, scooped[ 1 ] - inset[ 1 ] * amount, scooped[ 2 ] - inset[ 2 ] * amount ] );
 		vertexKeys.set( key, index );
 		return index;
 
@@ -986,7 +1012,7 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 			return getVertex( `e:${ key }`, midpoint, edgeOffsets.get( key )!, bevelWidth );
 
 		} );
-		const scoopGrid = subdivision === 3 && scoopFaceDepths.has( faceIndex );
+		const scoopGrid = subdivision === 3 && scoopGridFaces.has( faceIndex );
 		const useSixTriangles = subdivision === 2 || ( subdivision === 3 && ( scoopGrid || faceArea >= shape.size * shape.size * 0.12 ) );
 
 		if ( useSixTriangles ) {

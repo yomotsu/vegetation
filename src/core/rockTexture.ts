@@ -1,5 +1,6 @@
 import type { MeshData, TextureData, Vec3 } from './types';
-import { createRockFacetNormals } from './rockGeometry';
+import { createRockFacetNormals, isRockScoopInterior } from './rockGeometry';
+import type { RockHullShape } from './rockGeometry';
 
 type NoiseSampler = ( u: number, v: number ) => number;
 
@@ -565,7 +566,7 @@ function createCrackDistanceMap( size: number, paths: RockCrackPath[] ): { dista
 
 function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
 
-	const target = [ 144, 158, 172 ];
+	const target = [ 109, 124, 141 ];
 	const total = [ 0, 0, 0 ];
 
 	for ( let offset = 0; offset < data.length; offset += 4 ) {
@@ -588,7 +589,7 @@ function matchAlbedoMean( data: Uint8Array, pixelCount: number ): void {
 
 }
 
-function getTextureFacetNormals( seed: number, mesh?: MeshData ): Vec3[] {
+function getTextureFacetNormals( seed: number, mesh?: MeshData, scoopShape?: RockHullShape, scoopVerticalOffset = 0 ): Vec3[] {
 
 	if ( mesh === undefined ) return createRockFacetNormals( seed );
 
@@ -606,6 +607,8 @@ function getTextureFacetNormals( seed: number, mesh?: MeshData ): Vec3[] {
 		const area = Math.hypot( cross[ 0 ], cross[ 1 ], cross[ 2 ] ) * 0.5;
 		if ( area <= 1e-9 ) continue;
 
+		const center: Vec3 = [ ( mesh.positions[ first ]! + mesh.positions[ second ]! + mesh.positions[ third ]! ) / 3, ( mesh.positions[ first + 1 ]! + mesh.positions[ second + 1 ]! + mesh.positions[ third + 1 ]! ) / 3, ( mesh.positions[ first + 2 ]! + mesh.positions[ second + 2 ]! + mesh.positions[ third + 2 ]! ) / 3 ];
+		if ( scoopShape !== undefined && isRockScoopInterior( center, scoopShape, scoopVerticalOffset ) ) continue;
 		const normal: Vec3 = [ cross[ 0 ] / ( area * 2 ), cross[ 1 ] / ( area * 2 ), cross[ 2 ] / ( area * 2 ) ];
 		const cluster = clusters.find( ( candidate ) => {
 
@@ -654,7 +657,7 @@ function getTextureFacetNormals( seed: number, mesh?: MeshData ): Vec3[] {
 
 }
 
-export function createRockTextures( seed: number, size = 1024, shapeSeed = seed, shapeMesh?: MeshData, shapeVariant?: string ): { albedo: TextureData; normal: TextureData } {
+export function createRockTextures( seed: number, size = 1024, shapeSeed = seed, shapeMesh?: MeshData, shapeVariant?: string, scoopShape?: { shape: RockHullShape; verticalOffset: number } ): { albedo: TextureData; normal: TextureData } {
 
 	const seedKey = Math.floor( Math.abs( seed ) * 1000 );
 	const shapeKey = Math.floor( Math.abs( shapeSeed ) * 1000 );
@@ -686,13 +689,13 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	const fineBandNoise = createPeriodicNoise1D( seedOffset + 73, bandCount * 5 );
 	const detailMaskNoise = createPeriodicNoise( seedOffset + 113, 3, 3, size );
 	const streakNoise = createPeriodicNoise( seedOffset + 127, 12, 48, size );
-	const facetNormals = [ ...getTextureFacetNormals( shapeSeed, shapeMesh ), [ 0, - 1, 0 ] as Vec3 ];
+	const facetNormals = [ ...getTextureFacetNormals( shapeSeed, shapeMesh, scoopShape?.shape, scoopShape?.verticalOffset ), [ 0, - 1, 0 ] as Vec3 ];
 	const facetValues: Vec3[] = [];
 	const facetHues: [ number, number, number ][] = [];
 	const facetBrushes: [ number, number ][] = [];
-	const downwardStone: Vec3 = [ 111, 131, 150 ];
-	const sideStone: Vec3 = [ 159, 176, 192 ];
-	const topStone: Vec3 = [ 223, 230, 236 ];
+	const downwardStone: Vec3 = [ 40, 62, 92 ];
+	const sideStone: Vec3 = [ 112, 130, 151 ];
+	const topStone: Vec3 = [ 229, 234, 241 ];
 
 	for ( const normal of facetNormals ) {
 
@@ -703,10 +706,10 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 		if ( normal[ 1 ] < - 0.12 ) {
 			low = downwardStone;
 			high = downwardStone;
-		} else if ( normal[ 1 ] < 0 ) {
+		} else if ( normal[ 1 ] < 0.22 ) {
 			low = downwardStone;
 			high = sideStone;
-			amount = smoothstep( - 0.12, 0, normal[ 1 ] );
+			amount = smoothstep( - 0.12, 0.22, normal[ 1 ] );
 		} else if ( normal[ 1 ] < 0.58 ) {
 			low = sideStone;
 			high = sideStone;

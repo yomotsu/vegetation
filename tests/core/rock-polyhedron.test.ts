@@ -3,7 +3,7 @@ import { generateRockData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { minimumRockApexAngle } from '../helpers/rockSharpness';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
-import { buildConvexHullFaces, buildRockHullMesh, createRockHullShape } from '../../src/core/rockGeometry';
+import { buildConvexHullFaces, buildRockHullMesh, createRockHullShape, getRockScoopInfluence, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';
 
 function vertexCount( mesh: MeshData ): number {
 
@@ -188,11 +188,11 @@ function getVisiblePlaneRegions( seed: number ): { normal: [ number, number, num
 
 }
 
-function getMeshFacetLuminance( data: ReturnType<typeof generateRockData>, minimumNormalY: number, maximumNormalY: number ): number {
+function getMeshFacetColorMean( data: ReturnType<typeof generateRockData>, minimumNormalY: number, maximumNormalY: number ): [ number, number, number ] {
 
 	const texture = data.textures.albedo!;
 	const mesh = data.lods[ 0 ]!;
-	let total = 0;
+	const total: [ number, number, number ] = [ 0, 0, 0 ];
 	let areaTotal = 0;
 
 	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
@@ -208,12 +208,19 @@ function getMeshFacetLuminance( data: ReturnType<typeof generateRockData>, minim
 		const u = ( ( uValues.reduce( ( sum, value ) => sum + value, 0 ) / 3 ) % 1 + 1 ) % 1;
 		const v = Math.max( 0, Math.min( 1, vertices.reduce( ( sum, vertex ) => sum + mesh.uvs[ vertex * 2 + 1 ]! / 3, 0 ) ) );
 		const pixel = ( Math.min( texture.height - 1, Math.floor( v * texture.height ) ) * texture.width + Math.floor( u * texture.width ) ) * 4;
-		total += ( texture.data[ pixel ]! * 0.2126 + texture.data[ pixel + 1 ]! * 0.7152 + texture.data[ pixel + 2 ]! * 0.0722 ) * triangle.area;
+		for ( let channel = 0; channel < 3; channel ++ ) total[ channel ] = total[ channel ]! + texture.data[ pixel + channel ]! * triangle.area;
 		areaTotal += triangle.area;
 
 	}
 
-	return total / areaTotal;
+	return total.map( ( value ) => value / areaTotal ) as [ number, number, number ];
+
+}
+
+function getMeshFacetLuminance( data: ReturnType<typeof generateRockData>, minimumNormalY: number, maximumNormalY: number ): number {
+
+	const color = getMeshFacetColorMean( data, minimumNormalY, maximumNormalY );
+	return color[ 0 ] * 0.2126 + color[ 1 ] * 0.7152 + color[ 2 ] * 0.0722;
 
 }
 
@@ -348,7 +355,7 @@ describe( 'irregular polyhedron rocks', () => {
 
 	} );
 
-	it( 'keeps the light blue-grey albedo in the measured reference range', () => {
+	it( 'keeps the darker cool blue-grey albedo in the target range', () => {
 
 		withSharedRockTextures( () => {
 
@@ -361,29 +368,72 @@ describe( 'irregular polyhedron rocks', () => {
 
 			}
 
-			expect( mean[ 0 ]! ).toBeGreaterThan( 130 );
-			expect( mean[ 1 ]! ).toBeGreaterThan( 145 );
-			expect( mean[ 2 ]! ).toBeGreaterThan( 158 );
+			expect( mean[ 0 ]! ).toBeGreaterThanOrEqual( 105 );
+			expect( mean[ 0 ]! ).toBeLessThanOrEqual( 120 );
+			expect( mean[ 1 ]! ).toBeGreaterThanOrEqual( 118 );
+			expect( mean[ 1 ]! ).toBeLessThanOrEqual( 133 );
+			expect( mean[ 2 ]! ).toBeGreaterThanOrEqual( 134 );
+			expect( mean[ 2 ]! ).toBeLessThanOrEqual( 150 );
 
 		} );
 
 	} );
 
-	it( 'bakes distinct top, side, and downward facet values into the albedo', () => {
+	it( 'bakes strong top, side, and downward value steps into the albedo', () => {
 
 		withSharedRockTextures( () => {
 			const data = generateRockData( { seed: 1 } );
 			const top = getMeshFacetLuminance( data, 0.65, 0.98 );
 			const side = getMeshFacetLuminance( data, 0.2, 0.55 );
 			const downward = getMeshFacetLuminance( data, - 0.95, - 0.4 );
+			const sideColor = getMeshFacetColorMean( data, 0.2, 0.55 );
+			const downwardColor = getMeshFacetColorMean( data, - 0.95, - 0.4 );
 
-			expect( top, 'top facet albedo' ).toBeGreaterThan( 195 );
-			expect( side, 'side facet albedo' ).toBeGreaterThanOrEqual( 165 );
-			expect( side, 'side facet albedo' ).toBeLessThanOrEqual( 185 );
-			expect( downward, 'downward facet albedo' ).toBeLessThan( 150 );
-			expect( top - side, 'top to side contrast' ).toBeGreaterThanOrEqual( 30 );
-			expect( side - downward, 'side to downward contrast' ).toBeGreaterThanOrEqual( 20 );
+			expect( top, 'top facet albedo' ).toBeGreaterThan( 185 );
+			expect( side, 'side facet albedo' ).toBeGreaterThanOrEqual( 115 );
+			expect( side, 'side facet albedo' ).toBeLessThanOrEqual( 145 );
+			expect( downward, 'downward facet albedo' ).toBeLessThan( 112 );
+			expect( top - side, 'top to side contrast' ).toBeGreaterThanOrEqual( 55 );
+			expect( side - downward, 'side to downward contrast' ).toBeGreaterThanOrEqual( 25 );
+			expect( downwardColor[ 2 ]! - downwardColor[ 0 ]!, 'cooler tint in shadow facets' ).toBeGreaterThan( sideColor[ 2 ]! - sideColor[ 0 ]! );
 		} );
+
+	} );
+
+	it( 'samples each hollow as a smooth bowl with a feathered rim', () => {
+
+		const influence = [ 0, 0.25, 0.5, 0.75, 1 ].map( ( amount ) => getRockScoopInfluence( amount, 1 ) );
+
+		expect( influence[ 0 ] ).toBe( 1 );
+		expect( influence[ 1 ] ).toBeCloseTo( 0.84375, 5 );
+		expect( influence[ 2 ] ).toBeCloseTo( 0.5, 5 );
+		expect( influence[ 3 ] ).toBeCloseTo( 0.15625, 5 );
+		expect( influence[ 4 ] ).toBe( 0 );
+		expect( Math.abs( getRockScoopInfluence( 0.01, 1 ) - 1 ) ).toBeLessThan( 0.001 );
+		expect( getRockScoopInfluence( 0.99, 1 ) ).toBeLessThan( 0.001 );
+
+		const shape = createRockHullShape( 65, 6.4, 1.2, 0.04 );
+		const faces = buildConvexHullFaces( shape.points );
+		const mesh = buildRockHullMesh( shape, faces, 3, 0 );
+		recomputeCreasedNormals( mesh, 35, ( position ) => ! isRockScoopInterior( position, shape ) );
+		const normalsByPosition = new Map<string, { count: number; normals: Set<string> }>();
+
+		for ( let vertex = 0; vertex < vertexCount( mesh ); vertex ++ ) {
+
+			const offset = vertex * 3;
+			const position = [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ] as [ number, number, number ];
+			if ( ! isRockScoopInterior( position, shape ) ) continue;
+			const key = position.map( ( value ) => value.toFixed( 6 ) ).join( ',' );
+			const group = normalsByPosition.get( key ) ?? { count: 0, normals: new Set<string>() };
+			group.count ++;
+			group.normals.add( [ mesh.normals[ offset ]!, mesh.normals[ offset + 1 ]!, mesh.normals[ offset + 2 ]! ].map( ( value ) => value.toFixed( 4 ) ).join( ',' ) );
+			normalsByPosition.set( key, group );
+
+		}
+
+		const repeatedInterior = Array.from( normalsByPosition.values() ).filter( ( group ) => group.count > 1 );
+		expect( repeatedInterior.length ).toBeGreaterThan( 0 );
+		expect( repeatedInterior.every( ( group ) => group.normals.size === 1 ) ).toBe( true );
 
 	} );
 

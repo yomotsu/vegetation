@@ -8,7 +8,7 @@ import type { Color3, MeshData, PartDef, Vec3, VegetationData } from '../types';
 const DEFAULT_COUNT = 16;
 const MAX_COUNT = 30;
 const MAX_LOD0_VERTICES = 240;
-const FAR_PEBBLE_COLOR_FACTOR = 0.735;
+const FAR_PEBBLE_COLOR_FACTOR = 0.66;
 const PEBBLES_SEED_SALT = 173;
 
 export interface PebblesOptions {

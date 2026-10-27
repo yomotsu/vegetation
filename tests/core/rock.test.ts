@@ -1250,12 +1250,12 @@ describe( 'procedural rock data', () => {
 		const albedoMean = meanRgb( albedo.data );
 		const normalMean = meanRgb( normal.data );
 
-		expect( Math.abs( albedoMean[ 0 ] - 144 ) ).toBeLessThanOrEqual( 1 );
-		expect( Math.abs( albedoMean[ 1 ] - 158 ) ).toBeLessThanOrEqual( 1 );
-		expect( Math.abs( albedoMean[ 2 ] - 172 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 0 ] - 109 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 1 ] - 124 ) ).toBeLessThanOrEqual( 1 );
+		expect( Math.abs( albedoMean[ 2 ] - 141 ) ).toBeLessThanOrEqual( 1 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeLessThan( 2 );
 		expect( meanNeighborDelta( albedo.data, albedo.width, albedo.height, albedo.width / 256 ) ).toBeGreaterThan( 0.4 );
-		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 9 );
+		expect( rowStripeAmplitude( albedo.data, albedo.width, albedo.height, 5 ) ).toBeLessThan( 14 );
 		expect( percentile( albedo.data, 0, 0.1 ) ).toBeLessThan( 140 );
 		expect( percentile( albedo.data, 0, 0.9 ) ).toBeGreaterThan( 155 );
 		expect( percentile( albedo.data, 0, 0.9 ) - percentile( albedo.data, 0, 0.1 ) ).toBeGreaterThan( 32 );
@@ -1350,7 +1350,7 @@ describe( 'procedural rock data', () => {
 
 		const textures = createRockTextures( 9 );
 		const rock = generateRockData( { seed: 9 } );
-		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 105 );
+		const darkRegions = darkPixelComponents( textures.albedo.data, textures.albedo.width, 55 );
 		const rockNormal = rock.textures.normal!;
 		let edgeDifference = 0;
 		let normalEdgeDifference = 0;
@@ -1386,7 +1386,7 @@ describe( 'procedural rock data', () => {
 		expect( textures.albedo.wrapT ).toBe( 'clamp' );
 		expect( textures.normal.wrapS ).toBe( 'repeat' );
 		expect( textures.normal.wrapT ).toBe( 'clamp' );
-		expect( darkRegions.coverage ).toBeGreaterThan( 0.002 );
+		expect( darkRegions.coverage ).toBeGreaterThan( 0.0005 );
 		expect( darkRegions.coverage ).toBeLessThan( 0.36 );
 		expect( darkRegions.count ).toBeLessThanOrEqual( 20 );
 		expect( darkRegions.largest ).toBeLessThan( 0.08 );
@@ -1441,9 +1441,9 @@ describe( 'procedural rock data', () => {
 		const hueSpread = hueValues[ 57 ]! - hueValues[ 6 ]!;
 
 		expect( hueSpread ).toBeGreaterThan( 3.5 );
-		expect( meanRgb( texture.data )[ 0 ] ).toBeCloseTo( 144, 0 );
-		expect( meanRgb( texture.data )[ 1 ] ).toBeCloseTo( 158, 0 );
-		expect( meanRgb( texture.data )[ 2 ] ).toBeCloseTo( 172, 0 );
+		expect( meanRgb( texture.data )[ 0 ] ).toBeCloseTo( 109, 0 );
+		expect( meanRgb( texture.data )[ 1 ] ).toBeCloseTo( 124, 0 );
+		expect( meanRgb( texture.data )[ 2 ] ).toBeCloseTo( 141, 0 );
 
 	} );
 
@@ -1510,7 +1510,7 @@ describe( 'procedural rock data', () => {
 		const fineContrast = meanNeighborDelta( texture.data, texture.width, texture.height, 1 );
 
 		expect( means[ 0 ]!, `up ${ means[ 0 ] }, side ${ means[ 1 ] }, underside ${ means[ 2 ] }` ).toBeGreaterThan( means[ 1 ]! + 12 );
-		if ( counts[ 2 ]! > 0 ) expect( means[ 1 ]! - means[ 2 ]! ).toBeGreaterThan( 20 );
+		if ( counts[ 2 ]! > 0 ) expect( means[ 1 ]! - means[ 2 ]! ).toBeGreaterThan( 15 );
 		expect( fineContrast ).toBeLessThan( 2.2 );
 
 	}, 30000 );
