@@ -1,6 +1,6 @@
 import { createRockTextures } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
-import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, removeRockBottomCap, recomputeCreasedNormals, sinkMesh } from '../rockGeometry';
+import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, recomputeChamferedRockHullNormals, removeRockBottomCap, recomputeCreasedNormals, sinkMesh, splitChamferedRockHullVerticesAtCreases } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -105,7 +105,8 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	sinkMesh( colliderMesh, burialHeight, Number.NEGATIVE_INFINITY );
 	const collider = buildCollider( colliderMesh );
 	const creaseOutsideScoops = ( position: [ number, number, number ] ): boolean => ! isRockScoopInterior( position, shape, groundOffset - burialHeight );
-	recomputeCreasedNormals( lod0, 35, creaseOutsideScoops );
+	splitChamferedRockHullVerticesAtCreases( lod0, 35, creaseOutsideScoops );
+	recomputeChamferedRockHullNormals( lod0 );
 	recomputeCreasedNormals( lod1, 35, creaseOutsideScoops );
 	recomputeCreasedNormals( lod2, 35, creaseOutsideScoops );
 	const lod3 = buildRockHullMesh( shape, hullFaces, 0, 0, 0, false );

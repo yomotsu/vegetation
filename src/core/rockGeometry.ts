@@ -941,6 +941,52 @@ interface RockHullFacet {
 	vertices: Map<number, number>;
 }
 
+interface ChamferedRockNormalInfo {
+	vertexFacetIndices: number[];
+	scoopedVertices: Set<number>;
+	triangleFacetIndices: number[];
+	facetNormals: Vec3[];
+}
+
+const chamferedRockNormalInfo = new WeakMap<MeshData, ChamferedRockNormalInfo>();
+
+export function recomputeChamferedRockHullNormals( mesh: MeshData ): void {
+
+	const info = chamferedRockNormalInfo.get( mesh );
+	if ( info === undefined ) return;
+	const scoopNormalSums = new Map<number, Vec3>();
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+		const facetIndex = info.triangleFacetIndices[ offset / 3 ];
+		if ( facetIndex === undefined || facetIndex < 0 ) continue;
+		const first = mesh.indices[ offset ]! * 3;
+		const second = mesh.indices[ offset + 1 ]! * 3;
+		const third = mesh.indices[ offset + 2 ]! * 3;
+		const ab: Vec3 = [ mesh.positions[ second ]! - mesh.positions[ first ]!, mesh.positions[ second + 1 ]! - mesh.positions[ first + 1 ]!, mesh.positions[ second + 2 ]! - mesh.positions[ first + 2 ]! ];
+		const ac: Vec3 = [ mesh.positions[ third ]! - mesh.positions[ first ]!, mesh.positions[ third + 1 ]! - mesh.positions[ first + 1 ]!, mesh.positions[ third + 2 ]! - mesh.positions[ first + 2 ]! ];
+		const areaNormal: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+
+		for ( const vertex of [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ] ) {
+			if ( ! info.scoopedVertices.has( vertex ) ) continue;
+			const sum = scoopNormalSums.get( vertex ) ?? [ 0, 0, 0 ];
+			sum[ 0 ] += areaNormal[ 0 ];
+			sum[ 1 ] += areaNormal[ 1 ];
+			sum[ 2 ] += areaNormal[ 2 ];
+			scoopNormalSums.set( vertex, sum );
+		}
+	}
+
+	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
+		const facetIndex = info.vertexFacetIndices[ vertex ] ?? - 1;
+		const scoopNormal = scoopNormalSums.get( vertex );
+		const normal = facetIndex < 0 ? [ 0, 1, 0 ] as Vec3 : scoopNormal === undefined || Math.hypot( scoopNormal[ 0 ], scoopNormal[ 1 ], scoopNormal[ 2 ] ) < 1e-10 ? info.facetNormals[ facetIndex ]! : normalizeDirection( scoopNormal );
+		mesh.normals[ vertex * 3 ] = normal[ 0 ];
+		mesh.normals[ vertex * 3 + 1 ] = normal[ 1 ];
+		mesh.normals[ vertex * 3 + 2 ] = normal[ 2 ];
+	}
+
+}
+
 function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, number, number ][], bevelWidth: number, unwrapSeams: boolean ): ChamferedRockHullMesh {
 
 	const hullCenter: Vec3 = [ 0, 0, 0 ];
@@ -1039,27 +1085,37 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 
 	const positions: Vec3[] = [];
 	const triangles: [ number, number, number ][] = [];
+	const triangleFacetIndices: number[] = [];
+	const triangleWasFlippedToIntended: boolean[] = [];
+	const cornerFanTriangleIndices = new Set<number>();
+	const vertexFacetIndices: number[] = [];
+	const scoopedFacetVertices = facets.map( () => new Set<number>() );
+	const foldedFaceVertices = new Set<number>();
 	const vertexKeys = new Map<string, number>();
-	const getVertex = ( key: string, position: Vec3 ): number => {
+	const getVertex = ( key: string, position: Vec3, facetIndex = - 1 ): number => {
 		const existing = vertexKeys.get( key );
 		if ( existing !== undefined ) return existing;
 		const index = positions.length;
 		positions.push( position );
+		vertexFacetIndices.push( facetIndex );
 		vertexKeys.set( key, index );
 		return index;
 	};
 	const getFacetVertex = ( facetIndex: number, vertex: number ): number => {
+
 		const facet = facets[ facetIndex ]!;
 		const existing = facet.vertices.get( vertex );
 		if ( existing !== undefined ) return existing;
 		const source = shape.points[ vertex ]!;
 		const inset = facet.insets.get( vertex ) ?? [ 0, 0, 0 ];
 		const position = applyRockScoops( [ source[ 0 ] + inset[ 0 ], source[ 1 ] + inset[ 1 ], source[ 2 ] + inset[ 2 ] ], shape.radii, shape.rotationY, shape.scoops, shape.tiltX, shape.tiltZ, shape.translation );
-		const index = getVertex( `f:${ facetIndex }:v:${ vertex }`, position );
+		const index = getVertex( `f:${ facetIndex }:v:${ vertex }`, position, facetIndex );
 		facet.vertices.set( vertex, index );
 		return index;
+
 	};
-	const addOutwardTriangle = ( first: number, second: number, third: number ): void => {
+	const addOrientedTriangle = ( first: number, second: number, third: number, intendedNormal: Vec3, facetIndex = - 1 ): void => {
+
 		const a = positions[ first ]!;
 		const b = positions[ second ]!;
 		const c = positions[ third ]!;
@@ -1067,9 +1123,27 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 		const ac: Vec3 = [ c[ 0 ] - a[ 0 ], c[ 1 ] - a[ 1 ], c[ 2 ] - a[ 2 ] ];
 		const normal: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
 		if ( Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) < 1e-10 ) return;
-		const center: Vec3 = [ ( a[ 0 ] + b[ 0 ] + c[ 0 ] ) / 3, ( a[ 1 ] + b[ 1 ] + c[ 1 ] ) / 3, ( a[ 2 ] + b[ 2 ] + c[ 2 ] ) / 3 ];
-		if ( normal[ 0 ] * ( center[ 0 ] - hullCenter[ 0 ] ) + normal[ 1 ] * ( center[ 1 ] - hullCenter[ 1 ] ) + normal[ 2 ] * ( center[ 2 ] - hullCenter[ 2 ] ) < 0 ) triangles.push( [ first, third, second ] );
-		else triangles.push( [ first, second, third ] );
+		const wasFlipped = normal[ 0 ] * intendedNormal[ 0 ] + normal[ 1 ] * intendedNormal[ 1 ] + normal[ 2 ] * intendedNormal[ 2 ] < 0;
+		if ( wasFlipped ) [ second, third ] = [ third, second ];
+		triangles.push( [ first, second, third ] );
+		triangleFacetIndices.push( facetIndex );
+		triangleWasFlippedToIntended.push( wasFlipped );
+
+	};
+	const addCornerFanTriangle = ( first: number, second: number, third: number ): void => {
+
+		const a = positions[ first ]!;
+		const b = positions[ second ]!;
+		const c = positions[ third ]!;
+		const ab: Vec3 = [ b[ 0 ] - a[ 0 ], b[ 1 ] - a[ 1 ], b[ 2 ] - a[ 2 ] ];
+		const ac: Vec3 = [ c[ 0 ] - a[ 0 ], c[ 1 ] - a[ 1 ], c[ 2 ] - a[ 2 ] ];
+		const normal: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+		if ( Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) < 1e-10 ) return;
+		cornerFanTriangleIndices.add( triangles.length );
+		triangles.push( [ first, second, third ] );
+		triangleFacetIndices.push( - 1 );
+		triangleWasFlippedToIntended.push( false );
+
 	};
 
 	for ( let faceIndex = 0; faceIndex < faces.length; faceIndex ++ ) {
@@ -1103,15 +1177,16 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 				centerTarget = [ baseCenter[ 0 ] + ( scoopedCenter[ 0 ] - baseCenter[ 0 ] ) * minimum, baseCenter[ 1 ] + ( scoopedCenter[ 1 ] - baseCenter[ 1 ] ) * minimum, baseCenter[ 2 ] + ( scoopedCenter[ 2 ] - baseCenter[ 2 ] ) * minimum ];
 			}
 			const center = getVertex( `s:${ faceIndex }`, centerTarget );
-			for ( let edge = 0; edge < 3; edge ++ ) triangles.push( [ corners[ edge ]!, corners[ ( edge + 1 ) % 3 ]!, center ] );
+			vertexFacetIndices[ center ] = facetIndex;
+			for ( const vertex of [ ...corners, center ] ) scoopedFacetVertices[ facetIndex ]!.add( vertex );
+			for ( let edge = 0; edge < 3; edge ++ ) addOrientedTriangle( corners[ edge ]!, corners[ ( edge + 1 ) % 3 ]!, center, facets[ facetIndex ]!.normal, facetIndex );
 		} else {
-			triangles.push( [ corners[ 0 ]!, corners[ 1 ]!, corners[ 2 ]! ] );
+			addOrientedTriangle( corners[ 0 ]!, corners[ 1 ]!, corners[ 2 ]!, facets[ facetIndex ]!.normal, facetIndex );
 		}
 
 	}
 
 	const ridgeVertices: { firstA: number; secondA: number; firstB: number; secondB: number; sharpness: number }[] = [];
-	const cornerFanRings: number[][] = [];
 
 	for ( const edge of boundaryEdges.values() ) {
 
@@ -1126,6 +1201,7 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 		const firstB = getFacetVertex( firstFacet, edge.second );
 		const secondA = getFacetVertex( secondFacet, edge.first );
 		const secondB = getFacetVertex( secondFacet, edge.second );
+		const stripNormal = normalizeDirection( [ firstNormal[ 0 ] + secondNormal[ 0 ], firstNormal[ 1 ] + secondNormal[ 1 ], firstNormal[ 2 ] + secondNormal[ 2 ] ] );
 		const firstDiagonal = Math.min(
 			minimumTriangleAngle( positions[ firstA ]!, positions[ firstB ]!, positions[ secondB ]! ),
 			minimumTriangleAngle( positions[ firstA ]!, positions[ secondB ]!, positions[ secondA ]! ),
@@ -1135,11 +1211,11 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 			minimumTriangleAngle( positions[ firstB ]!, positions[ secondB ]!, positions[ secondA ]! ),
 		);
 		if ( firstDiagonal >= secondDiagonal ) {
-			addOutwardTriangle( firstA, firstB, secondB );
-			addOutwardTriangle( firstA, secondB, secondA );
+			addOrientedTriangle( firstA, firstB, secondB, stripNormal );
+			addOrientedTriangle( firstA, secondB, secondA, stripNormal );
 		} else {
-			addOutwardTriangle( firstA, firstB, secondA );
-			addOutwardTriangle( firstB, secondB, secondA );
+			addOrientedTriangle( firstA, firstB, secondA, stripNormal );
+			addOrientedTriangle( firstB, secondB, secondA, stripNormal );
 		}
 		ridgeVertices.push( { firstA, secondA, firstB, secondB, sharpness } );
 
@@ -1180,66 +1256,145 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 		}
 		if ( ordered.length !== connected.length ) continue;
 		const ring = ordered.map( ( facetIndex ) => getFacetVertex( facetIndex, vertex ) );
-		cornerFanRings.push( ring );
-		for ( let index = 1; index < ring.length - 1; index ++ ) addOutwardTriangle( ring[ 0 ]!, ring[ index ]!, ring[ index + 1 ]! );
+		for ( let index = 1; index < ring.length - 1; index ++ ) addCornerFanTriangle( ring[ 0 ]!, ring[ index ]!, ring[ index + 1 ]! );
 
 	}
 
+	const cornerVertexKeys = new Map<string, number>();
+	let cornerVertexCount = 0;
+	const getCornerVertexKey = ( vertex: number ): number => {
+
+		const key = positions[ vertex ]!.map( ( value ) => value.toFixed( 5 ) ).join( ',' );
+		let group = cornerVertexKeys.get( key );
+		if ( group === undefined ) {
+			group = cornerVertexCount ++;
+			cornerVertexKeys.set( key, group );
+		}
+		return group;
+
+	};
 	const edgeUses = new Map<string, { triangle: number; direction: number }[]>();
 	for ( let triangle = 0; triangle < triangles.length; triangle ++ ) {
+
 		const face = triangles[ triangle ]!;
 		for ( let edge = 0; edge < 3; edge ++ ) {
-			const first = face[ edge ]!;
-			const second = face[ ( edge + 1 ) % 3 ]!;
+
+			const first = getCornerVertexKey( face[ edge ]! );
+			const second = getCornerVertexKey( face[ ( edge + 1 ) % 3 ]! );
 			const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
 			const uses = edgeUses.get( key ) ?? [];
 			uses.push( { triangle, direction: first < second ? 1 : - 1 } );
 			edgeUses.set( key, uses );
-		}
-	}
-	const triangleNeighbors = triangles.map( () => [] as { triangle: number; sameDirection: boolean }[] );
-	for ( const uses of edgeUses.values() ) {
-		for ( let index = 0; index < uses.length; index ++ ) {
-			for ( let neighbor = index + 1; neighbor < uses.length; neighbor ++ ) {
-				const first = uses[ index ]!;
-				const second = uses[ neighbor ]!;
-				triangleNeighbors[ first.triangle ]!.push( { triangle: second.triangle, sameDirection: first.direction === second.direction } );
-				triangleNeighbors[ second.triangle ]!.push( { triangle: first.triangle, sameDirection: first.direction === second.direction } );
-			}
-		}
-	}
-	const winding = new Int8Array( triangles.length );
-	for ( let seed = 0; seed < triangles.length; seed ++ ) {
-		if ( winding[ seed ] !== 0 ) continue;
-		winding[ seed ] = 1;
-		const stack = [ seed ];
-		const component: number[] = [];
-		while ( stack.length > 0 ) {
-			const triangle = stack.pop()!;
-			component.push( triangle );
-			for ( const neighbor of triangleNeighbors[ triangle ]! ) {
-				const expected = winding[ triangle ]! * ( neighbor.sameDirection ? - 1 : 1 );
-				if ( winding[ neighbor.triangle ] === 0 ) {
-					winding[ neighbor.triangle ] = expected;
-					stack.push( neighbor.triangle );
-				}
-			}
-		}
-		let volume = 0;
-		for ( const triangle of component ) {
-			const face = triangles[ triangle ]!;
-			const first = positions[ face[ 0 ] ]!;
-			const second = positions[ face[ 1 ] ]!;
-			const third = positions[ face[ 2 ] ]!;
-			const cross: Vec3 = [ second[ 1 ] * third[ 2 ] - second[ 2 ] * third[ 1 ], second[ 2 ] * third[ 0 ] - second[ 0 ] * third[ 2 ], second[ 0 ] * third[ 1 ] - second[ 1 ] * third[ 0 ] ];
-			volume += winding[ triangle ]! * ( first[ 0 ] * cross[ 0 ] + first[ 1 ] * cross[ 1 ] + first[ 2 ] * cross[ 2 ] );
-		}
-		if ( volume < 0 ) for ( const triangle of component ) winding[ triangle ] = - winding[ triangle ]!;
-	}
-	for ( let triangle = 0; triangle < triangles.length; triangle ++ ) if ( winding[ triangle ]! < 0 ) [ triangles[ triangle ]![ 1 ], triangles[ triangle ]![ 2 ] ] = [ triangles[ triangle ]![ 2 ], triangles[ triangle ]![ 1 ] ];
 
+		}
+
+	}
+
+	const fanNeighbors = new Map<number, { triangle: number; multiplier: number }[]>();
+	const fanOrientations = new Map<number, number>();
+	for ( const uses of edgeUses.values() ) {
+
+		if ( uses.length !== 2 ) continue;
+		const first = uses[ 0 ]!;
+		const second = uses[ 1 ]!;
+		const firstIsFan = cornerFanTriangleIndices.has( first.triangle );
+		const secondIsFan = cornerFanTriangleIndices.has( second.triangle );
+		if ( firstIsFan && secondIsFan ) {
+
+			const multiplier = - first.direction * second.direction;
+			const firstNeighbors = fanNeighbors.get( first.triangle ) ?? [];
+			const secondNeighbors = fanNeighbors.get( second.triangle ) ?? [];
+			firstNeighbors.push( { triangle: second.triangle, multiplier } );
+			secondNeighbors.push( { triangle: first.triangle, multiplier } );
+			fanNeighbors.set( first.triangle, firstNeighbors );
+			fanNeighbors.set( second.triangle, secondNeighbors );
+
+		} else if ( firstIsFan || secondIsFan ) {
+
+			const fan = firstIsFan ? first : second;
+			const neighbor = firstIsFan ? second : first;
+			if ( ! fanOrientations.has( fan.triangle ) ) fanOrientations.set( fan.triangle, - fan.direction * neighbor.direction );
+
+		}
+
+	}
+	const propagateFanOrientations = ( seeds: number[] ): void => {
+
+		const pending = seeds.slice();
+		while ( pending.length > 0 ) {
+
+			const triangle = pending.pop()!;
+			const orientation = fanOrientations.get( triangle )!;
+			for ( const neighbor of fanNeighbors.get( triangle ) ?? [] ) {
+				if ( fanOrientations.has( neighbor.triangle ) ) continue;
+				fanOrientations.set( neighbor.triangle, orientation * neighbor.multiplier );
+				pending.push( neighbor.triangle );
+			}
+
+		}
+
+	};
+	propagateFanOrientations( [ ...fanOrientations.keys() ] );
+	for ( const triangle of cornerFanTriangleIndices ) {
+
+		if ( fanOrientations.has( triangle ) ) continue;
+		fanOrientations.set( triangle, 1 );
+		propagateFanOrientations( [ triangle ] );
+
+	}
+	for ( const triangle of cornerFanTriangleIndices ) {
+
+		if ( fanOrientations.get( triangle )! < 0 ) [ triangles[ triangle ]![ 1 ], triangles[ triangle ]![ 2 ] ] = [ triangles[ triangle ]![ 2 ], triangles[ triangle ]![ 1 ] ];
+
+	}
+	// 折れた面内三角形は頂点を分けて、形状に沿う法線と辺向きを保つ。
+	const fixedFoldTriangles = new Set<number>();
+	const getFinalEdgeDirection = ( use: { triangle: number; direction: number } ): number => {
+
+		const isFlipped = ( cornerFanTriangleIndices.has( use.triangle ) && fanOrientations.get( use.triangle )! < 0 ) !== fixedFoldTriangles.has( use.triangle );
+		return isFlipped ? - use.direction : use.direction;
+
+	};
+	while ( true ) {
+
+		const sharedEdgeCounts = new Map<number, number>();
+		const badEdgeCounts = new Map<number, number>();
+		for ( const uses of edgeUses.values() ) {
+
+			if ( uses.length !== 2 ) continue;
+			for ( const use of uses ) sharedEdgeCounts.set( use.triangle, ( sharedEdgeCounts.get( use.triangle ) ?? 0 ) + 1 );
+			if ( getFinalEdgeDirection( uses[ 0 ]! ) !== getFinalEdgeDirection( uses[ 1 ]! ) ) continue;
+			for ( const use of uses ) badEdgeCounts.set( use.triangle, ( badEdgeCounts.get( use.triangle ) ?? 0 ) + 1 );
+
+		}
+		const candidate = [ ...badEdgeCounts.keys() ]
+			.filter( ( triangle ) => triangleFacetIndices[ triangle ]! >= 0 && ! fixedFoldTriangles.has( triangle ) && triangleWasFlippedToIntended[ triangle ] === true && badEdgeCounts.get( triangle ) === sharedEdgeCounts.get( triangle ) )
+			.sort( ( first, second ) => badEdgeCounts.get( second )! - badEdgeCounts.get( first )! )[ 0 ];
+		if ( candidate === undefined ) break;
+		const triangle = triangles[ candidate ]!;
+		for ( let corner = 0; corner < 3; corner ++ ) {
+			const vertex = triangle[ corner ]!;
+			const duplicate = positions.length;
+			triangle[ corner ] = duplicate;
+			positions.push( [ ...positions[ vertex ]! ] );
+			vertexFacetIndices.push( vertexFacetIndices[ vertex ]! );
+			foldedFaceVertices.add( duplicate );
+		}
+		[ triangle[ 1 ], triangle[ 2 ] ] = [ triangle[ 2 ]!, triangle[ 1 ]! ];
+		fixedFoldTriangles.add( candidate );
+
+	}
 	const mesh = buildRockMeshFromFaces( positions, triangles );
-	if ( unwrapSeams ) unwrapRockUvSeams( mesh, true );
+	const scoopedVertices = new Set<number>();
+	for ( const vertices of scoopedFacetVertices ) for ( const vertex of vertices ) scoopedVertices.add( vertex );
+	for ( const vertex of foldedFaceVertices ) scoopedVertices.add( vertex );
+	const normalInfo: ChamferedRockNormalInfo = { vertexFacetIndices, scoopedVertices, triangleFacetIndices, facetNormals: facets.map( ( facet ) => facet.normal ) };
+	chamferedRockNormalInfo.set( mesh, normalInfo );
+	if ( unwrapSeams ) unwrapRockUvSeams( mesh, true, ( source, target ) => {
+		normalInfo.vertexFacetIndices[ target ] = normalInfo.vertexFacetIndices[ source ]!;
+		if ( normalInfo.scoopedVertices.has( source ) ) normalInfo.scoopedVertices.add( target );
+	} );
+	recomputeChamferedRockHullNormals( mesh );
 	const midpointUv = ( first: number, second: number ): [ number, number ] => {
 
 		const firstU = mesh.uvs[ first * 2 ]!;
@@ -1746,7 +1901,7 @@ export function buildRockMeshFromFaces( positions: Vec3[], faces: [ number, numb
 
 }
 
-function unwrapRockUvSeams( mesh: MeshData, optimizeSeam = false ): number {
+function unwrapRockUvSeams( mesh: MeshData, optimizeSeam = false, onCopy?: ( source: number, target: number ) => void ): number {
 
 	let uvOffset = 0;
 
@@ -1811,6 +1966,7 @@ function unwrapRockUvSeams( mesh: MeshData, optimizeSeam = false ): number {
 		windWeight.push( windWeight[ vertex ]! );
 		impostorCard.push( impostorCard[ vertex ]! );
 		copiedVertices.set( key, copy );
+		onCopy?.( vertex, copy );
 		return copy;
 
 	};
@@ -2031,7 +2187,9 @@ export function getProjectedMeshOutline( mesh: MeshData, samples: number, height
 
 export function removeRockBottomCap( mesh: MeshData, floor: number ): void {
 
+	const normalInfo = chamferedRockNormalInfo.get( mesh );
 	const indices: number[] = [];
+	const triangleFacetIndices: number[] = [];
 	const groups = [] as MeshData[ 'groups' ];
 
 	for ( const group of mesh.groups ) {
@@ -2044,6 +2202,7 @@ export function removeRockBottomCap( mesh: MeshData, floor: number ): void {
 			const isBottomCap = triangle.every( ( vertex ) => mesh.positions[ vertex * 3 + 1 ]! <= floor + 1e-6 );
 			if ( isBottomCap ) continue;
 			indices.push( triangle[ 0 ]!, triangle[ 1 ]!, triangle[ 2 ]! );
+			if ( normalInfo !== undefined ) triangleFacetIndices.push( normalInfo.triangleFacetIndices[ index / 3 ]! );
 
 		}
 
@@ -2062,12 +2221,18 @@ export function removeRockBottomCap( mesh: MeshData, floor: number ): void {
 	const uvs: number[] = [];
 	const colors: number[] = [];
 	const windWeight: number[] = [];
+	const vertexFacetIndices: number[] = [];
+	const scoopedVertices = new Set<number>();
 
 	for ( let vertex = 0; vertex < used.length; vertex ++ ) {
 
 		if ( used[ vertex ] === 0 ) continue;
 
 		remap[ vertex ] = positions.length / 3;
+		if ( normalInfo !== undefined ) {
+			vertexFacetIndices.push( normalInfo.vertexFacetIndices[ vertex ]! );
+			if ( normalInfo.scoopedVertices.has( vertex ) ) scoopedVertices.add( positions.length / 3 );
+		}
 		positions.push( mesh.positions[ vertex * 3 ]!, mesh.positions[ vertex * 3 + 1 ]!, mesh.positions[ vertex * 3 + 2 ]! );
 		normals.push( mesh.normals[ vertex * 3 ]!, mesh.normals[ vertex * 3 + 1 ]!, mesh.normals[ vertex * 3 + 2 ]! );
 		uvs.push( mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! );
@@ -2082,6 +2247,11 @@ export function removeRockBottomCap( mesh: MeshData, floor: number ): void {
 	mesh.colors = Float32Array.from( colors );
 	mesh.windWeight = Float32Array.from( windWeight );
 	mesh.indices = Uint32Array.from( mesh.indices, ( index ) => remap[ index ]! );
+	if ( normalInfo !== undefined ) {
+		normalInfo.vertexFacetIndices = vertexFacetIndices;
+		normalInfo.scoopedVertices = scoopedVertices;
+		normalInfo.triangleFacetIndices = triangleFacetIndices;
+	}
 
 }
 
@@ -2385,6 +2555,111 @@ export function recomputeSmoothNormals( mesh: MeshData ): void {
 		mesh.normals[ offset + 2 ] = normal[ 2 ] / length;
 
 	}
+
+}
+
+export function splitChamferedRockHullVerticesAtCreases( mesh: MeshData, creaseAngle = 20, creaseAt?: ( position: Vec3 ) => boolean ): void {
+
+	const normalInfo = chamferedRockNormalInfo.get( mesh );
+	const positions = Array.from( mesh.positions );
+	const normals = Array.from( mesh.normals );
+	const uvs = Array.from( mesh.uvs );
+	const colors = Array.from( mesh.colors );
+	const windWeight = Array.from( mesh.windWeight );
+	const indices = Array.from( mesh.indices );
+	const groups = new Map<string, { corners: { indexOffset: number; vertex: number; normal: Vec3; areaNormal: Vec3 }[] }>();
+	const creaseCosine = Math.cos( creaseAngle * Math.PI / 180 );
+
+	for ( let offset = 0; offset < indices.length; offset += 3 ) {
+		const first = indices[ offset ]! * 3;
+		const second = indices[ offset + 1 ]! * 3;
+		const third = indices[ offset + 2 ]! * 3;
+		const ab: Vec3 = [ positions[ second ]! - positions[ first ]!, positions[ second + 1 ]! - positions[ first + 1 ]!, positions[ second + 2 ]! - positions[ first + 2 ]! ];
+		const ac: Vec3 = [ positions[ third ]! - positions[ first ]!, positions[ third + 1 ]! - positions[ first + 1 ]!, positions[ third + 2 ]! - positions[ first + 2 ]! ];
+		const areaNormal: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+		const area = Math.hypot( areaNormal[ 0 ], areaNormal[ 1 ], areaNormal[ 2 ] ) || 1;
+		const normal: Vec3 = [ areaNormal[ 0 ] / area, areaNormal[ 1 ] / area, areaNormal[ 2 ] / area ];
+
+		for ( let corner = 0; corner < 3; corner ++ ) {
+			const indexOffset = offset + corner;
+			const vertex = indices[ indexOffset ]!;
+			const positionOffset = vertex * 3;
+			const key = `${ positions[ positionOffset ]!.toFixed( 6 ) },${ positions[ positionOffset + 1 ]!.toFixed( 6 ) },${ positions[ positionOffset + 2 ]!.toFixed( 6 ) }`;
+			const group = groups.get( key ) ?? { corners: [] };
+			group.corners.push( { indexOffset, vertex, normal, areaNormal } );
+			groups.set( key, group );
+		}
+	}
+
+	const vertexClusters = new Map<number, Set<number>>();
+	for ( const group of groups.values() ) {
+		const clusters: { areaNormal: Vec3; corners: typeof group.corners }[] = [];
+		const firstVertexOffset = group.corners[ 0 ]!.vertex * 3;
+		const creasePosition: Vec3 = [ positions[ firstVertexOffset ]!, positions[ firstVertexOffset + 1 ]!, positions[ firstVertexOffset + 2 ]! ];
+		const splitCrease = creaseAt === undefined || creaseAt( creasePosition );
+
+		for ( const corner of group.corners ) {
+			let clusterIndex = - 1;
+			for ( let index = 0; index < clusters.length; index ++ ) {
+				const clusterNormal = clusters[ index ]!.areaNormal;
+				const clusterLength = Math.hypot( clusterNormal[ 0 ], clusterNormal[ 1 ], clusterNormal[ 2 ] ) || 1;
+				const dot = ( corner.normal[ 0 ] * clusterNormal[ 0 ] + corner.normal[ 1 ] * clusterNormal[ 1 ] + corner.normal[ 2 ] * clusterNormal[ 2 ] ) / clusterLength;
+				if ( ! splitCrease || dot >= creaseCosine ) {
+					clusterIndex = index;
+					break;
+				}
+			}
+			if ( clusterIndex < 0 ) {
+				clusterIndex = clusters.length;
+				clusters.push( { areaNormal: [ 0, 0, 0 ], corners: [] } );
+			}
+			const cluster = clusters[ clusterIndex ]!;
+			cluster.areaNormal[ 0 ] += corner.areaNormal[ 0 ];
+			cluster.areaNormal[ 1 ] += corner.areaNormal[ 1 ];
+			cluster.areaNormal[ 2 ] += corner.areaNormal[ 2 ];
+			cluster.corners.push( corner );
+		}
+
+		for ( let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex ++ ) {
+			const cluster = clusters[ clusterIndex ]!;
+			const assigned = new Map<number, number>();
+			for ( const corner of cluster.corners ) {
+				let target = assigned.get( corner.vertex );
+				if ( target === undefined ) {
+					const previousClusters = vertexClusters.get( corner.vertex );
+					if ( previousClusters === undefined ) {
+						target = corner.vertex;
+						vertexClusters.set( corner.vertex, new Set( [ clusterIndex ] ) );
+					} else if ( ! previousClusters.has( clusterIndex ) ) {
+						target = positions.length / 3;
+						for ( let axis = 0; axis < 3; axis ++ ) {
+							positions.push( positions[ corner.vertex * 3 + axis ]! );
+							normals.push( normals[ corner.vertex * 3 + axis ]! );
+						}
+						uvs.push( uvs[ corner.vertex * 2 ]!, uvs[ corner.vertex * 2 + 1 ]! );
+						colors.push( colors[ corner.vertex * 3 ]!, colors[ corner.vertex * 3 + 1 ]!, colors[ corner.vertex * 3 + 2 ]! );
+						windWeight.push( windWeight[ corner.vertex ]! );
+						previousClusters.add( clusterIndex );
+						if ( normalInfo !== undefined ) {
+							normalInfo.vertexFacetIndices[ target ] = normalInfo.vertexFacetIndices[ corner.vertex ]!;
+							if ( normalInfo.scoopedVertices.has( corner.vertex ) ) normalInfo.scoopedVertices.add( target );
+						}
+					} else {
+						target = corner.vertex;
+					}
+					assigned.set( corner.vertex, target );
+				}
+				indices[ corner.indexOffset ] = target;
+			}
+		}
+	}
+
+	mesh.positions = Float32Array.from( positions );
+	mesh.normals = Float32Array.from( normals );
+	mesh.uvs = Float32Array.from( uvs );
+	mesh.colors = Float32Array.from( colors );
+	mesh.windWeight = Float32Array.from( windWeight );
+	mesh.indices = Uint32Array.from( indices );
 
 }
 

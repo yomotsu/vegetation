@@ -7,7 +7,7 @@ import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
 import { topCardCoverageIou } from '../helpers/topCardCoverage';
 import { hasRockSelfIntersection, minimumRockApexAngle, minimumRockDihedralAngle, minimumRockTriangleAngle } from '../helpers/rockSharpness';
-import { buildConvexHullFaces, buildRockHullMesh, buildRockShell, createRockFacetNormals, createRockHullShape, createRockRadiusFunction, recomputeCreasedNormals } from '../../src/core/rockGeometry';
+import { buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, buildRockShell, clamp, createRockFacetNormals, createRockHullShape, createRockRadiusFunction, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -18,6 +18,57 @@ function triangleCount( mesh: MeshData ): number {
 function vertexCount( mesh: MeshData ): number {
 
 	return mesh.positions.length / 3;
+
+}
+
+function checkChamferedLod0Normals( mesh: MeshData, shape: ReturnType<typeof createRockHullShape>, faces: [ number, number, number ][], seed: number ): { facetInteriorTriangles: number; scoopTriangles: number } {
+
+	const hullCenter: [ number, number, number ] = [ 0, 0, 0 ];
+	for ( const point of shape.points ) for ( let axis = 0; axis < 3; axis ++ ) hullCenter[ axis ] = hullCenter[ axis ]! + point[ axis ]! / shape.points.length;
+	const planes = faces.map( ( face ) => {
+		const first = shape.points[ face[ 0 ] ]!;
+		const second = shape.points[ face[ 1 ] ]!;
+		const third = shape.points[ face[ 2 ] ]!;
+		const ab = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+		const ac = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+		const normal = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+		const length = Math.hypot( normal[ 0 ]!, normal[ 1 ]!, normal[ 2 ]! );
+		for ( let axis = 0; axis < 3; axis ++ ) normal[ axis ] = normal[ axis ]! / length;
+		const center = [ ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3, ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3, ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 ];
+		if ( normal[ 0 ]! * ( center[ 0 ]! - hullCenter[ 0 ]! ) + normal[ 1 ]! * ( center[ 1 ]! - hullCenter[ 1 ]! ) + normal[ 2 ]! * ( center[ 2 ]! - hullCenter[ 2 ]! ) < 0 ) for ( let axis = 0; axis < 3; axis ++ ) normal[ axis ] = - normal[ axis ]!;
+		return { origin: first, normal };
+	} );
+	let facetInteriorTriangles = 0;
+	let scoopTriangles = 0;
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+		const vertices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
+		const points = vertices.map( ( vertex ) => [ mesh.positions[ vertex * 3 ]!, mesh.positions[ vertex * 3 + 1 ]!, mesh.positions[ vertex * 3 + 2 ]! ] );
+		const ab = points[ 1 ]!.map( ( value, axis ) => value - points[ 0 ]![ axis ]! );
+		const ac = points[ 2 ]!.map( ( value, axis ) => value - points[ 0 ]![ axis ]! );
+		const normal = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+		const length = Math.hypot( normal[ 0 ]!, normal[ 1 ]!, normal[ 2 ]! );
+		for ( let axis = 0; axis < 3; axis ++ ) normal[ axis ] = normal[ axis ]! / length;
+		const vertexNormals = vertices.map( ( vertex ) => [ mesh.normals[ vertex * 3 ]!, mesh.normals[ vertex * 3 + 1 ]!, mesh.normals[ vertex * 3 + 2 ]! ] );
+		const onFacetPlane = planes.some( ( plane ) => points.every( ( point ) => Math.abs( ( point[ 0 ]! - plane.origin[ 0 ]! ) * plane.normal[ 0 ]! + ( point[ 1 ]! - plane.origin[ 1 ]! ) * plane.normal[ 1 ]! + ( point[ 2 ]! - plane.origin[ 2 ]! ) * plane.normal[ 2 ]! ) < 1e-4 ) );
+		const hasScoopedNormal = vertexNormals.some( ( vertexNormal ) => ! planes.some( ( plane ) => vertexNormal[ 0 ]! * plane.normal[ 0 ]! + vertexNormal[ 1 ]! * plane.normal[ 1 ]! + vertexNormal[ 2 ]! * plane.normal[ 2 ]! > Math.cos( 2 * Math.PI / 180 ) ) );
+		if ( onFacetPlane && ! hasScoopedNormal ) {
+			facetInteriorTriangles ++;
+			for ( const vertexNormal of vertexNormals ) {
+				const dot = clamp( vertexNormal[ 0 ]! * normal[ 0 ]! + vertexNormal[ 1 ]! * normal[ 1 ]! + vertexNormal[ 2 ]! * normal[ 2 ]!, - 1, 1 );
+				expect( dot, `seed ${ seed } triangle ${ offset / 3 } facet normal winding` ).toBeGreaterThan( 0 );
+				expect( Math.acos( dot ) * 180 / Math.PI, `seed ${ seed } triangle ${ offset / 3 } facet normal angle` ).toBeLessThanOrEqual( 2 );
+			}
+		} else {
+			const center = [ 0, 1, 2 ].map( ( axis ) => ( points[ 0 ]![ axis ]! + points[ 1 ]![ axis ]! + points[ 2 ]![ axis ]! ) / 3 ) as [ number, number, number ];
+			if ( hasScoopedNormal && isRockScoopInterior( center, shape ) ) {
+				scoopTriangles ++;
+			}
+		}
+	}
+
+	expect( facetInteriorTriangles, `seed ${ seed } facet-interior triangle coverage` ).toBeGreaterThan( 0 );
+	return { facetInteriorTriangles, scoopTriangles };
 
 }
 
@@ -776,6 +827,21 @@ function coverageIou( first: { width: number; data: Uint8Array }, second: { widt
 
 describe( 'procedural rock data', () => {
 
+	it( 'keeps chamfered LOD0 facets face-weighted across the seed sweep', () => {
+
+		let scoopTriangles = 0;
+		const seeds = [ ...Array.from( { length: 300 }, ( _, index ) => index + 1 ), 341810 ];
+		for ( const seed of seeds ) {
+			const shape = createRockHullShape( seed + 62, 6.4, 1.2, 0.04 );
+			const faces = buildConvexHullFaces( shape.points );
+			const mesh = buildRockHullMeshWithChamfers( shape, faces, 6.4 * 0.04 ).mesh;
+			const counts = checkChamferedLod0Normals( mesh, shape, faces, seed );
+			scoopTriangles += counts.scoopTriangles;
+		}
+		expect( scoopTriangles ).toBeGreaterThan( 0 );
+
+	}, 180000 );
+
 	it( 'keeps every rock LOD grounded around its full footprint', () => {
 
 		withSharedRockTextures( () => {
@@ -960,7 +1026,7 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'splits the broad hull facets at crisp shading creases', () => {
+	it( 'keeps LOD0 normals face-weighted at broad hull facets', () => {
 
 		withSharedRockTextures( () => {
 
@@ -970,7 +1036,7 @@ describe( 'procedural rock data', () => {
 			const mesh = data.lods[ 0 ]!;
 				expect( vertexCount( mesh ), `seed ${ seed } LOD0 vertex cap` ).toBeLessThanOrEqual( 260 );
 				expect( data.parts[ 0 ]!.flatShading ).toBe( false );
-				expect( getMaximumSplitNormalAngle( mesh ), `seed ${ seed } facet crease` ).toBeGreaterThanOrEqual( 25 );
+				expect( getMaximumSplitNormalAngle( mesh ), `seed ${ seed } facet crease` ).toBeGreaterThan( 0 );
 
 			}
 
@@ -993,6 +1059,23 @@ describe( 'procedural rock data', () => {
 		} );
 
 	}, 120000 );
+
+	it( 'keeps LOD0 vertex counts within the HEAD range for seeds 1 to 10', () => {
+
+		withSharedRockTextures( () => {
+
+			const headCounts = [ 143, 149, 122, 165, 151, 139, 155, 169, 143, 148 ];
+			for ( let seed = 1; seed <= headCounts.length; seed ++ ) {
+
+				const count = vertexCount( generateRockData( { seed } ).lods[ 0 ]! );
+				expect( count, `seed ${ seed } LOD0 vertex upper bound` ).toBeLessThanOrEqual( headCounts[ seed - 1 ]! );
+				expect( count, `seed ${ seed } LOD0 vertex lower bound` ).toBeGreaterThanOrEqual( headCounts[ seed - 1 ]! * 0.9 );
+
+			}
+
+		} );
+
+	}, 30000 );
 
 	it( 'keeps large planar relief visible in the generated rock', () => {
 
@@ -1039,7 +1122,7 @@ describe( 'procedural rock data', () => {
 			}
 
 		}
-		expect( getMaximumSplitNormalAngle( data.lods[ 0 ]! ) ).toBeGreaterThanOrEqual( 25 );
+		expect( getMaximumSplitNormalAngle( data.lods[ 0 ]! ) ).toBeGreaterThan( 0 );
 
 	} );
 
