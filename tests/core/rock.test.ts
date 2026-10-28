@@ -1196,7 +1196,7 @@ describe( 'procedural rock data', () => {
 
 	}, 120000 );
 
-	it( 'keeps LOD0 vertex counts within the HEAD range for seeds 1 to 10', () => {
+	it( 'keeps welded LOD0 vertex counts within the HEAD range for seeds 1 to 10', () => {
 
 		withSharedRockTextures( () => {
 
@@ -1205,7 +1205,7 @@ describe( 'procedural rock data', () => {
 
 				const count = vertexCount( generateRockData( { seed } ).lods[ 0 ]! );
 				expect( count, `seed ${ seed } LOD0 vertex upper bound` ).toBeLessThanOrEqual( headCounts[ seed - 1 ]! );
-				expect( count, `seed ${ seed } LOD0 vertex lower bound` ).toBeGreaterThanOrEqual( headCounts[ seed - 1 ]! * 0.9 );
+				expect( count, `seed ${ seed } LOD0 vertex lower bound` ).toBeGreaterThanOrEqual( headCounts[ seed - 1 ]! * 0.7 );
 
 			}
 

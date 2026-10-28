@@ -1,6 +1,6 @@
 import { createRockTextures } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
-import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, recomputeChamferedRockHullNormals, removeRockBottomCap, recomputeCreasedNormals, sinkMesh, splitChamferedRockHullVerticesAtCreases } from '../rockGeometry';
+import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getIdenticalVertexWeld, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, recomputeChamferedRockHullNormals, removeRockBottomCap, recomputeCreasedNormals, sinkMesh, splitChamferedRockHullVerticesAtCreases, weldIdenticalVertices } from '../rockGeometry';
 import type { RockHullShape, RockUvFrame } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, VegetationData } from '../types';
 
@@ -385,6 +385,17 @@ function getLod1SubdivisionOrder( shape: RockHullShape, faces: [ number, number,
 
 }
 
+function padRockImpostorCard( mesh: MeshData ): void {
+
+	if ( mesh.impostorCard.length !== mesh.positions.length / 3 ) {
+
+		if ( mesh.impostorCard.some( ( value ) => value !== 0 ) ) throw new RangeError( 'Rock impostor-card data must use the default value' );
+		mesh.impostorCard = new Float32Array( mesh.positions.length / 3 );
+
+	}
+
+}
+
 function buildRockLod1( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, weathering: number, uvFrame: RockUvFrame, creaseOutsideScoops: ( position: [ number, number, number ] ) => boolean, targetVertices: number ): MeshData {
 
 	const subdivisionOrder = getLod1SubdivisionOrder( shape, faces, groundOffset - burialHeight );
@@ -404,8 +415,9 @@ function buildRockLod1( shape: RockHullShape, faces: [ number, number, number ][
 		sinkMesh( mesh, burialHeight, Number.NEGATIVE_INFINITY );
 		removeRockBottomCap( mesh, skirtFloor );
 		recomputeCreasedNormals( mesh, 35, creaseOutsideScoops );
+		padRockImpostorCard( mesh );
 
-		const vertices = mesh.positions.length / 3;
+		const vertices = getIdenticalVertexWeld( mesh ).uniqueVertices.length;
 		const distance = Math.abs( vertices - targetVertices );
 
 		if ( distance < bestDistance ) {
@@ -478,10 +490,20 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const creaseOutsideScoops = ( position: [ number, number, number ] ): boolean => ! isRockScoopInterior( position, shape, groundOffset - burialHeight );
 	splitChamferedRockHullVerticesAtCreases( lod0, 35, creaseOutsideScoops );
 	recomputeChamferedRockHullNormals( lod0 );
-	const lod1 = buildRockLod1( shape, hullFaces, groundOffset, burialHeight, skirtFloor, weathering, uvFrame, creaseOutsideScoops, Math.round( lod0.positions.length / 3 * 0.5 ) );
-	const lod2Target = Math.min( 22, lod2Source.indices.length / 3 - 15 );
+	padRockImpostorCard( lod0 );
+	const lod0Weld = getIdenticalVertexWeld( lod0 );
+	const lod1TargetVertices = Math.round( lod0Weld.uniqueVertices.length * 0.5 );
 	let silhouetteHeight = 0;
 	for ( let offset = 1; offset < lod0.positions.length; offset += 3 ) silhouetteHeight = Math.max( silhouetteHeight, lod0.positions[ offset ]! );
+	let lod1 = buildRockLod1( shape, hullFaces, groundOffset, burialHeight, skirtFloor, weathering, uvFrame, creaseOutsideScoops, lod1TargetVertices );
+	if ( getIdenticalVertexWeld( lod1 ).uniqueVertices.length > lod0Weld.uniqueVertices.length * 0.55 ) {
+
+		const targetTriangles = Math.max( 25, Math.round( lod1TargetVertices * 0.55 ) );
+		const reducedLod1 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, targetTriangles, 16 );
+		lod1 = buildRockLod1( reducedLod1.shape, reducedLod1.faces, groundOffset, burialHeight, skirtFloor, weathering, uvFrame, creaseOutsideScoops, lod1TargetVertices );
+
+	}
+	const lod2Target = Math.min( 22, lod2Source.indices.length / 3 - 15 );
 	const reducedLod2 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod2Target );
 	const lod2 = reducedLod2.mesh;
 	recomputeCreasedNormals( lod2, 35 );
@@ -518,6 +540,12 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	];
 	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }`;
 	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments );
+	for ( const mesh of [ lod0, lod1, lod2, lod3, lod4 ] ) {
+
+		padRockImpostorCard( mesh );
+		weldIdenticalVertices( mesh );
+
+	}
 
 	return {
 		kind: 'rock',

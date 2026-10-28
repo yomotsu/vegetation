@@ -9,6 +9,116 @@ export function clamp( value: number, minimum: number, maximum: number ): number
 
 }
 
+export function getIdenticalVertexWeld( mesh: MeshData ): { vertexRemap: Uint32Array; uniqueVertices: number[] } {
+
+	const vertexCount = mesh.positions.length / 3;
+
+	if ( ! Number.isInteger( vertexCount ) || mesh.normals.length !== vertexCount * 3 || mesh.uvs.length !== vertexCount * 2 || mesh.colors.length !== vertexCount * 3 || mesh.windWeight.length !== vertexCount || mesh.impostorCard.length !== vertexCount ) {
+		throw new RangeError( 'Mesh attributes must have one entry per vertex' );
+	}
+
+	const attributes = [
+		{ values: mesh.positions, size: 3 },
+		{ values: mesh.normals, size: 3, normalizeZero: true },
+		{ values: mesh.uvs, size: 2 },
+		{ values: mesh.colors, size: 3 },
+		{ values: mesh.windWeight, size: 1 },
+		{ values: mesh.impostorCard, size: 1 },
+	];
+	const attributeBits = attributes.map( ( attribute ) => new Uint32Array( attribute.values.buffer, attribute.values.byteOffset, attribute.values.length ) );
+	const usedVertices = new Uint8Array( vertexCount );
+
+	for ( const index of mesh.indices ) {
+
+		if ( index >= vertexCount ) throw new RangeError( 'Mesh index is outside the vertex range' );
+		usedVertices[ index ] = 1;
+
+	}
+
+	const vertexRemap = new Uint32Array( vertexCount );
+	const vertexMap = new Map<string, number>();
+	const uniqueVertices: number[] = [];
+
+	for ( let vertex = 0; vertex < vertexCount; vertex ++ ) {
+
+		if ( usedVertices[ vertex ] === 0 ) continue;
+
+		const keyParts: number[] = [];
+
+		for ( let attributeIndex = 0; attributeIndex < attributes.length; attributeIndex ++ ) {
+
+			const attribute = attributes[ attributeIndex ]!;
+			const bits = attributeBits[ attributeIndex ]!;
+
+			for ( let item = 0; item < attribute.size; item ++ ) {
+
+				let value = bits[ vertex * attribute.size + item ]!;
+				if ( attribute.normalizeZero && ( value & 0x7fffffff ) === 0 ) value = 0;
+				keyParts.push( value );
+
+			}
+
+		}
+
+		const key = keyParts.join( ':' );
+		let target = vertexMap.get( key );
+
+		if ( target === undefined ) {
+
+			target = uniqueVertices.length;
+			vertexMap.set( key, target );
+			uniqueVertices.push( vertex );
+
+		}
+
+		vertexRemap[ vertex ] = target;
+
+	}
+
+	return { vertexRemap, uniqueVertices };
+
+}
+
+export function weldIdenticalVertices( mesh: MeshData ): void {
+
+	const { vertexRemap, uniqueVertices } = getIdenticalVertexWeld( mesh );
+	const attributes = [
+		{ values: mesh.positions, size: 3 },
+		{ values: mesh.normals, size: 3, normalizeZero: true },
+		{ values: mesh.uvs, size: 2 },
+		{ values: mesh.colors, size: 3 },
+		{ values: mesh.windWeight, size: 1 },
+		{ values: mesh.impostorCard, size: 1 },
+	];
+	const attributeBits = attributes.map( ( attribute ) => new Uint32Array( attribute.values.buffer, attribute.values.byteOffset, attribute.values.length ) );
+
+	const weldedAttributes = attributes.map( ( attribute, attributeIndex ) => {
+
+		const source = attributeBits[ attributeIndex ]!;
+		const result = new Uint32Array( uniqueVertices.length * attribute.size );
+
+		for ( let target = 0; target < uniqueVertices.length; target ++ ) {
+
+			const sourceOffset = uniqueVertices[ target ]! * attribute.size;
+			result.set( source.subarray( sourceOffset, sourceOffset + attribute.size ), target * attribute.size );
+
+		}
+
+		return new Float32Array( result.buffer );
+
+	} );
+
+	mesh.indices = Uint32Array.from( mesh.indices, ( index ) => vertexRemap[ index ]! );
+	mesh.positions = weldedAttributes[ 0 ]!;
+	mesh.normals = weldedAttributes[ 1 ]!;
+	mesh.uvs = weldedAttributes[ 2 ]!;
+	mesh.colors = weldedAttributes[ 3 ]!;
+	mesh.windWeight = weldedAttributes[ 4 ]!;
+	mesh.impostorCard = weldedAttributes[ 5 ]!;
+	chamferedRockNormalInfo.delete( mesh );
+
+}
+
 interface WeldedMeshTopology {
 	positions: Vec3[];
 	vertices: number[][];
