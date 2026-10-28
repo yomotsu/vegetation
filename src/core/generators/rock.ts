@@ -15,6 +15,8 @@ export interface RockOptions {
 	weathering?: number;
 	/** 地中に沈める全体高の割合（0〜1）。 */
 	burial?: number;
+	/** 底面も簡略化せず閉じた形状にする。既定値はfalse（地中の底面を省く）。 */
+	closeBottom?: boolean;
 	rockColor?: number;
 }
 
@@ -67,17 +69,87 @@ interface AboveGroundMetric {
 	silhouette: number[];
 }
 
-function buildLod3Mesh( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, unwrapSeams: boolean, uvFrame?: RockUvFrame ): MeshData {
+function getClosedSurfaceMetric( mesh: MeshData, size: number ): AboveGroundMetric {
+
+	let signedVolume = 0;
+	let minimumY = Infinity;
+	let maximumY = - Infinity;
+	for ( let offset = 1; offset < mesh.positions.length; offset += 3 ) {
+		minimumY = Math.min( minimumY, mesh.positions[ offset ]! );
+		maximumY = Math.max( maximumY, mesh.positions[ offset ]! );
+	}
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+		const first = mesh.indices[ offset ]! * 3;
+		const second = mesh.indices[ offset + 1 ]! * 3;
+		const third = mesh.indices[ offset + 2 ]! * 3;
+		const ax = mesh.positions[ first ]!;
+		const ay = mesh.positions[ first + 1 ]!;
+		const az = mesh.positions[ first + 2 ]!;
+		const bx = mesh.positions[ second ]!;
+		const by = mesh.positions[ second + 1 ]!;
+		const bz = mesh.positions[ second + 2 ]!;
+		const cx = mesh.positions[ third ]!;
+		const cy = mesh.positions[ third + 1 ]!;
+		const cz = mesh.positions[ third + 2 ]!;
+		signedVolume += ( ax * ( by * cz - bz * cy ) + ay * ( bz * cx - bx * cz ) + az * ( bx * cy - by * cx ) ) / 6;
+	}
+
+	const silhouette: number[] = [];
+	const elevationCount = 5;
+	const supports = new Array<number>( LOD3_SILHOUETTE_DIRECTIONS.length );
+	for ( let elevation = 0; elevation < elevationCount; elevation ++ ) {
+		const height = minimumY + ( maximumY - minimumY ) * elevation / ( elevationCount - 1 );
+		supports.fill( - size );
+		let hasIntersection = false;
+		for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+			for ( let edge = 0; edge < 3; edge ++ ) {
+				const firstVertex = mesh.indices[ offset + edge ]! * 3;
+				const secondVertex = mesh.indices[ offset + ( edge + 1 ) % 3 ]! * 3;
+				const firstX = mesh.positions[ firstVertex ]!;
+				const firstY = mesh.positions[ firstVertex + 1 ]!;
+				const firstZ = mesh.positions[ firstVertex + 2 ]!;
+				const secondX = mesh.positions[ secondVertex ]!;
+				const secondY = mesh.positions[ secondVertex + 1 ]!;
+				const secondZ = mesh.positions[ secondVertex + 2 ]!;
+				const firstDelta = firstY - height;
+				const secondDelta = secondY - height;
+				let intersectionX = firstX;
+				let intersectionZ = firstZ;
+				if ( ( firstDelta < 0 && secondDelta > 0 ) || ( firstDelta > 0 && secondDelta < 0 ) ) {
+					const amount = - firstDelta / ( secondDelta - firstDelta );
+					intersectionX = firstX + ( secondX - firstX ) * amount;
+					intersectionZ = firstZ + ( secondZ - firstZ ) * amount;
+					hasIntersection = true;
+				} else if ( Math.abs( firstDelta ) < 1e-7 ) hasIntersection = true;
+				else continue;
+
+				for ( let direction = 0; direction < LOD3_SILHOUETTE_DIRECTIONS.length; direction ++ ) {
+					const directionX = LOD3_SILHOUETTE_DIRECTIONS[ direction ]![ 0 ];
+					const directionZ = LOD3_SILHOUETTE_DIRECTIONS[ direction ]![ 1 ];
+					supports[ direction ] = Math.max( supports[ direction ]!, intersectionX * directionX + intersectionZ * directionZ );
+				}
+			}
+		}
+		if ( ! hasIntersection ) supports.fill( - size );
+		for ( const support of supports ) silhouette.push( support );
+	}
+
+	return { volume: Math.abs( signedVolume ), silhouette };
+
+}
+
+function buildLod3Mesh( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, unwrapSeams: boolean, uvFrame?: RockUvFrame, closeBottom = false ): MeshData {
 
 	const mesh = buildRockHullMesh( shape, faces, 0, 0, 0, unwrapSeams, uvFrame );
 	liftMesh( mesh, groundOffset );
 	sinkMesh( mesh, burialHeight, Number.NEGATIVE_INFINITY );
-	removeRockBottomCap( mesh, skirtFloor );
+	if ( ! closeBottom ) removeRockBottomCap( mesh, skirtFloor );
 	return mesh;
 
 }
 
-function buildLod3Candidate( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number ): { mesh: MeshData; triangleCount: number } {
+function buildLod3Candidate( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, closeBottom = false ): { mesh: MeshData; triangleCount: number } {
 
 	const mesh = buildRockHullMesh( shape, faces, 0, 0, 0, false, undefined, true );
 	liftMesh( mesh, groundOffset );
@@ -86,7 +158,7 @@ function buildLod3Candidate( shape: RockHullShape, faces: [ number, number, numb
 
 	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
 
-		if ( isBottomCapTriangle( mesh, offset, skirtFloor ) ) continue;
+		if ( ! closeBottom && isBottomCapTriangle( mesh, offset, skirtFloor ) ) continue;
 		triangleCount ++;
 
 	}
@@ -258,12 +330,12 @@ interface ReducedRockMesh {
 	triangleCount: number;
 }
 
-function reduceRockLod3( shape: RockHullShape, initialFaces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, silhouetteHeight: number, uvFrame: RockUvFrame, targetTriangles = 22, minimumTriangles = 16 ): ReducedRockMesh {
+function reduceRockLod3( shape: RockHullShape, initialFaces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, silhouetteHeight: number, uvFrame: RockUvFrame, targetTriangles = 22, minimumTriangles = 16, closeBottom = false ): ReducedRockMesh {
 
 	let currentShape = shape;
 	let currentFaces = initialFaces;
-	let currentCandidate = buildLod3Candidate( currentShape, currentFaces, groundOffset, burialHeight, skirtFloor );
-	let currentMetric = getAboveGroundMetric( currentCandidate.mesh, shape.size, silhouetteHeight, skirtFloor );
+	let currentCandidate = buildLod3Candidate( currentShape, currentFaces, groundOffset, burialHeight, skirtFloor, closeBottom );
+	let currentMetric = closeBottom ? getClosedSurfaceMetric( currentCandidate.mesh, shape.size ) : getAboveGroundMetric( currentCandidate.mesh, shape.size, silhouetteHeight, skirtFloor );
 
 	while ( currentCandidate.triangleCount > targetTriangles ) {
 
@@ -291,10 +363,10 @@ function reduceRockLod3( shape: RockHullShape, initialFaces: [ number, number, n
 			}
 
 			const candidateShape = { ...currentShape, points };
-			const candidate = buildLod3Candidate( candidateShape, faces, groundOffset, burialHeight, skirtFloor );
+			const candidate = buildLod3Candidate( candidateShape, faces, groundOffset, burialHeight, skirtFloor, closeBottom );
 			if ( candidate.triangleCount < minimumTriangles ) continue;
 
-			const candidateMetric = getAboveGroundMetric( candidate.mesh, shape.size, silhouetteHeight, skirtFloor );
+			const candidateMetric = closeBottom ? getClosedSurfaceMetric( candidate.mesh, shape.size ) : getAboveGroundMetric( candidate.mesh, shape.size, silhouetteHeight, skirtFloor );
 			const loss = aboveGroundLoss( currentMetric, candidateMetric, shape.size );
 			if ( loss >= bestLoss ) continue;
 
@@ -315,7 +387,7 @@ function reduceRockLod3( shape: RockHullShape, initialFaces: [ number, number, n
 	}
 
 	return {
-		mesh: buildLod3Mesh( currentShape, currentFaces, groundOffset, burialHeight, skirtFloor, true, uvFrame ),
+		mesh: buildLod3Mesh( currentShape, currentFaces, groundOffset, burialHeight, skirtFloor, true, uvFrame, closeBottom ),
 		shape: currentShape,
 		faces: currentFaces,
 		triangleCount: currentCandidate.triangleCount,
@@ -323,7 +395,7 @@ function reduceRockLod3( shape: RockHullShape, initialFaces: [ number, number, n
 
 }
 
-function getLod1SubdivisionOrder( shape: RockHullShape, faces: [ number, number, number ][], verticalOffset: number ): number[] {
+function getLod1SubdivisionOrder( shape: RockHullShape, faces: [ number, number, number ][], verticalOffset: number, closeBottom = false ): number[] {
 
 	const sourceVertices = new Map<number, number>();
 	for ( const face of faces ) {
@@ -378,8 +450,19 @@ function getLod1SubdivisionOrder( shape: RockHullShape, faces: [ number, number,
 		return area;
 
 	};
+	const wholeFaceArea = ( face: [ number, number, number ] ): number => {
 
-	return faces.map( ( face, faceIndex ) => ( { faceIndex, area: aboveGroundArea( face ) } ) )
+		const points = face.map( ( source ) => {
+			const offset = sourceVertices.get( source )! * 3;
+			return [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]! + verticalOffset, mesh.positions[ offset + 2 ]! ] as [ number, number, number ];
+		} );
+		const ab = [ points[ 1 ]![ 0 ] - points[ 0 ]![ 0 ], points[ 1 ]![ 1 ] - points[ 0 ]![ 1 ], points[ 1 ]![ 2 ] - points[ 0 ]![ 2 ] ];
+		const ac = [ points[ 2 ]![ 0 ] - points[ 0 ]![ 0 ], points[ 2 ]![ 1 ] - points[ 0 ]![ 1 ], points[ 2 ]![ 2 ] - points[ 0 ]![ 2 ] ];
+		return Math.hypot( ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ) * 0.5;
+
+	};
+
+	return faces.map( ( face, faceIndex ) => ( { faceIndex, area: closeBottom ? wholeFaceArea( face ) : aboveGroundArea( face ) } ) )
 		.sort( ( first, second ) => second.area - first.area || first.faceIndex - second.faceIndex )
 		.map( ( entry ) => entry.faceIndex );
 
@@ -396,9 +479,112 @@ function padRockImpostorCard( mesh: MeshData ): void {
 
 }
 
-function buildRockLod1( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, weathering: number, uvFrame: RockUvFrame, creaseOutsideScoops: ( position: [ number, number, number ] ) => boolean, targetVertices: number ): MeshData {
+function splitRockWideUvTriangles( mesh: MeshData ): void {
 
-	const subdivisionOrder = getLod1SubdivisionOrder( shape, faces, groundOffset - burialHeight );
+	const positions = Array.from( mesh.positions );
+	const normals = Array.from( mesh.normals );
+	const uvs = Array.from( mesh.uvs );
+	const colors = Array.from( mesh.colors );
+	const windWeight = Array.from( mesh.windWeight );
+	const impostorCard = Array.from( mesh.impostorCard );
+	const positionKey = ( vertex: number ): string => `${ positions[ vertex * 3 ]!.toFixed( 6 ) },${ positions[ vertex * 3 + 1 ]!.toFixed( 6 ) },${ positions[ vertex * 3 + 2 ]!.toFixed( 6 ) }`;
+	const edgeKey = ( first: number, second: number ): string => {
+		const firstKey = positionKey( first );
+		const secondKey = positionKey( second );
+		return firstKey < secondKey ? `${ firstKey }|${ secondKey }` : `${ secondKey }|${ firstKey }`;
+	};
+	const addInterpolatedVertex = ( vertices: number[] ): number => {
+		const target = positions.length / 3;
+		for ( let axis = 0; axis < 3; axis ++ ) {
+			positions.push( vertices.reduce( ( total, vertex ) => total + positions[ vertex * 3 + axis ]! / vertices.length, 0 ) );
+			colors.push( vertices.reduce( ( total, vertex ) => total + colors[ vertex * 3 + axis ]! / vertices.length, 0 ) );
+		}
+		const normal: [ number, number, number ] = [ 0, 0, 0 ];
+		for ( const vertex of vertices ) {
+			for ( let axis = 0; axis < 3; axis ++ ) normal[ axis ] = normal[ axis ]! + normals[ vertex * 3 + axis ]! / vertices.length;
+		}
+		const normalLength = Math.hypot( ...normal ) || 1;
+		normals.push( normal[ 0 ] / normalLength, normal[ 1 ] / normalLength, normal[ 2 ] / normalLength );
+		for ( let axis = 0; axis < 2; axis ++ ) uvs.push( vertices.reduce( ( total, vertex ) => total + uvs[ vertex * 2 + axis ]! / vertices.length, 0 ) );
+		windWeight.push( vertices.reduce( ( total, vertex ) => total + windWeight[ vertex ]! / vertices.length, 0 ) );
+		impostorCard.push( vertices.reduce( ( total, vertex ) => total + impostorCard[ vertex ]! / vertices.length, 0 ) );
+		return target;
+	};
+	let groups = mesh.groups.map( ( group ) => ( { ...group } ) );
+	let indices = Array.from( mesh.indices );
+
+	for ( let pass = 0; pass < 8; pass ++ ) {
+
+		const splitEdges = new Set<string>();
+		for ( const group of groups ) {
+			for ( let offset = group.start; offset < group.start + group.count; offset += 3 ) {
+				const vertices = [ indices[ offset ]!, indices[ offset + 1 ]!, indices[ offset + 2 ]! ];
+				for ( let edge = 0; edge < 3; edge ++ ) {
+					const first = vertices[ edge ]!;
+					const second = vertices[ ( edge + 1 ) % 3 ]!;
+					if ( Math.abs( uvs[ first * 2 ]! - uvs[ second * 2 ]! ) > 0.55 ) splitEdges.add( edgeKey( first, second ) );
+				}
+			}
+		}
+		if ( splitEdges.size === 0 ) break;
+
+		const nextIndices: number[] = [];
+		const nextGroups: MeshData[ 'groups' ] = [];
+		for ( const group of groups ) {
+			const start = nextIndices.length;
+			for ( let offset = group.start; offset < group.start + group.count; offset += 3 ) {
+				const vertices = [ indices[ offset ]!, indices[ offset + 1 ]!, indices[ offset + 2 ]! ];
+				const marked = [ 0, 1, 2 ].map( ( edge ) => splitEdges.has( edgeKey( vertices[ edge ]!, vertices[ ( edge + 1 ) % 3 ]! ) ) );
+				const markedCount = marked.filter( Boolean ).length;
+				if ( markedCount === 0 ) {
+					nextIndices.push( ...vertices );
+					continue;
+				}
+				const midpoints = marked.map( ( isMarked, edge ) => isMarked ? addInterpolatedVertex( [ vertices[ edge ]!, vertices[ ( edge + 1 ) % 3 ]! ] ) : - 1 );
+				if ( markedCount === 1 ) {
+					const edge = marked.indexOf( true );
+					const next = ( edge + 1 ) % 3;
+					const third = ( edge + 2 ) % 3;
+					nextIndices.push( vertices[ edge ]!, midpoints[ edge ]!, vertices[ third ]!, midpoints[ edge ]!, vertices[ next ]!, vertices[ third ]! );
+					continue;
+				}
+				const boundary: number[] = [];
+				for ( let edge = 0; edge < 3; edge ++ ) {
+					boundary.push( vertices[ edge ]! );
+					if ( marked[ edge ] ) boundary.push( midpoints[ edge ]! );
+				}
+				const center = addInterpolatedVertex( vertices );
+				for ( let edge = 0; edge < boundary.length; edge ++ ) nextIndices.push( center, boundary[ edge ]!, boundary[ ( edge + 1 ) % boundary.length ]! );
+			}
+			nextGroups.push( { ...group, start, count: nextIndices.length - start } );
+		}
+		indices = nextIndices;
+		groups = nextGroups;
+
+	}
+
+	mesh.positions = Float32Array.from( positions );
+	mesh.normals = Float32Array.from( normals );
+	mesh.uvs = Float32Array.from( uvs );
+	mesh.colors = Float32Array.from( colors );
+	mesh.windWeight = Float32Array.from( windWeight );
+	mesh.impostorCard = Float32Array.from( impostorCard );
+	mesh.indices = Uint32Array.from( indices );
+	mesh.groups = groups;
+
+}
+
+function prepareClosedRockLod( mesh: MeshData ): void {
+
+	splitRockWideUvTriangles( mesh );
+	recomputeCreasedNormals( mesh, 35 );
+	padRockImpostorCard( mesh );
+
+}
+
+function buildRockLod1( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, weathering: number, uvFrame: RockUvFrame, creaseOutsideScoops: ( position: [ number, number, number ] ) => boolean, targetVertices: number, closeBottom = false ): MeshData {
+
+	const subdivisionOrder = getLod1SubdivisionOrder( shape, faces, groundOffset - burialHeight, closeBottom );
 	let lower = 0;
 	let upper = subdivisionOrder.length;
 	let bestMesh: MeshData | undefined;
@@ -411,9 +597,9 @@ function buildRockLod1( shape: RockHullShape, faces: [ number, number, number ][
 		const mesh = buildRockHullMesh( shape, faces, 1, 0, weathering, true, uvFrame, false, subdividedFaces );
 		liftMesh( mesh, groundOffset );
 		applyRockWeathering( mesh, weathering );
-		limitRockPeakSharpness( mesh, weathering, 125 );
+		limitRockPeakSharpness( mesh, weathering, 125, closeBottom );
 		sinkMesh( mesh, burialHeight, Number.NEGATIVE_INFINITY );
-		removeRockBottomCap( mesh, skirtFloor );
+		if ( ! closeBottom ) removeRockBottomCap( mesh, skirtFloor );
 		recomputeCreasedNormals( mesh, 35, creaseOutsideScoops );
 		padRockImpostorCard( mesh );
 
@@ -446,6 +632,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const flatnessInput = options.flatness ?? 0.04;
 	const weatheringInput = options.weathering ?? 0.25;
 	const burial = options.burial ?? getDefaultBurial( internalSeed );
+	const closeBottom = options.closeBottom ?? false;
 	const rockColor = options.rockColor ?? 0xffffff;
 
 	if ( ! Number.isFinite( seed ) ) throw new RangeError( 'Rock seed must be finite' );
@@ -454,12 +641,13 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	if ( ! Number.isFinite( flatnessInput ) ) throw new RangeError( 'Rock flatness must be finite' );
 	if ( ! Number.isFinite( weatheringInput ) || weatheringInput < 0 || weatheringInput > 1 ) throw new RangeError( 'Rock weathering must be a value from 0 to 1' );
 	if ( ! Number.isFinite( burial ) || burial < 0 || burial > 1 ) throw new RangeError( 'Rock burial must be a finite value from 0 to 1' );
+	if ( options.closeBottom !== undefined && typeof options.closeBottom !== 'boolean' ) throw new RangeError( 'Rock closeBottom must be a boolean' );
 	if ( ! Number.isInteger( rockColor ) || rockColor < 0 || rockColor > 0xffffff ) throw new RangeError( 'Rock color must be a 24-bit integer' );
 
 	const roughness = clamp( roughnessInput, 0, 1.5 );
 	const flatness = clamp( flatnessInput, 0, 1 );
 	const weathering = clamp( weatheringInput, 0, 1 );
-	const shape = createRockHullShape( internalSeed, size, roughness, flatness );
+	const shape = createRockHullShape( internalSeed, size, roughness, flatness, closeBottom );
 	const hullFaces = buildConvexHullFaces( shape.points );
 	const bevelWidth = size * 0.04;
 	const chamferedLod0 = buildRockHullMeshWithChamfers( shape, hullFaces, bevelWidth, weathering );
@@ -471,7 +659,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	for ( const mesh of [ lod0, lod2Source, colliderMesh ] ) liftMesh( mesh, groundOffset );
 	for ( const mesh of [ lod0, lod2Source ] ) applyRockWeathering( mesh, weathering );
-	for ( const mesh of [ lod0, lod2Source ] ) limitRockPeakSharpness( mesh, weathering, 125 );
+	for ( const mesh of [ lod0, lod2Source ] ) limitRockPeakSharpness( mesh, weathering, 125, closeBottom );
 
 	let fullHeight = 0;
 	for ( let offset = 1; offset < lod0.positions.length; offset += 3 ) fullHeight = Math.max( fullHeight, lod0.positions[ offset ]! );
@@ -481,7 +669,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	for ( const mesh of [ lod0, lod2Source ] ) {
 
 		sinkMesh( mesh, burialHeight, Number.NEGATIVE_INFINITY );
-		removeRockBottomCap( mesh, skirtFloor );
+		if ( ! closeBottom ) removeRockBottomCap( mesh, skirtFloor );
 
 	}
 
@@ -489,32 +677,50 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const collider = buildCollider( colliderMesh );
 	const creaseOutsideScoops = ( position: [ number, number, number ] ): boolean => ! isRockScoopInterior( position, shape, groundOffset - burialHeight );
 	splitChamferedRockHullVerticesAtCreases( lod0, 35, creaseOutsideScoops );
-	recomputeChamferedRockHullNormals( lod0 );
+	recomputeChamferedRockHullNormals( lod0, closeBottom );
 	padRockImpostorCard( lod0 );
 	const lod0Weld = getIdenticalVertexWeld( lod0 );
 	const lod1TargetVertices = Math.round( lod0Weld.uniqueVertices.length * 0.5 );
 	let silhouetteHeight = 0;
 	for ( let offset = 1; offset < lod0.positions.length; offset += 3 ) silhouetteHeight = Math.max( silhouetteHeight, lod0.positions[ offset ]! );
-	let lod1 = buildRockLod1( shape, hullFaces, groundOffset, burialHeight, skirtFloor, weathering, uvFrame, creaseOutsideScoops, lod1TargetVertices );
+	let lod1 = buildRockLod1( shape, hullFaces, groundOffset, burialHeight, skirtFloor, weathering, uvFrame, creaseOutsideScoops, lod1TargetVertices, closeBottom );
 	if ( getIdenticalVertexWeld( lod1 ).uniqueVertices.length > lod0Weld.uniqueVertices.length * 0.55 ) {
 
 		const targetTriangles = Math.max( 25, Math.round( lod1TargetVertices * 0.55 ) );
-		const reducedLod1 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, targetTriangles, 16 );
-		lod1 = buildRockLod1( reducedLod1.shape, reducedLod1.faces, groundOffset, burialHeight, skirtFloor, weathering, uvFrame, creaseOutsideScoops, lod1TargetVertices );
+		const reducedLod1 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, targetTriangles, 16, closeBottom );
+		lod1 = buildRockLod1( reducedLod1.shape, reducedLod1.faces, groundOffset, burialHeight, skirtFloor, weathering, uvFrame, creaseOutsideScoops, lod1TargetVertices, closeBottom );
 
 	}
-	const lod2Target = Math.min( 22, lod2Source.indices.length / 3 - 15 );
-	const reducedLod2 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod2Target );
+	let lod2Target = closeBottom ? Math.min( 44, lod2Source.indices.length / 3 - 1 ) : Math.min( 22, lod2Source.indices.length / 3 - 15 );
+	let reducedLod2 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod2Target, closeBottom ? 24 : 16, closeBottom );
+	if ( closeBottom ) {
+		prepareClosedRockLod( reducedLod2.mesh );
+		const lod1Vertices = getIdenticalVertexWeld( lod1 ).uniqueVertices.length;
+		while ( getIdenticalVertexWeld( reducedLod2.mesh ).uniqueVertices.length >= lod1Vertices && lod2Target > 32 ) {
+			lod2Target = Math.max( 32, lod2Target - 2 );
+			reducedLod2 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod2Target, 24, true );
+			prepareClosedRockLod( reducedLod2.mesh );
+		}
+	}
 	const lod2 = reducedLod2.mesh;
-	recomputeCreasedNormals( lod2, 35 );
+	if ( ! closeBottom ) recomputeCreasedNormals( lod2, 35 );
 	lod2.colors.fill( lod0.colors[ 0 ]! );
-	const lod3Target = Math.min( 16, reducedLod2.triangleCount - 1 );
-	let reducedLod3 = reduceRockLod3( reducedLod2.shape, reducedLod2.faces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod3Target, 12 );
+	let lod3Target = Math.min( closeBottom ? 32 : 16, reducedLod2.triangleCount - 1 );
+	let reducedLod3 = reduceRockLod3( reducedLod2.shape, reducedLod2.faces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod3Target, closeBottom ? 24 : 12, closeBottom );
+	if ( closeBottom ) {
+		prepareClosedRockLod( reducedLod3.mesh );
+		const lod2Vertices = getIdenticalVertexWeld( reducedLod2.mesh ).uniqueVertices.length;
+		while ( getIdenticalVertexWeld( reducedLod3.mesh ).uniqueVertices.length >= lod2Vertices && lod3Target > 24 ) {
+			lod3Target = Math.max( 24, lod3Target - 2 );
+			reducedLod3 = reduceRockLod3( reducedLod2.shape, reducedLod2.faces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod3Target, 24, true );
+			prepareClosedRockLod( reducedLod3.mesh );
+		}
+	}
 	let lod3 = reducedLod3.mesh;
-	recomputeCreasedNormals( lod3, 35 );
-	if ( lod3.positions.length >= lod2.positions.length && reducedLod3.triangleCount > 12 ) {
+	if ( ! closeBottom ) recomputeCreasedNormals( lod3, 35 );
+	if ( ! closeBottom && lod3.positions.length >= lod2.positions.length && reducedLod3.triangleCount > 12 ) {
 
-		reducedLod3 = reduceRockLod3( reducedLod3.shape, reducedLod3.faces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, 12, 12 );
+		reducedLod3 = reduceRockLod3( reducedLod3.shape, reducedLod3.faces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, closeBottom ? 24 : 12, closeBottom ? 24 : 12, closeBottom );
 		lod3 = reducedLod3.mesh;
 		recomputeCreasedNormals( lod3, 35 );
 
@@ -538,11 +744,14 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		},
 		impostorPart(),
 	];
-	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }`;
+	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }:${ closeBottom ? 1 : 0 }`;
 	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments );
 	for ( const mesh of [ lod0, lod1, lod2, lod3, lod4 ] ) {
 
 		padRockImpostorCard( mesh );
+		if ( closeBottom && mesh !== lod4 ) {
+			splitRockWideUvTriangles( mesh );
+		}
 		weldIdenticalVertices( mesh );
 
 	}

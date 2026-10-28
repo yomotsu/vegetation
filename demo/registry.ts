@@ -5,7 +5,7 @@ export interface VegetationKind {
 	name: string;
 	create: ( opts: Record<string, unknown> ) => VegetationAsset;
 	colorParts: string[];
-	options: Record<string, number>;
+	options: Record<string, number | boolean>;
 }
 
 export const leafColorPresets = {
@@ -38,6 +38,7 @@ export const kinds: VegetationKind[] = [
 			roughness: 1.2,
 			flatness: 0.04,
 			weathering: 0.35,
+			closeBottom: false,
 		},
 	},
 	{

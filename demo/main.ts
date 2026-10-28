@@ -37,7 +37,7 @@ interface DemoState {
 	scatterCount: number;
 	seedVariants: number;
 	leafPreset: string;
-	options: Record<string, number>;
+	options: Record<string, number | boolean>;
 	colors: Record<string, string>;
 }
 
@@ -131,6 +131,11 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 		return [ 0, 999999, 1 ];
 
 	}
+	if ( name === 'closeBottom' ) {
+
+		return [ 0, 1, 1 ];
+
+	}
 	if ( activeKind.name === 'Pebbles' && name === 'count' ) {
 
 		return [ 4, 30, 1 ];
@@ -197,12 +202,12 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 
 	}
 
-	const value = state.options[ name ]!;
-	return [ 0, Math.max( 10, value * 2 ), 0.1 ];
+	const value = state.options[ name ];
+	return [ 0, Math.max( 10, typeof value === 'number' ? value * 2 : 10 ), 0.1 ];
 
 }
 
-function makeAsset( kind: VegetationKind, options: Record<string, number>, colors: Record<string, string> ): VegetationAsset {
+function makeAsset( kind: VegetationKind, options: Record<string, number | boolean>, colors: Record<string, string> ): VegetationAsset {
 
 	const next = kind.create( { ...options, ...( colors.leaf !== undefined ? { leafColor: colors.leaf } : {} ) } );
 
@@ -312,7 +317,7 @@ function updateColliderVisualization(): void {
 
 function frameView(): void {
 
-	const height = state.options.height ?? state.options.size ?? 7.5;
+	const height = Number( state.options.height ?? state.options.size ?? 7.5 );
 	controls.target.set( 0, state.mode === 'scatter' ? 0 : height * 0.5, 0 );
 
 	if ( state.mode === 'single' ) {
@@ -343,7 +348,7 @@ function rebuildPreview(): void {
 		root.add( mesh );
 		addCollider( 0, state.collider );
 	} else if ( state.mode === 'compare' ) {
-		const spacing = Math.max( 4.5, ( state.options.size ?? 0 ) * 1.25 );
+		const spacing = Math.max( 4.5, Number( state.options.size ?? 0 ) * 1.25 );
 
 		for ( let lod = 0; lod < 5; lod ++ ) {
 
@@ -368,10 +373,10 @@ function rebuildPreview(): void {
 		const seedCount = Math.max( 1, Math.min( 4, Math.floor( state.seedVariants ) ) );
 		scatterVariants = Array.from( { length: seedCount - 1 }, ( _, index ) => makeAsset(
 			activeKind,
-			{ ...state.options, seed: ( state.options.seed ?? 1 ) + index + 1 },
+			{ ...state.options, seed: Number( state.options.seed ?? 1 ) + index + 1 },
 			state.colors,
 		) );
-		scatter = createScatter( [ asset, ...scatterVariants ], state.scatterCount, state.options.seed ?? 1 );
+		scatter = createScatter( [ asset, ...scatterVariants ], state.scatterCount, Number( state.options.seed ?? 1 ) );
 		root.add( scatter.group );
 	}
 
@@ -401,8 +406,11 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 	for ( const key of Object.keys( state.options ) ) {
 
-		const [ minimum, maximum, step ] = getOptionBounds( key );
-		optionFolder.add( state.options, key, minimum, maximum, step )
+		const value = state.options[ key ];
+		const controller = typeof value === 'boolean'
+			? optionFolder.add( state.options, key )
+			: optionFolder.add( state.options, key, ...getOptionBounds( key ) );
+		controller
 			.name( key )
 			.onFinishChange( rebuildAsset );
 
@@ -522,7 +530,7 @@ function updateCompareLabels(): void {
 	for ( const label of labels ) {
 
 		const position = label.mesh.position.clone();
-		position.y = ( state.options.height ?? state.options.size ?? 7.5 ) * 1.13;
+		position.y = Number( state.options.height ?? state.options.size ?? 7.5 ) * 1.13;
 		position.project( camera );
 		label.element.style.left = `${ ( position.x * 0.5 + 0.5 ) * window.innerWidth }px`;
 		label.element.style.top = `${ ( - position.y * 0.5 + 0.5 ) * window.innerHeight }px`;

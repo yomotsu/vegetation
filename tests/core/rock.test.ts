@@ -7,7 +7,7 @@ import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { validateMeshData } from '../helpers/validateMeshData';
 import { topCardCoverageIou } from '../helpers/topCardCoverage';
 import { hasRockSelfIntersection, minimumRockApexAngle, minimumRockDihedralAngle, minimumRockTriangleAngle } from '../helpers/rockSharpness';
-import { buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, buildRockShell, clamp, createRockFacetNormals, createRockHullShape, createRockRadiusFunction, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';
+import { buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, buildRockShell, clamp, createRockFacetNormals, createRockHullShape, createRockRadiusFunction, getBounds, getIdenticalVertexWeld, getMinimumY, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';
 import type { RockUvFrame } from '../../src/core/rockGeometry';
 
 function triangleCount( mesh: MeshData ): number {
@@ -798,6 +798,152 @@ function boundaryEdgeCount( positions: Float32Array, indices: Uint32Array ): num
 
 }
 
+function getPositionEdgeUseCounts( positions: Float32Array, indices: Uint32Array ): number[] {
+
+	const vertices = new Map<string, number>();
+	const edges = new Map<string, number>();
+	const vertexKey = ( index: number ): string => `${ positions[ index * 3 ]!.toFixed( 6 ) },${ positions[ index * 3 + 1 ]!.toFixed( 6 ) },${ positions[ index * 3 + 2 ]!.toFixed( 6 ) }`;
+	const getVertex = ( index: number ): number => {
+
+		const key = vertexKey( index );
+		let vertex = vertices.get( key );
+		if ( vertex === undefined ) {
+
+			vertex = vertices.size;
+			vertices.set( key, vertex );
+
+		}
+		return vertex;
+
+	};
+
+	for ( let index = 0; index < indices.length; index += 3 ) {
+
+		const triangle = [ getVertex( indices[ index ]! ), getVertex( indices[ index + 1 ]! ), getVertex( indices[ index + 2 ]! ) ];
+		for ( let edgeIndex = 0; edgeIndex < 3; edgeIndex ++ ) {
+
+			const first = triangle[ edgeIndex ]!;
+			const second = triangle[ ( edgeIndex + 1 ) % 3 ]!;
+			const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
+			edges.set( key, ( edges.get( key ) ?? 0 ) + 1 );
+
+		}
+
+	}
+
+	return [ ...edges.values() ];
+
+}
+
+function boundaryEdgeCountByPosition( positions: Float32Array, indices: Uint32Array ): number {
+
+	return getPositionEdgeUseCounts( positions, indices ).filter( ( count ) => count === 1 ).length;
+
+}
+
+function nonManifoldEdgeCountByPosition( positions: Float32Array, indices: Uint32Array ): number {
+
+	return getPositionEdgeUseCounts( positions, indices ).filter( ( count ) => count !== 2 ).length;
+
+}
+
+function signedMeshVolume( mesh: MeshData ): number {
+
+	let volume = 0;
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+		const first = mesh.indices[ offset ]! * 3;
+		const second = mesh.indices[ offset + 1 ]! * 3;
+		const third = mesh.indices[ offset + 2 ]! * 3;
+		const ax = mesh.positions[ first ]!;
+		const ay = mesh.positions[ first + 1 ]!;
+		const az = mesh.positions[ first + 2 ]!;
+		const bx = mesh.positions[ second ]!;
+		const by = mesh.positions[ second + 1 ]!;
+		const bz = mesh.positions[ second + 2 ]!;
+		const cx = mesh.positions[ third ]!;
+		const cy = mesh.positions[ third + 1 ]!;
+		const cz = mesh.positions[ third + 2 ]!;
+		volume += ( ax * ( by * cz - bz * cy ) + ay * ( bz * cx - bx * cz ) + az * ( bx * cy - by * cx ) ) / 6;
+	}
+	return volume;
+
+}
+
+function closedLod0ChamferStats( mesh: MeshData, shape: ReturnType<typeof createRockHullShape>, verticalOffset: number ): { above: number; below: number; inwardNormals: number } {
+
+	const hullCenter: [ number, number, number ] = [ 0, 0, 0 ];
+	for ( const point of shape.points ) {
+		for ( let axis = 0; axis < 3; axis ++ ) hullCenter[ axis ] = hullCenter[ axis ]! + point[ axis ]! / shape.points.length;
+	}
+	const faceNormals = buildConvexHullFaces( shape.points ).map( ( face ) => {
+		const first = shape.points[ face[ 0 ] ]!;
+		const second = shape.points[ face[ 1 ] ]!;
+		const third = shape.points[ face[ 2 ] ]!;
+		const ab = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+		const ac = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+		const normal = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+		const length = Math.hypot( normal[ 0 ]!, normal[ 1 ]!, normal[ 2 ]! ) || 1;
+		for ( let axis = 0; axis < 3; axis ++ ) normal[ axis ] = normal[ axis ]! / length;
+		const center = [ ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3, ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3, ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 ];
+		const outward = normal[ 0 ]! * ( center[ 0 ]! - hullCenter[ 0 ]! ) + normal[ 1 ]! * ( center[ 1 ]! - hullCenter[ 1 ]! ) + normal[ 2 ]! * ( center[ 2 ]! - hullCenter[ 2 ]! );
+		return outward < 0 ? normal.map( ( value ) => - value ) : normal;
+	} );
+	let above = 0;
+	let below = 0;
+	let inwardNormals = 0;
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+		const vertices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
+		const points = vertices.map( ( vertex ) => [ mesh.positions[ vertex * 3 ]!, mesh.positions[ vertex * 3 + 1 ]!, mesh.positions[ vertex * 3 + 2 ]! ] as [ number, number, number ] );
+		const center: [ number, number, number ] = [ 0, 1, 2 ].map( ( axis ) => ( points[ 0 ]![ axis ]! + points[ 1 ]![ axis ]! + points[ 2 ]![ axis ]! ) / 3 ) as [ number, number, number ];
+		const ab = [ points[ 1 ]![ 0 ] - points[ 0 ]![ 0 ], points[ 1 ]![ 1 ] - points[ 0 ]![ 1 ], points[ 1 ]![ 2 ] - points[ 0 ]![ 2 ] ];
+		const ac = [ points[ 2 ]![ 0 ] - points[ 0 ]![ 0 ], points[ 2 ]![ 1 ] - points[ 0 ]![ 1 ], points[ 2 ]![ 2 ] - points[ 0 ]![ 2 ] ];
+		const normal = [ ab[ 1 ]! * ac[ 2 ]! - ab[ 2 ]! * ac[ 1 ]!, ab[ 2 ]! * ac[ 0 ]! - ab[ 0 ]! * ac[ 2 ]!, ab[ 0 ]! * ac[ 1 ]! - ab[ 1 ]! * ac[ 0 ]! ];
+		const length = Math.hypot( normal[ 0 ]!, normal[ 1 ]!, normal[ 2 ]! ) || 1;
+		for ( let axis = 0; axis < 3; axis ++ ) normal[ axis ] = normal[ axis ]! / length;
+		if ( center[ 1 ]! < 0 ) {
+			const outward: [ number, number, number ] = [ center[ 0 ]! - hullCenter[ 0 ]!, center[ 1 ]! - hullCenter[ 1 ]! - verticalOffset, center[ 2 ]! - hullCenter[ 2 ]! ];
+			for ( const vertex of vertices ) {
+				const dot = mesh.normals[ vertex * 3 ]! * outward[ 0 ] + mesh.normals[ vertex * 3 + 1 ]! * outward[ 1 ] + mesh.normals[ vertex * 3 + 2 ]! * outward[ 2 ];
+				if ( dot <= 0 ) inwardNormals ++;
+			}
+		}
+		const isFacet = faceNormals.some( ( facetNormal ) => normal[ 0 ]! * facetNormal[ 0 ]! + normal[ 1 ]! * facetNormal[ 1 ]! + normal[ 2 ]! * facetNormal[ 2 ]! >= Math.cos( 5 * Math.PI / 180 ) );
+		if ( isFacet || isRockScoopInterior( center, shape, verticalOffset ) ) continue;
+		if ( center[ 1 ]! < 0 ) below ++;
+		else above ++;
+	}
+
+	return { above, below, inwardNormals };
+
+}
+
+async function rockDataHash( data: ReturnType<typeof generateRockData> ): Promise<string> {
+
+	const chunks: Uint8Array[] = [];
+	const addArray = ( array: Float32Array | Uint32Array | Uint8Array ): void => {
+		chunks.push( new Uint8Array( array.buffer, array.byteOffset, array.byteLength ) );
+	};
+	for ( const mesh of data.lods ) {
+		for ( const array of [ mesh.positions, mesh.normals, mesh.uvs, mesh.colors, mesh.windWeight, mesh.impostorCard, mesh.indices ] ) addArray( array );
+		chunks.push( new TextEncoder().encode( JSON.stringify( mesh.groups ) ) );
+	}
+	addArray( data.collider!.positions );
+	addArray( data.collider!.indices );
+	addArray( data.textures.albedo!.data );
+	addArray( data.textures.normal!.data );
+	chunks.push( new TextEncoder().encode( JSON.stringify( { bounds: data.bounds, parts: data.parts } ) ) );
+	const bytes = new Uint8Array( chunks.reduce( ( total, chunk ) => total + chunk.length, 0 ) );
+	let offset = 0;
+	for ( const chunk of chunks ) {
+		bytes.set( chunk, offset );
+		offset += chunk.length;
+	}
+	const digest = await globalThis.crypto.subtle.digest( 'SHA-256', bytes );
+	return Array.from( new Uint8Array( digest ), ( value ) => value.toString( 16 ).padStart( 2, '0' ) ).join( '' );
+
+}
+
 function expectGroundPerimeter( mesh: MeshData, size: number, seed: number, lod: number ): number[] {
 
 	const outline: number[] = [];
@@ -1025,6 +1171,140 @@ describe( 'procedural rock data', () => {
 		for ( const mesh of data.lods ) validateMeshData( mesh );
 
 	} );
+
+	it( 'builds mesh LOD0–3 with a closed LOD3 base when requested', () => {
+
+		withSharedRockTextures( () => {
+
+			const data = generateRockData( { seed: 4, closeBottom: true } );
+			expect( boundaryEdgeCountByPosition( data.lods[ 3 ]!.positions, data.lods[ 3 ]!.indices ) ).toBe( 0 );
+			expect( signedMeshVolume( data.lods[ 3 ]! ) ).toBeGreaterThan( 0 );
+			expect( data.lods[ 3 ]!.indices.length / 3 ).toBeGreaterThan( data.lods[ 4 ]!.indices.length / 3 );
+
+		} );
+
+	} );
+
+	it( 'builds a detailed, watertight underside for closed LOD0–3', () => {
+
+		withSharedRockTextures( () => {
+
+			for ( let seed = 1; seed <= 50; seed ++ ) {
+
+				const data = generateRockData( { seed, closeBottom: true } );
+				expect( boundaryEdgeCountByPosition( data.collider!.positions, data.collider!.indices ), `seed ${ seed } collider closed boundary` ).toBe( 0 );
+				expect( nonManifoldEdgeCountByPosition( data.collider!.positions, data.collider!.indices ), `seed ${ seed } collider manifold edges` ).toBe( 0 );
+				expect( data.bounds ).toEqual( getBounds( data.lods[ 0 ]! ) );
+				for ( let lod = 0; lod <= 3; lod ++ ) {
+
+					const mesh = data.lods[ lod ]!;
+					expect( boundaryEdgeCountByPosition( mesh.positions, mesh.indices ), `seed ${ seed } LOD${ lod } closed boundary` ).toBe( 0 );
+					expect( nonManifoldEdgeCountByPosition( mesh.positions, mesh.indices ), `seed ${ seed } LOD${ lod } manifold edges` ).toBe( 0 );
+					expect( signedMeshVolume( mesh ), `seed ${ seed } LOD${ lod } signed volume` ).toBeGreaterThan( 0 );
+					for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+						const u = [ 0, 1, 2 ].map( ( corner ) => mesh.uvs[ mesh.indices[ offset + corner ]! * 2 ]! );
+						expect( Math.max( ...u ) - Math.min( ...u ), `seed ${ seed } LOD${ lod } triangle ${ offset / 3 } UV span` ).toBeLessThanOrEqual( 0.55 );
+
+					}
+
+				}
+
+				const vertexCounts = data.lods.map( ( mesh ) => vertexCount( mesh ) );
+				const triangleCounts = data.lods.map( ( mesh ) => triangleCount( mesh ) );
+				expect( vertexCounts[ 1 ]! / vertexCounts[ 0 ]!, `seed ${ seed } LOD1 vertex ratio` ).toBeGreaterThanOrEqual( 0.45 );
+				expect( vertexCounts[ 1 ]! / vertexCounts[ 0 ]!, `seed ${ seed } LOD1 vertex ratio` ).toBeLessThanOrEqual( 0.55 );
+				expect( triangleCounts[ 2 ]!, `seed ${ seed } LOD2 triangle target` ).toBeGreaterThanOrEqual( 32 );
+				expect( triangleCounts[ 2 ]!, `seed ${ seed } LOD2 triangle target` ).toBeLessThanOrEqual( 48 );
+				expect( triangleCounts[ 3 ]!, `seed ${ seed } LOD3 triangle target` ).toBeGreaterThanOrEqual( 24 );
+				expect( triangleCounts[ 3 ]!, `seed ${ seed } LOD3 triangle target` ).toBeLessThanOrEqual( 36 );
+				expect( vertexCounts.every( ( count, index ) => index === 0 || vertexCounts[ index - 1 ]! > count ), `seed ${ seed } vertex counts ${ vertexCounts.join( '/' ) }` ).toBe( true );
+				expect( triangleCounts.every( ( count, index ) => index === 0 || triangleCounts[ index - 1 ]! > count ), `seed ${ seed } triangle counts ${ triangleCounts.join( '/' ) }` ).toBe( true );
+
+			}
+
+		} );
+
+	}, 180000 );
+
+	it( 'validates closeBottom as a boolean when supplied', () => {
+
+		expect( () => generateRockData( { closeBottom: 1 as never } ) ).toThrow( /closeBottom.*boolean/i );
+
+	} );
+
+	it( 'keeps the closed LOD0 underside chamfered with outward normals', () => {
+
+		withSharedRockTextures( () => {
+
+			for ( const seed of [ 1, 7 ] ) {
+
+				const shape = createRockHullShape( seed + 62, 6.4, 1.2, 0.04, true );
+				const faces = buildConvexHullFaces( shape.points );
+				const chamfered = buildRockHullMeshWithChamfers( shape, faces, 6.4 * 0.04, 0 ).mesh;
+				const groundOffset = - getMinimumY( chamfered.positions );
+				let fullHeight = 0;
+				for ( let offset = 1; offset < chamfered.positions.length; offset += 3 ) fullHeight = Math.max( fullHeight, chamfered.positions[ offset ]! + groundOffset );
+				const verticalOffset = groundOffset - fullHeight * 0.4;
+				const data = generateRockData( { seed, closeBottom: true, weathering: 0, burial: 0.4 } );
+				const counts = closedLod0ChamferStats( data.lods[ 0 ]!, shape, verticalOffset );
+				expect( counts.below, `seed ${ seed } underside chamfer triangles` ).toBeGreaterThan( 0 );
+				expect( counts.above, `seed ${ seed } above-ground chamfer triangles` ).toBeGreaterThan( 0 );
+				expect( counts.below / counts.above, `seed ${ seed } underside/top ridge ratio` ).toBeGreaterThan( 0.25 );
+				expect( counts.below / counts.above, `seed ${ seed } underside/top ridge ratio` ).toBeLessThan( 4 );
+				expect( counts.inwardNormals, `seed ${ seed } underside inward normals` ).toBe( 0 );
+
+			}
+
+		} );
+
+	} );
+
+	it( 'keeps the default output byte-identical to HEAD for reference seeds', async () => {
+
+		const headHashes: Record<number, string> = {
+			1: 'd3e76c5c454d665dbdb5afc59150228d340b407d20be34483eb0be0173ba27a9',
+			2: 'a63ddb4fadd3a4da4ac6e8981b25bfa06975ead60c394050aa065bc9de52346e',
+			7: 'c8b403babd61b8c5d42521d2f9640f341cdded47e1d60d4b1ed007776c096fce',
+			42: 'eb918d31a1c669faaa513f36d6a9d7b93478a68a273edd9b91f430797c9de640',
+		};
+
+		for ( const seed of [ 1, 2, 7, 42 ] ) {
+
+			expect( await rockDataHash( generateRockData( { seed } ) ), `seed ${ seed } default` ).toBe( headHashes[ seed ] );
+			expect( await rockDataHash( generateRockData( { seed, closeBottom: false } ) ), `seed ${ seed } explicit false` ).toBe( headHashes[ seed ] );
+
+		}
+
+	} );
+
+	it( 'uses a separate texture cache key for the closed bottom shape', () => {
+
+		const open = generateRockData( { seed: 1, closeBottom: false } );
+		const closed = generateRockData( { seed: 1, closeBottom: true } );
+		const differs = open.textures.albedo!.data.some( ( value, index ) => value !== closed.textures.albedo!.data[ index ] );
+		expect( differs ).toBe( true );
+
+	} );
+
+	it( 'keeps the closed LOD0 above-ground silhouette close to the open shape', () => {
+
+		withSharedRockTextures( () => {
+
+			for ( const seed of [ 1, 7, 42 ] ) {
+
+				const open = generateRockData( { seed, burial: 0 } );
+				const closed = generateRockData( { seed, burial: 0, closeBottom: true } );
+				const sideIou = coverageIou( renderCoverage( open, 0 ), renderCoverage( closed, 0 ), 0 );
+				const topIou = coverageIou( renderCoverage( open, 0, true ), renderCoverage( closed, 0, true ), 0 );
+				expect( sideIou, `seed ${ seed } side IoU` ).toBeGreaterThanOrEqual( 0.7 );
+				expect( topIou, `seed ${ seed } top IoU` ).toBeGreaterThanOrEqual( 0.7 );
+
+			}
+
+		} );
+
+	}, 60000 );
 
 	it( 'uses the LOD0 UV frame on LOD1–3', () => {
 

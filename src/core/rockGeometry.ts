@@ -217,7 +217,7 @@ function getConeApexAngle( point: Vec3, neighbors: Set<number>, positions: Vec3[
 }
 
 /** 尖った頂点だけを局所的に抑え、大きな形状は保つ。 */
-export function limitRockPeakSharpness( mesh: MeshData, bandLimitWeight: number, minimumApexAngle = 100.5 ): void {
+export function limitRockPeakSharpness( mesh: MeshData, bandLimitWeight: number, minimumApexAngle = 100.5, includeBottom = false ): void {
 
 	if ( ! Number.isFinite( bandLimitWeight ) || bandLimitWeight < 0 || bandLimitWeight > 1 ) {
 		throw new RangeError( 'Rock band-limit weight must be from 0 to 1' );
@@ -234,7 +234,7 @@ export function limitRockPeakSharpness( mesh: MeshData, bandLimitWeight: number,
 
 	// Clamp only unusually prominent local corners; broad convex forms stay intact.
 	for ( let vertex = 0; vertex < positions.length; vertex ++ ) {
-		if ( positions[ vertex ]![ 1 ] <= 0 ) continue;
+		if ( ! includeBottom && positions[ vertex ]![ 1 ] <= 0 ) continue;
 		const adjacent = topology.neighbors[ vertex ]!;
 		const average = meanNeighborPosition( positions, adjacent );
 		if ( average === undefined || adjacent.size < 3 ) continue;
@@ -254,7 +254,7 @@ export function limitRockPeakSharpness( mesh: MeshData, bandLimitWeight: number,
 	for ( let pass = 0; pass < 32; pass ++ ) {
 		let changed = false;
 		for ( let vertex = 0; vertex < positions.length; vertex ++ ) {
-			if ( positions[ vertex ]![ 1 ] <= 0 ) continue;
+			if ( ! includeBottom && positions[ vertex ]![ 1 ] <= 0 ) continue;
 			const adjacent = topology.neighbors[ vertex ]!;
 			if ( getConeApexAngle( positions[ vertex ]!, adjacent, positions ) >= minimumApexAngle ) continue;
 			const average = meanNeighborPosition( positions, adjacent );
@@ -704,6 +704,86 @@ function splitLargeAboveGroundHullFacets( points: Vec3[], directions: Vec3[], si
 
 }
 
+function splitLargeClosedHullFacets( points: Vec3[], directions: Vec3[], size: number ): void {
+
+	for ( let attempt = 0; attempt < 12 && points.length < 46; attempt ++ ) {
+
+		const minimumY = Math.min( ...points.map( ( point ) => point[ 1 ] ) );
+		const maximumY = Math.max( ...points.map( ( point ) => point[ 1 ] ) );
+		const groundY = minimumY + ( maximumY - minimumY ) * 0.46;
+		const faces = buildConvexHullFaces( points );
+		const hullCenter: Vec3 = [ 0, 0, 0 ];
+		for ( const point of points ) for ( let axis = 0; axis < 3; axis ++ ) hullCenter[ axis ] = hullCenter[ axis ]! + point[ axis ]! / points.length;
+		const getLargestRegion = ( below: boolean ): { normal: Vec3; area: number; center: Vec3; ratio: number; visibleFacetCount: number } | undefined => {
+
+			const cameraDirection = normalizeDirection( [ 0, below ? - 0.3 : 0.3, 0.95 ] );
+			const regions: { normal: Vec3; offset: number; area: number; center: Vec3 }[] = [];
+			let visibleArea = 0;
+
+			for ( const face of faces ) {
+
+				const first = points[ face[ 0 ] ]!;
+				const second = points[ face[ 1 ] ]!;
+				const third = points[ face[ 2 ] ]!;
+				const centerY = ( first[ 1 ] + second[ 1 ] + third[ 1 ] ) / 3;
+				if ( below ? centerY > groundY : centerY <= groundY ) continue;
+
+				const ab: Vec3 = [ second[ 0 ] - first[ 0 ], second[ 1 ] - first[ 1 ], second[ 2 ] - first[ 2 ] ];
+				const ac: Vec3 = [ third[ 0 ] - first[ 0 ], third[ 1 ] - first[ 1 ], third[ 2 ] - first[ 2 ] ];
+				const cross: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+				const doubleArea = Math.hypot( ...cross );
+				if ( doubleArea < 1e-8 ) continue;
+
+				const area = doubleArea * 0.5;
+				const normal = normalizeDirection( cross );
+				const centerX = ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3;
+				const centerZ = ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3;
+				const outward: Vec3 = [ centerX - hullCenter[ 0 ], centerY - hullCenter[ 1 ], centerZ - hullCenter[ 2 ] ];
+				if ( normal[ 0 ] * outward[ 0 ] + normal[ 1 ] * outward[ 1 ] + normal[ 2 ] * outward[ 2 ] < 0 ) {
+					normal[ 0 ] = - normal[ 0 ];
+					normal[ 1 ] = - normal[ 1 ];
+					normal[ 2 ] = - normal[ 2 ];
+				}
+				if ( normal[ 0 ] * cameraDirection[ 0 ] + normal[ 1 ] * cameraDirection[ 1 ] + normal[ 2 ] * cameraDirection[ 2 ] <= 0.02 ) continue;
+
+				visibleArea += area;
+				const offset = normal[ 0 ] * first[ 0 ] + normal[ 1 ] * first[ 1 ] + normal[ 2 ] * first[ 2 ];
+				let region = regions.find( ( candidate ) => candidate.normal[ 0 ] * normal[ 0 ] + candidate.normal[ 1 ] * normal[ 1 ] + candidate.normal[ 2 ] * normal[ 2 ] > 0.9999 && Math.abs( candidate.offset - offset ) < size * 0.001 );
+				if ( region === undefined ) {
+					region = { normal, offset, area: 0, center: [ 0, 0, 0 ] };
+					regions.push( region );
+				}
+				region.area += area;
+				region.center[ 0 ] += ( first[ 0 ] + second[ 0 ] + third[ 0 ] ) / 3 * area;
+				region.center[ 1 ] += centerY * area;
+				region.center[ 2 ] += ( first[ 2 ] + second[ 2 ] + third[ 2 ] ) / 3 * area;
+
+			}
+
+			if ( visibleArea < 1e-8 ) return undefined;
+			const largestRegion = regions.reduce<( typeof regions )[ number ] | undefined>( ( largest, region ) => largest === undefined || region.area > largest.area ? region : largest, undefined );
+			if ( largestRegion === undefined ) return undefined;
+			return { ...largestRegion, ratio: largestRegion.area / visibleArea, visibleFacetCount: regions.filter( ( region ) => region.area / visibleArea >= 0.002 ).length };
+
+		};
+
+		const top = getLargestRegion( false );
+		const bottom = getLargestRegion( true );
+		const needsSplit = ( region: ReturnType<typeof getLargestRegion> ): boolean => region !== undefined && ( region.ratio > 0.18 || region.visibleFacetCount < 12 );
+		const topNeedsSplit = needsSplit( top );
+		const bottomNeedsSplit = needsSplit( bottom );
+		if ( ! topNeedsSplit && ! bottomNeedsSplit ) return;
+		const priority = ( region: NonNullable<ReturnType<typeof getLargestRegion>> ): number => region.ratio / 0.18 + Math.max( 0, 12 - region.visibleFacetCount ) * 0.1;
+		const selected = ! topNeedsSplit ? bottom! : ! bottomNeedsSplit ? top! : priority( top! ) >= priority( bottom! ) ? top! : bottom!;
+		const splitPoint = selected.center.map( ( value ) => value / selected.area ) as Vec3;
+		const outward = size * 0.065;
+		points.push( [ splitPoint[ 0 ] + selected.normal[ 0 ] * outward, splitPoint[ 1 ] + selected.normal[ 1 ] * outward, splitPoint[ 2 ] + selected.normal[ 2 ] * outward ] );
+		directions.push( selected.normal );
+
+	}
+
+}
+
 function normalizeDirection( direction: Vec3 ): Vec3 {
 
 	const length = Math.hypot( direction[ 0 ], direction[ 1 ], direction[ 2 ] ) || 1;
@@ -762,7 +842,7 @@ function createPoissonDirections( seed: number, count: number ): Vec3[] {
 
 }
 
-function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] = [] ): Vec3[] {
+function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] = [], verticalSign: 1 | - 1 = 1 ): Vec3[] {
 
 	const random = createRockRandom( seed );
 	const directions: Vec3[] = [];
@@ -774,7 +854,7 @@ function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] 
 	for ( let cluster = 0; directions.length < count; cluster ++ ) {
 
 		const centerAngle = rotation + cluster / clusterCount * Math.PI * 2 + ( random() - 0.5 ) * 0.16;
-		const centerY = 0.52 + random() * 0.22;
+		const centerY = verticalSign * ( 0.52 + random() * 0.22 );
 
 		for ( let member = 0; member < 2 && directions.length < count; member ++ ) {
 
@@ -782,7 +862,7 @@ function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] 
 			let candidate: Vec3 | undefined;
 			for ( let attempt = 0; attempt < 32; attempt ++ ) {
 				const angle = centerAngle + side * ( 0.2 + random() * 0.1 ) + ( random() - 0.5 ) * 0.12;
-				const y = clamp( centerY + side * ( 0.04 + random() * 0.04 ), 0.4, 0.84 );
+				const y = clamp( centerY + side * ( 0.04 + random() * 0.04 ) * verticalSign, verticalSign === 1 ? 0.4 : - 0.84, verticalSign === 1 ? 0.84 : - 0.4 );
 				const horizontal = Math.sqrt( 1 - y * y );
 				const direction: Vec3 = [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ];
 				if ( isSpaced( direction ) ) {
@@ -792,7 +872,7 @@ function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] 
 			}
 			if ( candidate === undefined ) {
 				for ( let attempt = 0; attempt < 64; attempt ++ ) {
-					const y = 0.4 + random() * 0.44;
+					const y = verticalSign * ( 0.4 + random() * 0.44 );
 					const angle = random() * Math.PI * 2;
 					const horizontal = Math.sqrt( 1 - y * y );
 					const direction: Vec3 = [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ];
@@ -804,7 +884,7 @@ function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] 
 			}
 			if ( candidate === undefined ) {
 				const angle = centerAngle + side * 0.25;
-				const y = clamp( centerY + side * 0.06, 0.4, 0.84 );
+				const y = clamp( centerY + side * 0.06 * verticalSign, verticalSign === 1 ? 0.4 : - 0.84, verticalSign === 1 ? 0.84 : - 0.4 );
 				const horizontal = Math.sqrt( 1 - y * y );
 				candidate = [ horizontal * Math.cos( angle ), y, horizontal * Math.sin( angle ) ];
 			}
@@ -818,7 +898,7 @@ function createTopEdgeDirections( seed: number, count: number, excluded: Vec3[] 
 
 }
 
-export function createRockHullShape( seed: number, size: number, roughness = 1.2, flatness = 0 ): RockHullShape {
+export function createRockHullShape( seed: number, size: number, roughness = 1.2, flatness = 0, closeBottom = false ): RockHullShape {
 
 	const random = createRockRandom( seed + 4711 );
 	const aspectX = 0.76 + random() * 0.54;
@@ -852,7 +932,9 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 	for ( let attempt = 0; attempt < 12; attempt ++ ) {
 
 		const poissonDirections = createPoissonDirections( seed + 8891 + attempt * 7919, count - 6 );
-		directions = [ ...poissonDirections, ...createTopEdgeDirections( seed + 37891 + attempt * 7919, 6, poissonDirections ) ];
+		const topEdgeDirections = createTopEdgeDirections( seed + 37891 + attempt * 7919, 6, poissonDirections );
+		const bottomEdgeDirections = closeBottom ? createTopEdgeDirections( seed + 37891 + attempt * 7919 + 12345, 6, poissonDirections, - 1 ) : [];
+		directions = [ ...poissonDirections, ...topEdgeDirections, ...bottomEdgeDirections ];
 		const pointRandom = createRockRandom( seed + 22721 + attempt * 7919 );
 		points = directions.map( ( direction ) => {
 
@@ -922,7 +1004,8 @@ export function createRockHullShape( seed: number, size: number, roughness = 1.2
 
 	}
 
-	splitLargeAboveGroundHullFacets( points, directions, size );
+	if ( closeBottom ) splitLargeClosedHullFacets( points, directions, size );
+	else splitLargeAboveGroundHullFacets( points, directions, size );
 	const finalFaces = buildConvexHullFaces( points );
 
 	if ( getVisibleAxisAlignedFacetCount( points, finalFaces ) >= 3 ) {
@@ -1066,39 +1149,65 @@ interface ChamferedRockNormalInfo {
 
 const chamferedRockNormalInfo = new WeakMap<MeshData, ChamferedRockNormalInfo>();
 
-export function recomputeChamferedRockHullNormals( mesh: MeshData ): void {
+export function recomputeChamferedRockHullNormals( mesh: MeshData, closeBottom = false ): void {
 
 	const info = chamferedRockNormalInfo.get( mesh );
 	if ( info === undefined ) return;
 	const scoopNormalSums = new Map<number, Vec3>();
+	const ridgeNormalSums = new Map<number, Vec3>();
 
 	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
 		const facetIndex = info.triangleFacetIndices[ offset / 3 ];
-		if ( facetIndex === undefined || facetIndex < 0 ) continue;
+		if ( facetIndex === undefined ) continue;
 		const first = mesh.indices[ offset ]! * 3;
 		const second = mesh.indices[ offset + 1 ]! * 3;
 		const third = mesh.indices[ offset + 2 ]! * 3;
 		const ab: Vec3 = [ mesh.positions[ second ]! - mesh.positions[ first ]!, mesh.positions[ second + 1 ]! - mesh.positions[ first + 1 ]!, mesh.positions[ second + 2 ]! - mesh.positions[ first + 2 ]! ];
 		const ac: Vec3 = [ mesh.positions[ third ]! - mesh.positions[ first ]!, mesh.positions[ third + 1 ]! - mesh.positions[ first + 1 ]!, mesh.positions[ third + 2 ]! - mesh.positions[ first + 2 ]! ];
 		const areaNormal: Vec3 = [ ab[ 1 ] * ac[ 2 ] - ab[ 2 ] * ac[ 1 ], ab[ 2 ] * ac[ 0 ] - ab[ 0 ] * ac[ 2 ], ab[ 0 ] * ac[ 1 ] - ab[ 1 ] * ac[ 0 ] ];
+		if ( facetIndex < 0 && closeBottom ) {
+
+			for ( const vertex of [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ] ) {
+
+				const sum = ridgeNormalSums.get( vertex ) ?? [ 0, 0, 0 ];
+				sum[ 0 ] += areaNormal[ 0 ];
+				sum[ 1 ] += areaNormal[ 1 ];
+				sum[ 2 ] += areaNormal[ 2 ];
+				ridgeNormalSums.set( vertex, sum );
+
+			}
+
+			continue;
+
+		}
+		if ( facetIndex < 0 ) continue;
 
 		for ( const vertex of [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ] ) {
+
 			if ( ! info.scoopedVertices.has( vertex ) ) continue;
 			const sum = scoopNormalSums.get( vertex ) ?? [ 0, 0, 0 ];
 			sum[ 0 ] += areaNormal[ 0 ];
 			sum[ 1 ] += areaNormal[ 1 ];
 			sum[ 2 ] += areaNormal[ 2 ];
 			scoopNormalSums.set( vertex, sum );
+
 		}
+
 	}
 
 	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
+
 		const facetIndex = info.vertexFacetIndices[ vertex ] ?? - 1;
 		const scoopNormal = scoopNormalSums.get( vertex );
-		const normal = facetIndex < 0 ? [ 0, 1, 0 ] as Vec3 : scoopNormal === undefined || Math.hypot( scoopNormal[ 0 ], scoopNormal[ 1 ], scoopNormal[ 2 ] ) < 1e-10 ? info.facetNormals[ facetIndex ]! : normalizeDirection( scoopNormal );
+		const ridgeNormal = ridgeNormalSums.get( vertex );
+		const normal = facetIndex < 0
+			? closeBottom && ridgeNormal !== undefined ? normalizeDirection( ridgeNormal ) : [ 0, 1, 0 ] as Vec3
+			: scoopNormal === undefined || Math.hypot( scoopNormal[ 0 ], scoopNormal[ 1 ], scoopNormal[ 2 ] ) < 1e-10 ? info.facetNormals[ facetIndex ]! : normalizeDirection( scoopNormal );
 		mesh.normals[ vertex * 3 ] = normal[ 0 ];
 		mesh.normals[ vertex * 3 + 1 ] = normal[ 1 ];
 		mesh.normals[ vertex * 3 + 2 ] = normal[ 2 ];
+
 	}
 
 }

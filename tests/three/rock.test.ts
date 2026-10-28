@@ -2,6 +2,34 @@ import { DataTexture, MeshPhysicalMaterial, NoColorSpace, SRGBColorSpace } from 
 import { describe, expect, it } from 'vitest';
 import { RockMesh, generateRock } from '../../src/index';
 
+function boundaryEdgeCountByPosition( mesh: { positions: Float32Array; indices: Uint32Array } ): number {
+
+	const vertices = new Map<string, number>();
+	const edges = new Map<string, number>();
+	const getVertex = ( index: number ): number => {
+		const key = `${ mesh.positions[ index * 3 ]!.toFixed( 6 ) },${ mesh.positions[ index * 3 + 1 ]!.toFixed( 6 ) },${ mesh.positions[ index * 3 + 2 ]!.toFixed( 6 ) }`;
+		let vertex = vertices.get( key );
+		if ( vertex === undefined ) {
+			vertex = vertices.size;
+			vertices.set( key, vertex );
+		}
+		return vertex;
+	};
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+		const triangle = [ getVertex( mesh.indices[ offset ]! ), getVertex( mesh.indices[ offset + 1 ]! ), getVertex( mesh.indices[ offset + 2 ]! ) ];
+		for ( let edge = 0; edge < 3; edge ++ ) {
+			const first = triangle[ edge ]!;
+			const second = triangle[ ( edge + 1 ) % 3 ]!;
+			const key = first < second ? `${ first }:${ second }` : `${ second }:${ first }`;
+			edges.set( key, ( edges.get( key ) ?? 0 ) + 1 );
+		}
+	}
+
+	return [ ...edges.values() ].filter( ( count ) => count === 1 ).length;
+
+}
+
 describe( 'rock meshes', () => {
 
 	it( 'uses reference physical material settings and a linear normal map', () => {
@@ -36,6 +64,16 @@ describe( 'rock meshes', () => {
 		expect( rock.asset.getColor( 'rock' ).getHex() ).toBe( 0xc0392b );
 		expect( rock.asset.geometries[ 0 ]!.getAttribute( 'position' ).array ).toBe( positions );
 
+		rock.asset.dispose();
+
+	} );
+
+	it( 'passes closeBottom through RockMeshOptions', () => {
+
+		const rock = new RockMesh( { seed: 1, closeBottom: true, burial: 0, lod: 3 } );
+		for ( let lod = 0; lod <= 3; lod ++ ) {
+			expect( boundaryEdgeCountByPosition( rock.asset.data.lods[ lod ]! ), `LOD${ lod }` ).toBe( 0 );
+		}
 		rock.asset.dispose();
 
 	} );
