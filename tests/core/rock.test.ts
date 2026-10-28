@@ -900,7 +900,7 @@ describe( 'procedural rock data', () => {
 
 	}, 180000 );
 
-	it( 'keeps every rock LOD grounded and LOD3 within its triangle budget across 300 seeds', () => {
+	it( 'keeps every rock LOD grounded and within its mesh budgets across 300 seeds', () => {
 
 		withSharedRockTextures( () => {
 
@@ -909,16 +909,38 @@ describe( 'procedural rock data', () => {
 			for ( const seed of seeds ) {
 
 				const data = generateRockData( { seed, size: 6.4 } );
-				const lod3Vertices = vertexCount( data.lods[ 3 ]! );
 				expect( vertexCount( data.lods[ 0 ]! ), `seed ${ seed } LOD0 vertices` ).toBeLessThanOrEqual( 260 );
-				expect( lod3Vertices, `seed ${ seed } LOD3 vertices` ).toBeLessThanOrEqual( 90 );
+				expect( vertexCount( data.lods[ 3 ]! ), `seed ${ seed } LOD3 vertices` ).toBeLessThanOrEqual( 90 );
 				if ( seed <= 300 ) {
 
+					const lod0Vertices = vertexCount( data.lods[ 0 ]! );
+					const lod1Vertices = vertexCount( data.lods[ 1 ]! );
+					const lod2Vertices = vertexCount( data.lods[ 2 ]! );
+					const lod3Vertices = vertexCount( data.lods[ 3 ]! );
+					const lod4Vertices = vertexCount( data.lods[ 4 ]! );
+					const lod0Triangles = triangleCount( data.lods[ 0 ]! );
+					const lod1Triangles = triangleCount( data.lods[ 1 ]! );
 					const lod2Triangles = triangleCount( data.lods[ 2 ]! );
 					const lod3Triangles = triangleCount( data.lods[ 3 ]! );
-					expect( lod3Triangles, `seed ${ seed } LOD3 triangles` ).toBeGreaterThanOrEqual( 16 );
-					expect( lod3Triangles, `seed ${ seed } LOD3 triangles` ).toBeLessThanOrEqual( 24 );
-					expect( lod2Triangles - lod3Triangles, `seed ${ seed } LOD2 ${ lod2Triangles } minus LOD3 ${ lod3Triangles } triangles` ).toBeGreaterThanOrEqual( 15 );
+					const lod4Triangles = triangleCount( data.lods[ 4 ]! );
+
+					expect( lod1Vertices / lod0Vertices, `seed ${ seed } LOD1 vertex ratio` ).toBeGreaterThanOrEqual( 0.45 );
+					expect( lod1Vertices / lod0Vertices, `seed ${ seed } LOD1 vertex ratio` ).toBeLessThanOrEqual( 0.55 );
+					expect( lod2Triangles, `seed ${ seed } LOD2 triangles` ).toBeGreaterThanOrEqual( 16 );
+					expect( lod2Triangles, `seed ${ seed } LOD2 triangles` ).toBeLessThanOrEqual( 24 );
+					expect( lod3Triangles, `seed ${ seed } LOD3 triangles` ).toBeGreaterThanOrEqual( 12 );
+					expect( lod3Triangles, `seed ${ seed } LOD3 triangles` ).toBeLessThanOrEqual( 17 );
+					const vertexCounts = [ lod0Vertices, lod1Vertices, lod2Vertices, lod3Vertices, lod4Vertices ];
+					const triangleCounts = [ lod0Triangles, lod1Triangles, lod2Triangles, lod3Triangles, lod4Triangles ];
+					expect( vertexCounts.every( ( count, index, counts ) => index === 0 || counts[ index - 1 ]! > count ), `seed ${ seed } vertex counts ${ vertexCounts.join( '/' ) }, triangles ${ triangleCounts.join( '/' ) }` ).toBe( true );
+					expect( triangleCounts.every( ( count, index, counts ) => index === 0 || counts[ index - 1 ]! > count ), `seed ${ seed } triangle counts ${ triangleCounts.join( '/' ) }` ).toBe( true );
+
+					for ( const lod of [ 2, 3 ] ) {
+
+						expect( new Set( data.lods[ lod ]!.colors ).size, `seed ${ seed } LOD${ lod } flat color` ).toBe( 1 );
+						expect( data.lods[ lod ]!.colors[ 0 ], `seed ${ seed } LOD${ lod } color value` ).toBe( data.lods[ 0 ]!.colors[ 0 ] );
+
+					}
 
 				}
 				expect( data.collider!.indices.length / 3, `seed ${ seed } collider triangles` ).toBeLessThanOrEqual( 96 );
@@ -1396,29 +1418,87 @@ describe( 'procedural rock data', () => {
 
 	} );
 
-	it( 'keeps the low-poly LOD3 silhouette close to LOD0 from the side and top', () => {
+	it( 'keeps the low-poly LOD2 and LOD3 silhouettes close to LOD0 from the side and top', () => {
 
-		const data = generateRockData( { seed: 7 } );
+		const minimumCoverage = new Map<number, { side: number; top: number; sideSeed: number; topSeed: number; sideTriangles: number; topTriangles: number }>( [
+			[ 2, { side: Infinity, top: Infinity, sideSeed: 0, topSeed: 0, sideTriangles: 0, topTriangles: 0 } ],
+			[ 3, { side: Infinity, top: Infinity, sideSeed: 0, topSeed: 0, sideTriangles: 0, topTriangles: 0 } ],
+		] );
+		const seed7ColorDifference = new Map<number, number>( [
+			[ 2, 0 ],
+			[ 3, 0 ],
+		] );
 
-		for ( const topDown of [ false, true ] ) {
+		for ( const seed of Array.from( { length: 50 }, ( _, index ) => index + 1 ) ) {
 
-			const lod0 = renderCoverage( data, 0, topDown );
-			const lod = 3;
+			const data = generateRockData( { seed } );
 
-			const lodCoverage = renderCoverage( data, lod, topDown );
-			const coverage = coverageIou( lod0, lodCoverage, 0 );
-			expect( coverage, `LOD${ lod } ${ topDown ? 'top' : 'side' } coverage` ).toBeGreaterThanOrEqual( 0.75 );
+			for ( const topDown of [ false, true ] ) {
 
-			if ( ! topDown ) {
+				const lod0 = renderCoverage( data, 0, topDown );
 
-				const sourceColor = meanOpaqueRgb( lod0.data );
-				const farColor = meanOpaqueRgb( lodCoverage.data );
+				for ( const lod of [ 2, 3 ] ) {
 
-				for ( let channel = 0; channel < 3; channel ++ ) {
-					expect( Math.abs( sourceColor[ channel ]! - farColor[ channel ]! ), `LOD3 channel ${ channel } mean color` ).toBeLessThanOrEqual( 8 );
+					const lodCoverage = renderCoverage( data, lod, topDown );
+					const coverage = coverageIou( lod0, lodCoverage, 0 );
+					const coverageSummary = minimumCoverage.get( lod )!;
+					if ( topDown && coverage < coverageSummary.top ) {
+
+						coverageSummary.top = coverage;
+						coverageSummary.topSeed = seed;
+						coverageSummary.topTriangles = triangleCount( data.lods[ lod ]! );
+
+					} else if ( ! topDown && coverage < coverageSummary.side ) {
+
+						coverageSummary.side = coverage;
+						coverageSummary.sideSeed = seed;
+						coverageSummary.sideTriangles = triangleCount( data.lods[ lod ]! );
+
+					}
+
+					if ( ! topDown && seed === 7 ) {
+
+						const sourceColor = meanOpaqueRgb( lod0.data );
+						const farColor = meanOpaqueRgb( lodCoverage.data );
+
+						for ( let channel = 0; channel < 3; channel ++ ) {
+
+							seed7ColorDifference.set( lod, Math.max( seed7ColorDifference.get( lod )!, Math.abs( sourceColor[ channel ]! - farColor[ channel ]! ) ) );
+
+						}
+
+					}
+
 				}
 
 			}
+
+		}
+
+		for ( const lod of [ 2, 3 ] ) {
+
+			const coverageSummary = minimumCoverage.get( lod )!;
+			expect( coverageSummary.side, `LOD${ lod } minimum side coverage` ).toBeGreaterThanOrEqual( 0.75 );
+			expect( coverageSummary.top, `LOD${ lod } minimum top coverage` ).toBeGreaterThanOrEqual( 0.75 );
+			expect( seed7ColorDifference.get( lod )!, `seed 7 LOD${ lod } mean color difference` ).toBeLessThanOrEqual( 8 );
+
+		}
+
+	}, 120000 );
+
+	it( 'keeps LOD1 silhouette close to LOD0 from the side and top', () => {
+
+		for ( const seed of [ 1, 7, 42 ] ) {
+
+			const data = generateRockData( { seed } );
+			const lod0 = renderCoverage( data, 0 );
+			const lod1 = renderCoverage( data, 1 );
+			const lod0Top = renderCoverage( data, 0, true );
+			const lod1Top = renderCoverage( data, 1, true );
+			const sideIou = coverageIou( lod0, lod1, 0 );
+			const topIou = coverageIou( lod0Top, lod1Top, 0 );
+			expect( sideIou, `seed ${ seed } LOD1 side coverage` ).toBeGreaterThanOrEqual( 0.85 );
+			expect( topIou, `seed ${ seed } LOD1 top coverage` ).toBeGreaterThanOrEqual( 0.85 );
 
 		}
 

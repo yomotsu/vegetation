@@ -1447,7 +1447,7 @@ export function buildRockHullMeshWithChamfers( shape: RockHullShape, faces: [ nu
 
 }
 
-export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number, number ][], subdivision: 0 | 1 | 2 | 3, bevelWidth = 0, weathering = 0.25, unwrapSeams = true, uvFrame?: RockUvFrame, fastHullOnly = false ): MeshData {
+export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number, number ][], subdivision: 0 | 1 | 2 | 3, bevelWidth = 0, weathering = 0.25, unwrapSeams = true, uvFrame?: RockUvFrame, fastHullOnly = false, subdivisionFaceIndices?: ReadonlySet<number> ): MeshData {
 
 	if ( subdivision === 3 && bevelWidth > 0 ) return buildRockHullMeshWithChamfers( shape, faces, bevelWidth, weathering, unwrapSeams ).mesh;
 	if ( fastHullOnly && subdivision === 0 && bevelWidth === 0 ) {
@@ -1601,6 +1601,13 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 		}
 
 		if ( subdivision === 1 ) {
+
+			if ( subdivisionFaceIndices !== undefined && ! subdivisionFaceIndices.has( faceIndex ) ) {
+
+				triangles.push( corners as [ number, number, number ] );
+				continue;
+
+			}
 
 			const center = getVertex( `f:${ faceIndex }`, centerPosition, [ 0, 0, 0 ], 0 );
 			triangles.push( [ corners[ 0 ]!, corners[ 1 ]!, center ], [ corners[ 1 ]!, corners[ 2 ]!, center ], [ corners[ 2 ]!, corners[ 0 ]!, center ] );
