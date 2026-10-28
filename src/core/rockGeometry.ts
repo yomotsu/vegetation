@@ -927,9 +927,15 @@ function applyRockScoops( position: Vec3, radii: Vec3, rotationY: number, scoops
 
 export type RockRidgeUvSegment = [ [ number, number ], [ number, number ] ];
 
+export interface RockUvFrame {
+	center: Vec3;
+	uvOffset: number;
+}
+
 export interface ChamferedRockHullMesh {
 	mesh: MeshData;
 	ridgeUvSegments: RockRidgeUvSegment[];
+	uvFrame: RockUvFrame;
 }
 
 interface RockHullFacet {
@@ -1384,15 +1390,26 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 		fixedFoldTriangles.add( candidate );
 
 	}
-	const mesh = buildRockMeshFromFaces( positions, triangles );
+	const uvCenter: Vec3 = [ 0, 0, 0 ];
+	for ( const position of positions ) {
+
+		uvCenter[ 0 ] += position[ 0 ] / positions.length;
+		uvCenter[ 1 ] += position[ 1 ] / positions.length;
+		uvCenter[ 2 ] += position[ 2 ] / positions.length;
+
+	}
+	const mesh = buildRockMeshFromFaces( positions, triangles, 0, uvCenter );
 	const scoopedVertices = new Set<number>();
 	for ( const vertices of scoopedFacetVertices ) for ( const vertex of vertices ) scoopedVertices.add( vertex );
 	for ( const vertex of foldedFaceVertices ) scoopedVertices.add( vertex );
 	const normalInfo: ChamferedRockNormalInfo = { vertexFacetIndices, scoopedVertices, triangleFacetIndices, facetNormals: facets.map( ( facet ) => facet.normal ) };
 	chamferedRockNormalInfo.set( mesh, normalInfo );
-	if ( unwrapSeams ) unwrapRockUvSeams( mesh, true, ( source, target ) => {
+	let uvOffset = 0;
+	if ( unwrapSeams ) uvOffset = unwrapRockUvSeams( mesh, true, ( source, target ) => {
+
 		normalInfo.vertexFacetIndices[ target ] = normalInfo.vertexFacetIndices[ source ]!;
 		if ( normalInfo.scoopedVertices.has( source ) ) normalInfo.scoopedVertices.add( target );
+
 	} );
 	recomputeChamferedRockHullNormals( mesh );
 	const midpointUv = ( first: number, second: number ): [ number, number ] => {
@@ -1418,7 +1435,7 @@ function buildChamferedRockHullMesh( shape: RockHullShape, faces: [ number, numb
 	const highlightedRidges = ridgeVertices.slice().sort( ( first, second ) => second.sharpness - first.sharpness ).slice( 0, highlightCount );
 	for ( const ridge of highlightedRidges ) addRidgeUvSegment( midpointUv( ridge.firstA, ridge.secondA ), midpointUv( ridge.firstB, ridge.secondB ), ridgeUvSegments );
 
-	return { mesh, ridgeUvSegments };
+	return { mesh, ridgeUvSegments, uvFrame: { center: uvCenter, uvOffset } };
 
 }
 
@@ -1430,9 +1447,48 @@ export function buildRockHullMeshWithChamfers( shape: RockHullShape, faces: [ nu
 
 }
 
-export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number, number ][], subdivision: 0 | 1 | 2 | 3, bevelWidth = 0, weathering = 0.25, unwrapSeams = true ): MeshData {
+export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number, number ][], subdivision: 0 | 1 | 2 | 3, bevelWidth = 0, weathering = 0.25, unwrapSeams = true, uvFrame?: RockUvFrame, fastHullOnly = false ): MeshData {
 
 	if ( subdivision === 3 && bevelWidth > 0 ) return buildRockHullMeshWithChamfers( shape, faces, bevelWidth, weathering, unwrapSeams ).mesh;
+	if ( fastHullOnly && subdivision === 0 && bevelWidth === 0 ) {
+
+		const vertexMap = new Map<number, number>();
+		const positionValues: number[] = [];
+		const indexValues: number[] = [];
+		for ( const face of faces ) {
+
+			for ( const source of face ) {
+
+				let vertex = vertexMap.get( source );
+				if ( vertex === undefined ) {
+
+					vertex = vertexMap.size;
+					vertexMap.set( source, vertex );
+					const point = applyRockScoops( shape.points[ source ]!, shape.radii, shape.rotationY, shape.scoops, shape.tiltX, shape.tiltZ, shape.translation );
+					positionValues.push( point[ 0 ], point[ 1 ], point[ 2 ] );
+
+				}
+
+				indexValues.push( vertex );
+
+			}
+
+		}
+		const positions = Float32Array.from( positionValues );
+		const indices = Uint32Array.from( indexValues );
+
+		return {
+			positions,
+			normals: new Float32Array( 0 ),
+			uvs: new Float32Array( 0 ),
+			colors: new Float32Array( 0 ),
+			windWeight: new Float32Array( 0 ),
+			impostorCard: new Float32Array( 0 ),
+			indices,
+			groups: [ { start: 0, count: indices.length, partIndex: 0 } ],
+		};
+
+	}
 
 	const faceNormals = faces.map( ( face ) => {
 
@@ -1621,8 +1677,13 @@ export function buildRockHullMesh( shape: RockHullShape, faces: [ number, number
 
 	}
 
-	const mesh = buildRockMeshFromFaces( positions, triangles );
-	if ( unwrapSeams ) unwrapRockUvSeams( mesh );
+	const mesh = buildRockMeshFromFaces( positions, triangles, 0, uvFrame?.center );
+	if ( unwrapSeams ) {
+
+		if ( uvFrame === undefined ) unwrapRockUvSeams( mesh );
+		else unwrapRockUvSeams( mesh, false, undefined, uvFrame.uvOffset );
+
+	}
 	return mesh;
 
 }
@@ -1865,17 +1926,21 @@ export function buildConvexHullFaces( positions: Vec3[] ): [ number, number, num
 
 }
 
-export function buildRockMeshFromFaces( positions: Vec3[], faces: [ number, number, number ][], partIndex = 0 ): MeshData {
+export function buildRockMeshFromFaces( positions: Vec3[], faces: [ number, number, number ][], partIndex = 0, uvCenter?: Vec3 ): MeshData {
 
 	const builder = new MeshBuilder();
-	const center: Vec3 = [ 0, 0, 0 ];
+	const center: Vec3 = uvCenter === undefined ? [ 0, 0, 0 ] : [ ...uvCenter ];
 	const white: Color3 = [ 1, 1, 1 ];
 
-	for ( const position of positions ) {
+	if ( uvCenter === undefined ) {
 
-		center[ 0 ] += position[ 0 ] / positions.length;
-		center[ 1 ] += position[ 1 ] / positions.length;
-		center[ 2 ] += position[ 2 ] / positions.length;
+		for ( const position of positions ) {
+
+			center[ 0 ] += position[ 0 ] / positions.length;
+			center[ 1 ] += position[ 1 ] / positions.length;
+			center[ 2 ] += position[ 2 ] / positions.length;
+
+		}
 
 	}
 
@@ -1901,11 +1966,11 @@ export function buildRockMeshFromFaces( positions: Vec3[], faces: [ number, numb
 
 }
 
-function unwrapRockUvSeams( mesh: MeshData, optimizeSeam = false, onCopy?: ( source: number, target: number ) => void ): number {
+function unwrapRockUvSeams( mesh: MeshData, optimizeSeam = false, onCopy?: ( source: number, target: number ) => void, forcedUvOffset?: number ): number {
 
-	let uvOffset = 0;
+	let uvOffset = forcedUvOffset ?? 0;
 
-	if ( optimizeSeam ) {
+	if ( optimizeSeam && forcedUvOffset === undefined ) {
 
 		let minimumCopies = Infinity;
 

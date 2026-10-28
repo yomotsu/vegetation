@@ -1,6 +1,7 @@
 import { createRockTextures } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
 import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, recomputeChamferedRockHullNormals, removeRockBottomCap, recomputeCreasedNormals, sinkMesh, splitChamferedRockHullVerticesAtCreases } from '../rockGeometry';
+import type { RockHullShape, RockUvFrame } from '../rockGeometry';
 import type { ColliderData, MeshData, PartDef, VegetationData } from '../types';
 
 const ROCK_SEED_SALT = 62;
@@ -54,6 +55,262 @@ function buildCollider( mesh: MeshData ): ColliderData {
 
 }
 
+const LOD3_SILHOUETTE_DIRECTIONS = Array.from( { length: 8 }, ( _, index ) => {
+
+	const angle = index / 8 * Math.PI * 2;
+	return [ Math.cos( angle ), Math.sin( angle ) ] as [ number, number ];
+
+} );
+
+interface AboveGroundMetric {
+	volume: number;
+	silhouette: number[];
+}
+
+function buildLod3Mesh( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, unwrapSeams: boolean, uvFrame?: RockUvFrame ): MeshData {
+
+	const mesh = buildRockHullMesh( shape, faces, 0, 0, 0, unwrapSeams, uvFrame );
+	liftMesh( mesh, groundOffset );
+	sinkMesh( mesh, burialHeight, Number.NEGATIVE_INFINITY );
+	removeRockBottomCap( mesh, skirtFloor );
+	return mesh;
+
+}
+
+function buildLod3Candidate( shape: RockHullShape, faces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number ): { mesh: MeshData; triangleCount: number } {
+
+	const mesh = buildRockHullMesh( shape, faces, 0, 0, 0, false, undefined, true );
+	liftMesh( mesh, groundOffset );
+	sinkMesh( mesh, burialHeight, Number.NEGATIVE_INFINITY );
+	let triangleCount = 0;
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		if ( isBottomCapTriangle( mesh, offset, skirtFloor ) ) continue;
+		triangleCount ++;
+
+	}
+
+	return { mesh, triangleCount };
+
+}
+
+function isBottomCapTriangle( mesh: MeshData, triangleOffset: number, floor: number ): boolean {
+
+	const first = mesh.positions[ mesh.indices[ triangleOffset ]! * 3 + 1 ]!;
+	const second = mesh.positions[ mesh.indices[ triangleOffset + 1 ]! * 3 + 1 ]!;
+	const third = mesh.positions[ mesh.indices[ triangleOffset + 2 ]! * 3 + 1 ]!;
+	return first <= floor + 1e-6 && second <= floor + 1e-6 && third <= floor + 1e-6;
+
+}
+
+function getAboveGroundMetric( mesh: MeshData, size: number, silhouetteHeight: number, skirtFloor: number ): AboveGroundMetric {
+
+	let signedVolume = 0;
+	const clippedX = [ 0, 0, 0, 0 ];
+	const clippedY = [ 0, 0, 0, 0 ];
+	const clippedZ = [ 0, 0, 0, 0 ];
+	const pointOffsets = [ 0, 0, 0 ];
+	const x = [ 0, 0, 0 ];
+	const y = [ 0, 0, 0 ];
+	const z = [ 0, 0, 0 ];
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		if ( isBottomCapTriangle( mesh, offset, skirtFloor ) ) continue;
+
+		pointOffsets[ 0 ] = mesh.indices[ offset ]! * 3;
+		pointOffsets[ 1 ] = mesh.indices[ offset + 1 ]! * 3;
+		pointOffsets[ 2 ] = mesh.indices[ offset + 2 ]! * 3;
+		for ( let point = 0; point < 3; point ++ ) {
+
+			x[ point ] = mesh.positions[ pointOffsets[ point ]! ]!;
+			y[ point ] = mesh.positions[ pointOffsets[ point ]! + 1 ]!;
+			z[ point ] = mesh.positions[ pointOffsets[ point ]! + 2 ]!;
+
+		}
+
+		let clippedCount = 0;
+
+		for ( let edge = 0; edge < 3; edge ++ ) {
+
+			const next = ( edge + 1 ) % 3;
+			const firstInside = y[ edge ]! >= 0;
+			const secondInside = y[ next ]! >= 0;
+
+			if ( firstInside ) {
+
+				clippedX[ clippedCount ] = x[ edge ]!;
+				clippedY[ clippedCount ] = y[ edge ]!;
+				clippedZ[ clippedCount ++ ] = z[ edge ]!;
+
+			}
+
+			if ( firstInside !== secondInside ) {
+
+				const amount = - y[ edge ]! / ( y[ next ]! - y[ edge ]! );
+				clippedX[ clippedCount ] = x[ edge ]! + ( x[ next ]! - x[ edge ]! ) * amount;
+				clippedY[ clippedCount ] = 0;
+				clippedZ[ clippedCount ++ ] = z[ edge ]! + ( z[ next ]! - z[ edge ]! ) * amount;
+
+			}
+
+		}
+
+		for ( let index = 1; index < clippedCount - 1; index ++ ) {
+
+			const firstX = clippedX[ 0 ]!;
+			const firstY = clippedY[ 0 ]!;
+			const firstZ = clippedZ[ 0 ]!;
+			const secondX = clippedX[ index ]!;
+			const secondY = clippedY[ index ]!;
+			const secondZ = clippedZ[ index ]!;
+			const thirdX = clippedX[ index + 1 ]!;
+			const thirdY = clippedY[ index + 1 ]!;
+			const thirdZ = clippedZ[ index + 1 ]!;
+			signedVolume += ( firstX * ( secondY * thirdZ - secondZ * thirdY ) + firstY * ( secondZ * thirdX - secondX * thirdZ ) + firstZ * ( secondX * thirdY - secondY * thirdX ) ) / 6;
+
+		}
+
+	}
+
+	const silhouette: number[] = [];
+	const elevationCount = 3;
+	const supports = new Array<number>( LOD3_SILHOUETTE_DIRECTIONS.length );
+
+	for ( let elevation = 0; elevation < elevationCount; elevation ++ ) {
+
+		const height = silhouetteHeight * elevation / ( elevationCount - 1 );
+		supports.fill( - size );
+		let hasIntersection = false;
+
+		for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+			if ( isBottomCapTriangle( mesh, offset, skirtFloor ) ) continue;
+
+			for ( let edge = 0; edge < 3; edge ++ ) {
+
+				const firstVertex = mesh.indices[ offset + edge ]! * 3;
+				const secondVertex = mesh.indices[ offset + ( edge + 1 ) % 3 ]! * 3;
+				const firstX = mesh.positions[ firstVertex ]!;
+				const firstY = mesh.positions[ firstVertex + 1 ]!;
+				const firstZ = mesh.positions[ firstVertex + 2 ]!;
+				const secondX = mesh.positions[ secondVertex ]!;
+				const secondY = mesh.positions[ secondVertex + 1 ]!;
+				const secondZ = mesh.positions[ secondVertex + 2 ]!;
+				const firstDelta = firstY - height;
+				const secondDelta = secondY - height;
+				let intersectionX = firstX;
+				let intersectionZ = firstZ;
+
+				if ( ( firstDelta < 0 && secondDelta > 0 ) || ( firstDelta > 0 && secondDelta < 0 ) ) {
+
+					const amount = - firstDelta / ( secondDelta - firstDelta );
+					intersectionX = firstX + ( secondX - firstX ) * amount;
+					intersectionZ = firstZ + ( secondZ - firstZ ) * amount;
+					hasIntersection = true;
+
+				} else if ( Math.abs( firstDelta ) < 1e-7 ) {
+
+					hasIntersection = true;
+
+				} else {
+
+					continue;
+
+				}
+
+				for ( let direction = 0; direction < LOD3_SILHOUETTE_DIRECTIONS.length; direction ++ ) {
+
+					const directionX = LOD3_SILHOUETTE_DIRECTIONS[ direction ]![ 0 ];
+					const directionZ = LOD3_SILHOUETTE_DIRECTIONS[ direction ]![ 1 ];
+					supports[ direction ] = Math.max( supports[ direction ]!, intersectionX * directionX + intersectionZ * directionZ );
+
+				}
+
+			}
+
+		}
+
+		if ( ! hasIntersection ) supports.fill( - size );
+		for ( const support of supports ) silhouette.push( support );
+
+	}
+
+	return { volume: Math.abs( signedVolume ), silhouette };
+
+}
+
+function aboveGroundLoss( current: AboveGroundMetric, candidate: AboveGroundMetric, size: number ): number {
+
+	const volumeScale = Math.max( current.volume, size * size * size * 1e-8 );
+	let silhouetteDifference = 0;
+	for ( let index = 0; index < current.silhouette.length; index ++ ) silhouetteDifference += ( current.silhouette[ index ]! - candidate.silhouette[ index ]! ) ** 2;
+	const silhouetteScale = Math.sqrt( silhouetteDifference / Math.max( 1, current.silhouette.length ) ) / size;
+	return Math.abs( current.volume - candidate.volume ) / volumeScale + silhouetteScale;
+
+}
+
+function reduceRockLod3( shape: RockHullShape, initialFaces: [ number, number, number ][], groundOffset: number, burialHeight: number, skirtFloor: number, silhouetteHeight: number, uvFrame: RockUvFrame, targetTriangles = 22 ): MeshData {
+
+	let currentShape = shape;
+	let currentFaces = initialFaces;
+	let currentCandidate = buildLod3Candidate( currentShape, currentFaces, groundOffset, burialHeight, skirtFloor );
+	let currentMetric = getAboveGroundMetric( currentCandidate.mesh, shape.size, silhouetteHeight, skirtFloor );
+
+	while ( currentCandidate.triangleCount > targetTriangles ) {
+
+		let bestLoss = Infinity;
+		let bestShape: RockHullShape | undefined;
+		let bestFaces: [ number, number, number ][] | undefined;
+		let bestCandidate: { mesh: MeshData; triangleCount: number } | undefined;
+		let bestMetric: AboveGroundMetric | undefined;
+		const hullPoints = [ ...new Set( currentFaces.flat() ) ].sort( ( first, second ) => first - second );
+
+		for ( const removedPoint of hullPoints ) {
+
+			if ( currentShape.points.length <= 4 ) continue;
+			const points = currentShape.points.filter( ( _, index ) => index !== removedPoint );
+			let faces: [ number, number, number ][];
+
+			try {
+
+				faces = buildConvexHullFaces( points );
+
+			} catch {
+
+				continue;
+
+			}
+
+			const candidateShape = { ...currentShape, points };
+			const candidate = buildLod3Candidate( candidateShape, faces, groundOffset, burialHeight, skirtFloor );
+			if ( candidate.triangleCount < 16 ) continue;
+
+			const candidateMetric = getAboveGroundMetric( candidate.mesh, shape.size, silhouetteHeight, skirtFloor );
+			const loss = aboveGroundLoss( currentMetric, candidateMetric, shape.size );
+			if ( loss >= bestLoss ) continue;
+
+			bestLoss = loss;
+			bestShape = candidateShape;
+			bestFaces = faces;
+			bestCandidate = candidate;
+			bestMetric = candidateMetric;
+
+		}
+
+		if ( bestShape === undefined || bestFaces === undefined || bestCandidate === undefined || bestMetric === undefined ) break;
+		currentShape = bestShape;
+		currentFaces = bestFaces;
+		currentCandidate = bestCandidate;
+		currentMetric = bestMetric;
+
+	}
+
+	return buildLod3Mesh( currentShape, currentFaces, groundOffset, burialHeight, skirtFloor, true, uvFrame );
+
+}
+
 export function generateRockData( options: RockOptions = {} ): VegetationData {
 
 	const seed = options.seed ?? 1;
@@ -81,8 +338,9 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const bevelWidth = size * 0.04;
 	const chamferedLod0 = buildRockHullMeshWithChamfers( shape, hullFaces, bevelWidth, weathering );
 	const lod0 = chamferedLod0.mesh;
-	const lod1 = buildRockHullMesh( shape, hullFaces, 1, 0, weathering );
-	const lod2 = buildRockHullMesh( shape, hullFaces, 0, 0, weathering );
+	const uvFrame = chamferedLod0.uvFrame;
+	const lod1 = buildRockHullMesh( shape, hullFaces, 1, 0, weathering, true, uvFrame );
+	const lod2 = buildRockHullMesh( shape, hullFaces, 0, 0, weathering, true, uvFrame );
 	const colliderMesh = buildRockHullMesh( shape, hullFaces, 0, 0, weathering, false );
 	const groundOffset = - getMinimumY( lod0.positions );
 
@@ -109,10 +367,10 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	recomputeChamferedRockHullNormals( lod0 );
 	recomputeCreasedNormals( lod1, 35, creaseOutsideScoops );
 	recomputeCreasedNormals( lod2, 35, creaseOutsideScoops );
-	const lod3 = buildRockHullMesh( shape, hullFaces, 0, 0, 0, false );
-	liftMesh( lod3, groundOffset );
-	sinkMesh( lod3, burialHeight, Number.NEGATIVE_INFINITY );
-	removeRockBottomCap( lod3, skirtFloor );
+	const lod3Target = Math.min( 22, lod2.indices.length / 3 - 15 );
+	let silhouetteHeight = 0;
+	for ( let offset = 1; offset < lod0.positions.length; offset += 3 ) silhouetteHeight = Math.max( silhouetteHeight, lod0.positions[ offset ]! );
+	const lod3 = reduceRockLod3( shape, hullFaces, groundOffset, burialHeight, skirtFloor, silhouetteHeight, uvFrame, lod3Target );
 	recomputeCreasedNormals( lod3, 35 );
 	lod3.colors.fill( lod0.colors[ 0 ]! );
 

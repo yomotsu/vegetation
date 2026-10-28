@@ -8,6 +8,7 @@ import { validateMeshData } from '../helpers/validateMeshData';
 import { topCardCoverageIou } from '../helpers/topCardCoverage';
 import { hasRockSelfIntersection, minimumRockApexAngle, minimumRockDihedralAngle, minimumRockTriangleAngle } from '../helpers/rockSharpness';
 import { buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, buildRockShell, clamp, createRockFacetNormals, createRockHullShape, createRockRadiusFunction, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';
+import type { RockUvFrame } from '../../src/core/rockGeometry';
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -18,6 +19,45 @@ function triangleCount( mesh: MeshData ): number {
 function vertexCount( mesh: MeshData ): number {
 
 	return mesh.positions.length / 3;
+
+}
+
+function wrappedUnit( value: number ): number {
+
+	return ( ( value % 1 ) + 1 ) % 1;
+
+}
+
+function expectedRockUv( position: [ number, number, number ], frame: RockUvFrame ): [ number, number ] {
+
+
+	const direction = [ position[ 0 ] - frame.center[ 0 ], position[ 1 ] - frame.center[ 1 ], position[ 2 ] - frame.center[ 2 ] ];
+	const length = Math.hypot( direction[ 0 ]!, direction[ 1 ]!, direction[ 2 ]! ) || 1;
+	const normal = direction.map( ( value ) => value / length );
+	return [
+		wrappedUnit( Math.atan2( normal[ 2 ]!, normal[ 0 ]! ) / ( Math.PI * 2 ) + 0.5 + frame.uvOffset ),
+		Math.asin( clamp( normal[ 1 ]!, - 1, 1 ) ) / Math.PI + 0.5,
+	];
+
+}
+
+function getLod0RockUvFrame( seed: number ): RockUvFrame {
+
+
+	const shape = createRockHullShape( seed + 62, 6.4, 1.2, 0.04 );
+	const faces = buildConvexHullFaces( shape.points );
+	const chamferedWithoutSeams = buildRockHullMeshWithChamfers( shape, faces, 6.4 * 0.04, 0.25, false ).mesh;
+	const chamferedWithSeams = buildRockHullMeshWithChamfers( shape, faces, 6.4 * 0.04, 0.25, true ).mesh;
+	const center: [ number, number, number ] = [ 0, 0, 0 ];
+
+	for ( let offset = 0; offset < chamferedWithoutSeams.positions.length; offset += 3 ) {
+
+		center[ 0 ] += chamferedWithoutSeams.positions[ offset ]! / ( chamferedWithoutSeams.positions.length / 3 );
+		center[ 1 ] += chamferedWithoutSeams.positions[ offset + 1 ]! / ( chamferedWithoutSeams.positions.length / 3 );
+		center[ 2 ] += chamferedWithoutSeams.positions[ offset + 2 ]! / ( chamferedWithoutSeams.positions.length / 3 );
+	}
+
+	return { center, uvOffset: wrappedUnit( chamferedWithSeams.uvs[ 0 ]! - chamferedWithoutSeams.uvs[ 0 ]! ) };
 
 }
 
@@ -259,6 +299,21 @@ function meanOpaqueRgb( data: Uint8Array ): [ number, number, number ] {
 	}
 
 	return mean.map( ( value ) => value / pixels ) as [ number, number, number ];
+
+}
+
+function meanOpaquePixelDifference( first: Uint8Array, second: Uint8Array ): number {
+
+	let difference = 0;
+	let pixels = 0;
+
+	for ( let offset = 0; offset < first.length; offset += 4 ) {
+		if ( first[ offset + 3 ] === 0 || second[ offset + 3 ] === 0 ) continue;
+		difference += Math.abs( first[ offset ]! - second[ offset ]! ) + Math.abs( first[ offset + 1 ]! - second[ offset + 1 ]! ) + Math.abs( first[ offset + 2 ]! - second[ offset + 2 ]! );
+		pixels ++;
+	}
+
+	return pixels > 0 ? difference / pixels / 3 : 0;
 
 }
 
@@ -762,7 +817,7 @@ function expectGroundPerimeter( mesh: MeshData, size: number, seed: number, lod:
 
 }
 
-function renderCoverage( data: ReturnType<typeof generateRockData>, lod: number, topDown = false ) {
+function renderCoverage( data: ReturnType<typeof generateRockData>, lod: number, topDown = false, albedoOnly = false ) {
 
 	const source = data.lods[ lod ]!;
 	const mesh = topDown
@@ -772,9 +827,12 @@ function renderCoverage( data: ReturnType<typeof generateRockData>, lod: number,
 			normals: Float32Array.from( source.normals, ( value, index ) => index % 3 === 1 ? - source.normals[ index + 1 ]! : index % 3 === 2 ? source.normals[ index - 1 ]! : value ),
 		}
 		: source;
+	const renderMesh = albedoOnly
+		? { ...mesh, normals: Float32Array.from( mesh.normals, ( _, index ) => index % 3 === 1 ? 1 : 0 ) }
+		: mesh;
 	const renderData = {
 		...data,
-		lods: [ mesh ],
+		lods: [ renderMesh ],
 		bounds: topDown ? { radius: data.bounds.radius, height: data.bounds.radius * 2 } : data.bounds,
 	};
 
@@ -842,7 +900,7 @@ describe( 'procedural rock data', () => {
 
 	}, 180000 );
 
-	it( 'keeps every rock LOD grounded around its full footprint', () => {
+	it( 'keeps every rock LOD grounded and LOD3 within its triangle budget across 300 seeds', () => {
 
 		withSharedRockTextures( () => {
 
@@ -854,6 +912,15 @@ describe( 'procedural rock data', () => {
 				const lod3Vertices = vertexCount( data.lods[ 3 ]! );
 				expect( vertexCount( data.lods[ 0 ]! ), `seed ${ seed } LOD0 vertices` ).toBeLessThanOrEqual( 260 );
 				expect( lod3Vertices, `seed ${ seed } LOD3 vertices` ).toBeLessThanOrEqual( 90 );
+				if ( seed <= 300 ) {
+
+					const lod2Triangles = triangleCount( data.lods[ 2 ]! );
+					const lod3Triangles = triangleCount( data.lods[ 3 ]! );
+					expect( lod3Triangles, `seed ${ seed } LOD3 triangles` ).toBeGreaterThanOrEqual( 16 );
+					expect( lod3Triangles, `seed ${ seed } LOD3 triangles` ).toBeLessThanOrEqual( 24 );
+					expect( lod2Triangles - lod3Triangles, `seed ${ seed } LOD2 ${ lod2Triangles } minus LOD3 ${ lod3Triangles } triangles` ).toBeGreaterThanOrEqual( 15 );
+
+				}
 				expect( data.collider!.indices.length / 3, `seed ${ seed } collider triangles` ).toBeLessThanOrEqual( 96 );
 				expect( boundaryEdgeCount( data.collider!.positions, data.collider!.indices ) ).toBe( 0 );
 
@@ -934,6 +1001,53 @@ describe( 'procedural rock data', () => {
 		}
 		expect( triangleCount( data.lods[ 3 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 4 ]! ) );
 		for ( const mesh of data.lods ) validateMeshData( mesh );
+
+	} );
+
+	it( 'uses the LOD0 UV frame on LOD1–3', () => {
+
+		for ( const seed of [ 1, 2, 3, 7 ] ) {
+
+			const shape = createRockHullShape( seed + 62, 6.4, 1.2, 0.04 );
+			const faces = buildConvexHullFaces( shape.points );
+			const frame = getLod0RockUvFrame( seed );
+
+			for ( const lod of [ 1, 2, 3 ] ) {
+
+				const mesh = buildRockHullMesh( shape, faces, lod === 1 ? 1 : 0, 0, 0.25, true, frame );
+
+				for ( let vertex = 0; vertex < vertexCount( mesh ); vertex ++ ) {
+
+					const offset = vertex * 3;
+					const expected = expectedRockUv( [ mesh.positions[ offset ]!, mesh.positions[ offset + 1 ]!, mesh.positions[ offset + 2 ]! ], frame );
+					const actualU = wrappedUnit( mesh.uvs[ vertex * 2 ]! );
+					expect( Math.min( Math.abs( actualU - expected[ 0 ] ), 1 - Math.abs( actualU - expected[ 0 ] ) ), `seed ${ seed } LOD${ lod } vertex ${ vertex } U` ).toBeLessThan( 1e-4 );
+					expect( mesh.uvs[ vertex * 2 + 1 ], `seed ${ seed } LOD${ lod } vertex ${ vertex } V` ).toBeCloseTo( expected[ 1 ], 4 );
+				}
+
+			}
+
+		}
+
+	} );
+
+	it( 'keeps albedo crack placement close between LOD0 and LOD2', () => {
+
+		withSharedRockTextures( () => {
+
+			const differences: number[] = [];
+			for ( const seed of [ 1, 7 ] ) {
+
+				const data = generateRockData( { seed } );
+				const lod0 = renderCoverage( data, 0, false, true );
+				const lod2 = renderCoverage( data, 2, false, true );
+				const difference = meanOpaquePixelDifference( lod0.data, lod2.data );
+				differences.push( difference );
+
+			}
+			expect( differences.every( ( difference ) => difference <= 1 ), `seed 1,7 albedo mean RGB differences ${ differences.join( ', ' ) }` ).toBe( true );
+
+		} );
 
 	} );
 
