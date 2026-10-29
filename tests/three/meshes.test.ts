@@ -69,6 +69,7 @@ describe( 'tree meshes', () => {
 		expect( mesh.getColor( 'leaf' ).getHex() ).toBe( 0x2f7d1f );
 		mesh.setColor( 'leaf', 0xc0392b );
 		expect( mesh.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
+		expect( mesh.getColor( 'leafRing' ).getHex() ).toBe( 0xc0392b );
 
 		mesh.dispose();
 		expect( disposeAsset ).toHaveBeenCalledOnce();
@@ -233,7 +234,7 @@ describe( 'tree meshes', () => {
 		expect( levels ).toHaveLength( 5 );
 		expect( levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 15, 30, 60, 120 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => part.material === asset.materials[ asset.data.parts.findIndex( ( definition ) => definition.name === part.name ) ] ) ) ).toBe( true );
-		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 2, 2, 2, 2 ] );
+		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 3, 3, 2, 2 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => Array.isArray( part.material ) === false ) ) ).toBe( true );
 		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).lod ) ).toEqual( [ 0, 1, 2, 3, 4 ] );
 		const disposeAsset = vi.spyOn( asset, 'dispose' );

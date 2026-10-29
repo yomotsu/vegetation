@@ -73,12 +73,13 @@ describe( 'VegetationAsset', () => {
 		expect( asset.geometries[ 0 ]!.getAttribute( 'windWeight' ).itemSize ).toBe( 1 );
 		expect( asset.geometries[ 0 ]!.boundingSphere ).not.toBeNull();
 		expect( asset.geometries[ 0 ]!.groups.map( ( group ) => group.materialIndex ) ).toEqual( [ 0, 1 ] );
-		expect( asset.materials ).toHaveLength( 4 );
+		expect( asset.materials ).toHaveLength( 5 );
 		expect( asset.materials[ 0 ] ).toBeInstanceOf( MeshStandardMaterial );
 		expect( asset.materials[ 0 ] ).toBeInstanceOf( MeshPhysicalMaterial );
 		expect( asset.materials[ 1 ] ).toBeInstanceOf( MeshPhysicalMaterial );
 		expect( asset.materials[ 2 ] ).toBeInstanceOf( MeshStandardMaterial );
 		expect( asset.materials[ 3 ] ).toBeInstanceOf( MeshStandardMaterial );
+		expect( asset.materials[ 4 ] ).toBeInstanceOf( MeshPhysicalMaterial );
 		expect( asset.materials[ 0 ] ).toMatchObject( { specularIntensity: 0.014872, ior: 1.05 } );
 		expect( asset.materials[ 1 ] ).toMatchObject( { specularIntensity: 0.014872, ior: 1.05 } );
 		expect( asset.materials[ 1 ]!.side ).toBe( DoubleSide );
@@ -111,8 +112,10 @@ describe( 'VegetationAsset', () => {
 		const asset = generateTree( { seed: 1 } );
 		const partsByLod = asset.geometries.map( ( _, lod ) => asset.getParts( lod ) );
 
-		expect( partsByLod.map( ( parts ) => parts.length ) ).toEqual( [ 2, 2, 2, 1, 1 ] );
+		expect( partsByLod.map( ( parts ) => parts.length ) ).toEqual( [ 2, 3, 3, 1, 1 ] );
 		expect( partsByLod[ 0 ]!.map( ( part ) => part.part ) ).toEqual( [ 'bark', 'leaf' ] );
+		expect( partsByLod[ 1 ]!.map( ( part ) => part.part ) ).toEqual( [ 'bark', 'leafRing', 'leaf' ] );
+		expect( partsByLod[ 2 ]!.map( ( part ) => part.part ) ).toEqual( [ 'bark', 'leafRing', 'leaf' ] );
 		expect( partsByLod[ 3 ]!.map( ( part ) => part.part ) ).toEqual( [ 'impostor-lod3' ] );
 		expect( partsByLod[ 4 ]!.map( ( part ) => part.part ) ).toEqual( [ 'impostor' ] );
 
@@ -145,22 +148,26 @@ describe( 'VegetationAsset', () => {
 
 	} );
 
-	it( 'creates bark, leaf, and impostor textures with bottom-origin sRGB sampling', () => {
+	it( 'creates bark, leaf, leafRing, and impostor textures with bottom-origin sRGB sampling', () => {
 
 		const asset = generateTree( { seed: 1 } );
 		const barkMaterial = asset.materials[ 0 ]!;
 		const leafMaterial = asset.materials[ 1 ]!;
 		const impostorLod3Material = asset.materials[ 2 ]!;
 		const impostorMaterial = asset.materials[ 3 ]!;
+		const leafRingMaterial = asset.materials[ 4 ]!;
 		const barkTexture = barkMaterial.map as DataTexture;
 		const leafTexture = leafMaterial.map as DataTexture;
 		const impostorTexture = impostorMaterial.map as DataTexture;
 		const impostorLod3Texture = impostorLod3Material.map as DataTexture;
+		const leafRingTexture = leafRingMaterial.map as DataTexture;
 
 		expect( barkTexture ).toBeInstanceOf( DataTexture );
 		expect( leafTexture ).toBeInstanceOf( DataTexture );
 		expect( leafTexture.image.width ).toBe( 256 );
 		expect( leafTexture.image.height ).toBe( 256 );
+		expect( leafRingTexture.image.width ).toBe( 10 * 128 );
+		expect( leafRingTexture.image.height ).toBe( 128 );
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
 		expect( impostorTexture.image.width ).toBe( 128 * 2 );
 		expect( impostorTexture.image.height ).toBe( 128 );
@@ -172,7 +179,7 @@ describe( 'VegetationAsset', () => {
 		expect( asset.getColor( 'bark' ).getHex() ).toBe( 0x6b4c32 );
 		expect( asset.data.textures.bark ).toBeDefined();
 
-		for ( const texture of [ barkTexture, leafTexture, impostorTexture, impostorLod3Texture ] ) {
+		for ( const texture of [ barkTexture, leafTexture, leafRingTexture, impostorTexture, impostorLod3Texture ] ) {
 
 			expect( texture.flipY ).toBe( false );
 			expect( texture.colorSpace ).toBe( SRGBColorSpace );
@@ -186,10 +193,15 @@ describe( 'VegetationAsset', () => {
 		expect( barkTexture.wrapT ).toBe( RepeatWrapping );
 		expect( leafTexture.wrapS ).toBe( ClampToEdgeWrapping );
 		expect( leafTexture.wrapT ).toBe( ClampToEdgeWrapping );
+		expect( leafRingTexture.wrapS ).toBe( ClampToEdgeWrapping );
+		expect( leafRingTexture.wrapT ).toBe( ClampToEdgeWrapping );
 		expect( impostorTexture.wrapS ).toBe( ClampToEdgeWrapping );
 		expect( impostorTexture.wrapT ).toBe( ClampToEdgeWrapping );
 
 		expect( leafMaterial.alphaTest ).toBe( 0.5 );
+		expect( leafRingMaterial.alphaTest ).toBe( 0.5 );
+		expect( leafRingMaterial.side ).toBe( DoubleSide );
+		expect( leafRingMaterial.roughness ).toBe( 0.95 );
 		expect( leafMaterial.roughness ).toBe( 0.95 );
 		expect( leafMaterial.emissive.getHex() ).toBe( 0x000000 );
 		expect( leafMaterial.emissiveIntensity ).toBe( 0 );
@@ -209,10 +221,13 @@ describe( 'VegetationAsset', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const inputPixels = data.textures.leaf!.data.slice();
-		const asset = new VegetationAsset( data, { leaf: '#c0392b' } );
+		const inputRingPixels = data.textures.leafRing!.data.slice();
+		const asset = new VegetationAsset( data, { leaf: '#c0392b', leafRing: '#c0392b' } );
 
 		expect( data.textures.leaf!.data ).toEqual( inputPixels );
+		expect( data.textures.leafRing!.data ).toEqual( inputRingPixels );
 		expect( asset.data.textures.leaf!.data ).not.toEqual( inputPixels );
+		expect( asset.data.textures.leafRing!.data ).not.toEqual( inputRingPixels );
 
 		asset.dispose();
 
@@ -253,6 +268,8 @@ describe( 'VegetationAsset', () => {
 		const impostorLod3Texture = asset.materials[ 2 ]!.map as DataTexture;
 		const impostorTexture = asset.materials[ 3 ]!.map as DataTexture;
 		const originalLeafPixels = leafTexture.image.data!.slice();
+		const leafRingTexture = asset.materials[ 4 ]!.map as DataTexture;
+		const originalLeafRingPixels = leafRingTexture.image.data!.slice();
 		const originalImpostorPixels = impostorTexture.image.data!.slice();
 		const originalLod3Pixels = impostorLod3Texture.image.data!.slice();
 		const positions = asset.geometries[ 0 ]!.getAttribute( 'position' ).array;
@@ -261,12 +278,13 @@ describe( 'VegetationAsset', () => {
 		const lod4Impostor = asset.getParts( 4 )[ 0 ]!;
 		let topTileChanged = false;
 
-		asset.setColor( 'leaf', '#c0392b' );
+		asset.setColors( { leaf: '#c0392b', leafRing: '#c0392b' } );
 
 		expect( asset.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
 		expect( asset.materials[ 1 ]!.color.getHex() ).toBe( 0xffffff );
 		expect( leafTexture.image.data ).not.toBe( originalLeafData );
 		expect( leafTexture.image.data ).not.toEqual( originalLeafPixels );
+		expect( leafRingTexture.image.data ).not.toEqual( originalLeafRingPixels );
 		expect( meanTextureColor( asset.data.textures.leaf! )[ 0 ] ).toBeGreaterThan( meanTextureColor( asset.data.textures.leaf! )[ 1 ] );
 		expect( impostorLod3Texture.image.data ).not.toEqual( originalLod3Pixels );
 		expect( lod3Impostor.material.map ).toBe( impostorLod3Texture );
@@ -396,10 +414,11 @@ describe( 'VegetationAsset', () => {
 		const defaultPixels = asset.data.textures.leaf!.data.slice();
 		const constructed = generateTree( { seed: 1, leafColor: '#c0392b' } );
 
-		asset.setColor( 'leaf', '#c0392b' );
+		asset.setColors( { leaf: '#c0392b', leafRing: '#c0392b' } );
 		expect( haveEqualBytes( asset.data.textures.leaf!.data, constructed.data.textures.leaf!.data ) ).toBe( true );
+		expect( haveEqualBytes( asset.data.textures.leafRing!.data, constructed.data.textures.leafRing!.data ) ).toBe( true );
 
-		asset.setColor( 'leaf', 0x2f7d1f );
+		asset.setColors( { leaf: 0x2f7d1f, leafRing: 0x2f7d1f } );
 		expect( haveEqualBytes( asset.data.textures.leaf!.data, defaultPixels ) ).toBe( true );
 
 		asset.dispose();

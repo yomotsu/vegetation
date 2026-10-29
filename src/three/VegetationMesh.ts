@@ -294,6 +294,11 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 
 	setColor( part: string, color: ColorRepresentation ): void {
 
+		if ( part === 'leaf' && this.asset.data.parts.some( ( definition ) => definition.name === 'leafRing' ) ) {
+			this.asset.setColors( { leaf: color, leafRing: color } );
+			return;
+		}
+
 		this.asset.setColor( part, color );
 
 	}
