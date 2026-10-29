@@ -146,21 +146,21 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 		const firstPartIndex = asset.data.lods[ level ]!.groups[ 0 ]!.partIndex;
 		const firstPartDefinition = asset.data.parts[ firstPartIndex ]!;
 		const isCameraFacingBillboard = level === 4 && ( firstPartDefinition.impostorViews !== undefined || firstPartDefinition.impostorYawAngles !== undefined );
-		const isGrassCard = asset.data.kind === 'grass';
+		const upNormalCards = firstPartDefinition.upNormalCards === true;
 		const cardAttribute = first.geometry.getAttribute( 'impostorCard' );
 		const hasHorizontalCard = level === 3 && cardAttribute !== undefined && Array.from( cardAttribute.array ).some( ( card ) => card === 1 );
 		const splitCards = isCameraFacingBillboard || hasHorizontalCard;
 		const rootGeometry = splitCards
 			? createEmptyGeometry( first.geometry )
-			: isGrassCard ? createBidirectionalCardGeometry( first.geometry ) : first.geometry;
-		const rootMaterial = isGrassCard ? first.material.clone() : first.material;
-		if ( isGrassCard ) rootMaterial.side = FrontSide;
+			: upNormalCards ? createBidirectionalCardGeometry( first.geometry ) : first.geometry;
+		const rootMaterial = upNormalCards ? first.material.clone() : first.material;
+		if ( upNormalCards ) rootMaterial.side = FrontSide;
 		super( rootGeometry, rootMaterial );
 		this.asset = asset;
 		this.lod = level;
 		this.ownsAsset = ownsAsset;
 		this.emptyGeometry = splitCards ? rootGeometry : null;
-		if ( isGrassCard ) {
+		if ( upNormalCards ) {
 			this.ownedGeometries.push( rootGeometry );
 			this.ownedMaterials.push( rootMaterial );
 		}
@@ -252,7 +252,16 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 
 			for ( const part of parts.slice( 1 ) ) {
 
-				const mesh = new Mesh( part.geometry, part.material );
+				const partIndex = asset.data.parts.findIndex( ( definition ) => definition.name === part.part );
+				const definition = asset.data.parts[ partIndex ];
+				const geometry = definition?.upNormalCards === true ? createBidirectionalCardGeometry( part.geometry ) : part.geometry;
+				const material = definition?.upNormalCards === true ? part.material.clone() : part.material;
+				if ( definition?.upNormalCards === true ) {
+					material.side = FrontSide;
+					this.ownedGeometries.push( geometry );
+					this.ownedMaterials.push( material );
+				}
+				const mesh = new Mesh( geometry, material );
 				mesh.name = part.part;
 				mesh.castShadow = this.shadowCast;
 				mesh.receiveShadow = this.shadowReceive;

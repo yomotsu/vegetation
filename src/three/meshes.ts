@@ -10,10 +10,12 @@ import type { PebblesOptions } from '../core/generators/pebbles';
 import { generatePebblesData } from '../core/generators/pebbles';
 import type { GrassOptions } from '../core/generators/grass';
 import { DEFAULT_BLADE_COLOR, generateGrassData } from '../core/generators/grass';
+import type { FlowersOptions } from '../core/generators/flowers';
+import { DEFAULT_FLOWERS_STEM_COLOR, generateFlowersData } from '../core/generators/flowers';
 import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
 import { DEFAULT_MOSS_COLOR } from '../core/rockTexture';
 import { DEFAULT_BARK_COLOR } from '../core/barkTexture';
-import { normalizeGrassGenerationOptions, normalizePebblesGenerationOptions, normalizeRockGenerationOptions, normalizeTreeGenerationOptions } from '../core/vegetationGeneration';
+import { normalizeFlowersGenerationOptions, normalizeGrassGenerationOptions, normalizePebblesGenerationOptions, normalizeRockGenerationOptions, normalizeTreeGenerationOptions } from '../core/vegetationGeneration';
 import type { VegetationWorkerKind } from '../worker/protocol';
 import { disposeVegetationWorkers, requestVegetationWorker, VegetationWorkerUnavailableError } from '../worker/workerPool';
 import type { LodLevel } from '../core/types';
@@ -41,15 +43,22 @@ export type GrassMeshOptions = Omit<GrassOptions, 'bladeColor'> & {
 	bladeColor?: ColorRepresentation;
 };
 
+export type FlowersMeshOptions = Omit<FlowersOptions, 'petalColor' | 'centerColor' | 'stemColor'> & {
+	lod?: number;
+	petalColor?: ColorRepresentation;
+	centerColor?: ColorRepresentation;
+	stemColor?: ColorRepresentation;
+};
+
 function colorHex( color: ColorRepresentation | undefined, fallback: number ): number {
 
 	return new Color( color ?? fallback ).getHex();
 
 }
 
-function workerOptions( options: object ): Record<string, number | boolean> {
+function workerOptions( options: object ): Record<string, number | boolean | string> {
 
-	return Object.fromEntries( Object.entries( options ).filter( ( entry ): entry is [ string, number | boolean ] => entry[ 1 ] !== undefined ) );
+	return Object.fromEntries( Object.entries( options ).filter( ( entry ): entry is [ string, number | boolean | string ] => typeof entry[ 1 ] === 'number' || typeof entry[ 1 ] === 'boolean' || typeof entry[ 1 ] === 'string' ) );
 
 }
 
@@ -115,11 +124,26 @@ function normalizeGrassOptions( options: GrassMeshOptions ): ReturnType<typeof n
 
 }
 
+function normalizeFlowersOptions( options: FlowersMeshOptions ): ReturnType<typeof normalizeFlowersGenerationOptions> {
+
+	return normalizeFlowersGenerationOptions( {
+		seed: options.seed,
+		variety: options.variety,
+		count: options.count,
+		spread: options.spread,
+		height: options.height,
+		petalColor: colorHex( options.petalColor, options.variety === 'daisy' ? 0xe07a1f : 0xf1efe8 ),
+		centerColor: colorHex( options.centerColor, options.variety === 'daisy' ? 0x5a4a1c : 0xb9cf6a ),
+		stemColor: colorHex( options.stemColor, DEFAULT_FLOWERS_STEM_COLOR ),
+	} );
+
+}
+
 function workerRequest(
 	kind: VegetationWorkerKind,
 	options: object,
 	colors: Record<string, number>,
-): { kind: VegetationWorkerKind; options: Record<string, number | boolean>; colors: Record<string, number>; impostorSize: number } {
+	): { kind: VegetationWorkerKind; options: Record<string, number | boolean | string>; colors: Record<string, number>; impostorSize: number } {
 
 	return { kind, options: workerOptions( options ), colors, impostorSize: 128 };
 
@@ -302,6 +326,50 @@ export class GrassMesh extends VegetationMesh {
 
 }
 
-export type { LodLevel, PebblesOptions, RockOptions, TreeOptions };
+export function generateFlowers( options: FlowersMeshOptions = {} ): VegetationAsset {
+
+	const normalized = normalizeFlowersOptions( options );
+	return new VegetationAsset( generateFlowersData( normalized.options ), {
+		petal: normalized.options.petalColor!,
+		stem: normalized.options.stemColor!,
+	} );
+
+}
+
+/** 同期 API と同じ生成結果を返します。 */
+export async function generateFlowersAsync( options: FlowersMeshOptions = {} ): Promise<VegetationAsset> {
+
+	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generateFlowers( options ) );
+
+	const normalized = normalizeFlowersOptions( options );
+	const request = workerRequest( 'flowers', normalized.options, normalized.colors );
+	try {
+		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `flowers:${ normalized.options.seed ?? 1 }` ) );
+	} catch ( error ) {
+		if ( error instanceof VegetationWorkerUnavailableError ) return generateFlowers( options );
+		throw error;
+	}
+
+}
+
+export class FlowersMesh extends VegetationMesh {
+
+	constructor( options: FlowersMeshOptions = {} ) {
+
+		super( generateFlowers( options ), options.lod, true );
+
+	}
+
+	static createLOD( options: FlowersMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
+
+		const defaultHeight = options.height ?? ( options.variety === 'daisy' ? 0.285 : 0.43 );
+		const distancesForHeight = [ 0, 1, 2, 4, 8 ].map( ( distance ) => distance * defaultHeight / 0.43 );
+		return VegetationMesh.fromAsset( generateFlowers( options ), distances ?? distancesForHeight, true );
+
+	}
+
+}
+
+export type { FlowersOptions, LodLevel, PebblesOptions, RockOptions, TreeOptions };
 export type { GrassOptions };
 export { disposeVegetationWorkers };

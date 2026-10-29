@@ -10,6 +10,9 @@ import { normalizePebblesGenerationOptions, normalizeRockGenerationOptions, norm
 import { generateGrassData } from '../core/generators/grass';
 import type { GrassOptions } from '../core/generators/grass';
 import { normalizeGrassGenerationOptions } from '../core/vegetationGeneration';
+import { generateFlowersData } from '../core/generators/flowers';
+import type { FlowersOptions } from '../core/generators/flowers';
+import { normalizeFlowersGenerationOptions } from '../core/vegetationGeneration';
 import type { VegetationWorkerRequest, VegetationWorkerResponse } from './protocol';
 
 export function handleVegetationWorkerMessage( request: VegetationWorkerRequest ): VegetationWorkerResponse {
@@ -36,6 +39,14 @@ export function handleVegetationWorkerMessage( request: VegetationWorkerRequest 
 
 			const normalized = normalizeGrassGenerationOptions( request.options as GrassOptions, request.colors );
 			const data = generateGrassData( normalized.options );
+			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
+
+		}
+
+		if ( request.kind === 'flowers' ) {
+
+			const normalized = normalizeFlowersGenerationOptions( request.options as FlowersOptions, request.colors );
+			const data = generateFlowersData( normalized.options );
 			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 		}

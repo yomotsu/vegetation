@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateGrass, generateRock } from '../../src/three/meshes';
+import { generateFlowers, generateGrass, generateRock } from '../../src/three/meshes';
 import { handleVegetationWorkerMessage } from '../../src/worker/vegetationWorker';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 
@@ -64,6 +64,43 @@ describe( 'vegetation worker handler', () => {
 		expect( areByteIdentical( result.prepared.data.textures.blade!.data, sync.data.textures.blade!.data ) ).toBe( true );
 		expect( areByteIdentical( result.prepared.data.textures['blade-normal']!.data, sync.data.textures['blade-normal']!.data ) ).toBe( true );
 		sync.dispose();
+
+	}, 30000 );
+
+	it( 'returns allium and daisy geometry, colors, and impostors byte-identical to sync generation', () => {
+
+		for ( const variety of [ 'allium', 'daisy' ] as const ) {
+			const options = {
+				seed: 13,
+				variety,
+				count: 6,
+				spread: variety === 'allium' ? 0.29 : 0.37,
+				height: variety === 'allium' ? 0.43 : 0.285,
+				petalColor: variety === 'allium' ? 0xa98bd6 : 0xf2c230,
+				centerColor: variety === 'allium' ? 0xb9cf6a : 0x5a4a1c,
+				stemColor: 0x81603d,
+			};
+			const result = handleVegetationWorkerMessage( {
+				id: 17,
+				kind: 'flowers',
+				options,
+				colors: { petal: options.petalColor, stem: options.stemColor },
+				impostorSize: 128,
+			} );
+			const sync = generateFlowers( options );
+
+			expect( result ).toHaveProperty( 'prepared' );
+			if ( ! ( 'prepared' in result ) ) throw new Error( 'Expected prepared payload' );
+			expect( areStructurallyByteIdentical( result.prepared.data, sync.data ) ).toBe( true );
+			for ( const [ name, texture ] of Object.entries( result.prepared.impostorTextures ) ) {
+				const partIndex = sync.data.parts.findIndex( ( part ) => part.texture === name && part.impostorViews !== undefined );
+				const image = sync.materials[ partIndex ]!.map!.image as { data: Uint8Array; width: number; height: number };
+				expect( areByteIdentical( texture.data, image.data ) ).toBe( true );
+				expect( texture.width ).toBe( image.width );
+				expect( texture.height ).toBe( image.height );
+			}
+			sync.dispose();
+		}
 
 	}, 30000 );
 

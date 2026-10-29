@@ -1,11 +1,11 @@
 import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
 
-export type VegetationWorkerKind = 'tree' | 'rock' | 'pebbles' | 'grass';
+export type VegetationWorkerKind = 'tree' | 'rock' | 'pebbles' | 'grass' | 'flowers';
 
 export interface VegetationWorkerRequest {
 	id: number;
 	kind: VegetationWorkerKind;
-	options: Record<string, number | boolean>;
+	options: Record<string, number | boolean | string>;
 	colors: Record<string, number>;
 	impostorSize: number;
 }
