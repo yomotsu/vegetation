@@ -10,8 +10,6 @@ import type { Color3, ColliderData, MeshData, PartDef, TextureData, TextureGener
 export interface TreeOptions {
 	seed?: number;
 	height?: number;
-	/** y = 0 より下へ伸ばす幹の長さ（メートル）。未指定時は樹高に比例します。 */
-	rootDepth?: number;
 	crownSize?: number;
 	branchCount?: number;
 	leafColor?: number;
@@ -132,6 +130,13 @@ function normalize( vector: Vec3 ): Vec3 {
 	}
 
 	return [ vector[ 0 ] / length, vector[ 1 ] / length, vector[ 2 ] / length ];
+
+}
+
+// 斜面でも根元が浮かないよう、幹を樹高に比例した長さだけ y = 0 より下へ伸ばす。
+function getRootDepth( height: number ): number {
+
+	return 0.3 * ( height / referenceTreeHeight );
 
 }
 
@@ -1142,16 +1147,11 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	const seed = options.seed ?? 1;
 	const leafColor = options.leafColor ?? DEFAULT_LEAF_COLOR;
 	const height = options.height ?? 7.5;
-	const rootDepthInput = options.rootDepth ?? 0.3 * ( height / referenceTreeHeight );
 	const crownSizeInput = options.crownSize ?? 1;
 	const branchCount = options.branchCount ?? 10;
 
 	if ( ! Number.isFinite( height ) || height <= 0 ) {
 		throw new RangeError( 'Tree height must be a positive finite number' );
-	}
-
-	if ( ! Number.isFinite( rootDepthInput ) ) {
-		throw new RangeError( 'Tree rootDepth must be finite' );
 	}
 
 	if ( ! Number.isFinite( crownSizeInput ) ) {
@@ -1164,7 +1164,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	getLeafRingCellSize( branchCount );
 
 	const crownSize = clamp( crownSizeInput, 0.5, 1.5 );
-	const rootDepth = Math.max( 0, rootDepthInput );
+	const rootDepth = getRootDepth( height );
 	const layout = createTreeLayout( seed, height, rootDepth, crownSize, branchCount );
 	const lod0 = buildLod0( layout );
 	const lod1 = buildLod1( layout );
@@ -1231,7 +1231,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 		textures,
 		textureGenerators: {
 			leaf: { type: 'tree-leaf', seed, size: 256 },
-			leafRing: { type: 'tree-leaf-ring', seed, size: 256, height, rootDepth, crownSize, branchCount },
+			leafRing: { type: 'tree-leaf-ring', seed, size: 256, height, crownSize, branchCount },
 		},
 		bounds,
 	};
@@ -1267,12 +1267,12 @@ registerTextureRegenerator( 'tree-leaf', regenerateTreeLeafTextureData );
 
 function regenerateTreeLeafRingTextureData( existing: TextureData, generator: TextureGeneratorDef, color: number ): TextureData {
 
-	if ( generator.type !== 'tree-leaf-ring' || generator.height === undefined || generator.rootDepth === undefined || generator.crownSize === undefined || generator.branchCount === undefined ) {
+	if ( generator.type !== 'tree-leaf-ring' || generator.height === undefined || generator.crownSize === undefined || generator.branchCount === undefined ) {
 		throw new Error( 'Tree leaf ring texture cannot be regenerated' );
 	}
 
 	const crownSize = clamp( generator.crownSize, 0.5, 1.5 );
-	const layout = createTreeLayout( generator.seed, generator.height, Math.max( 0, generator.rootDepth ), crownSize, generator.branchCount );
+	const layout = createTreeLayout( generator.seed, generator.height, getRootDepth( generator.height ), crownSize, generator.branchCount );
 	const leafTexture = createFirSprigTexture( generator.seed, generator.size, true, color );
 	const texture = createLeafRingTexture( layout, leafTexture );
 

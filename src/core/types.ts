@@ -55,7 +55,6 @@ export interface TextureGeneratorDef {
 	seed: number;
 	size: number;
 	height?: number;
-	rootDepth?: number;
 	crownSize?: number;
 	branchCount?: number;
 	variety?: 'allium' | 'daisy' | 'tulip' | 'poppy' | 'bluebell' | 'calla' | 'primrose';

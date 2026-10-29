@@ -1079,48 +1079,6 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'allows zero or negative root depth without extending the trunk', () => {
-
-		const zeroDepth = generateTreeData( { seed: 6, rootDepth: 0 } );
-		const negativeDepth = generateTreeData( { seed: 6, rootDepth: - 0.25 } );
-
-		expect( negativeDepth.lods[ 0 ]!.positions ).toEqual( zeroDepth.lods[ 0 ]!.positions );
-
-		for ( const data of [ zeroDepth, negativeDepth ] ) {
-
-			for ( let index = 0; index < 3; index ++ ) {
-
-				const lod = data.lods[ index ]!;
-				const trunk = lod.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
-
-				expect( Math.abs( minimumYInGroup( lod, trunk ) ) ).toBeLessThanOrEqual( 1e-3 );
-
-			}
-
-			expect( Math.abs( minimumY( data.collider!.positions ) ) ).toBeLessThanOrEqual( 1e-3 );
-
-		}
-
-	} );
-
-	it( 'uses an explicit root depth for the trunk and collider', () => {
-
-		const rootDepth = 0.6;
-		const data = generateTreeData( { seed: 6, rootDepth } );
-
-		for ( let index = 0; index < 3; index ++ ) {
-
-			const lod = data.lods[ index ]!;
-			const trunk = lod.groups.find( ( group ) => group.partIndex === BARK_PART_INDEX )!;
-
-			expect( Math.abs( minimumYInGroup( lod, trunk ) + rootDepth ) ).toBeLessThanOrEqual( 1e-3 );
-
-		}
-
-		expect( Math.abs( minimumY( data.collider!.positions ) + rootDepth ) ).toBeLessThanOrEqual( 1e-3 );
-
-	} );
-
 	it( 'uses upward stylized leaf normals and separates trunk and frond wind weights', () => {
 
 		const data = generateTreeData( { seed: 1 } );
@@ -2009,7 +1967,6 @@ describe( 'conifer tree data', () => {
 	it( 'rejects invalid tree dimensions and tier counts', () => {
 
 		expect( () => generateTreeData( { height: 0 } ) ).toThrow( RangeError );
-		expect( () => generateTreeData( { rootDepth: Infinity } ) ).toThrow( RangeError );
 		expect( () => generateTreeData( { crownSize: Infinity } ) ).toThrow( RangeError );
 		expect( () => generateTreeData( { branchCount: 0 } ) ).toThrow( RangeError );
 

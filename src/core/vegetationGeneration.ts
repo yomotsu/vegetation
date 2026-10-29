@@ -82,7 +82,6 @@ export function normalizeTreeGenerationOptions(
 		options: {
 			seed: options.seed,
 			height: options.height,
-			rootDepth: options.rootDepth,
 			crownSize: options.crownSize,
 			branchCount: options.branchCount,
 			leafColor,
