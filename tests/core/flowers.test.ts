@@ -4,7 +4,7 @@ import type { MeshData } from '../../src/core/types';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 import { validateMeshData } from '../helpers/validateMeshData';
 
-const newVarieties = [ 'lupine', 'yarrow', 'tulip' ] as const;
+const newVarieties = [ 'tulip' ] as const;
 
 function triangleCount( mesh: MeshData ): number {
 
@@ -139,7 +139,7 @@ describe( 'flowers core generator', () => {
 
 			const first = generateFlowersData( { seed: 31, variety } );
 			const second = generateFlowersData( { seed: 31, variety } );
-			const vertices = variety === 'lupine' ? [ 150, 70 ] : variety === 'yarrow' ? [ 126, 78 ] : [ 144, 60 ];
+			const vertices = [ 144, 60 ];
 			const triangles = first.lods.map( triangleCount );
 			expect( first.kind ).toBe( 'flowers' );
 			expect( first.lods ).toHaveLength( 5 );
@@ -194,19 +194,7 @@ describe( 'flowers core generator', () => {
 
 	} );
 
-	it( 'draws variety-specific lupine, yarrow, and tulip silhouettes', () => {
-
-		const lupine = generateFlowersData( { seed: 3, variety: 'lupine' } );
-		const lupineMesh = lupine.lods[ 0 ]!;
-		const lupineStemOffset = 28 * 5;
-		const lupineSpikeTop = Math.max( ...Array.from( { length: lupineStemOffset }, ( _, index ) => lupineMesh.positions[ index * 3 + 1 ]! ) );
-		const lupineStemTop = Math.max( ...Array.from( { length: lupineMesh.positions.length / 3 - lupineStemOffset }, ( _, index ) => lupineMesh.positions[ ( lupineStemOffset + index ) * 3 + 1 ]! ) );
-		expect( lupineSpikeTop ).toBeGreaterThan( lupineStemTop );
-
-		const yarrow = generateFlowersData( { seed: 3, variety: 'yarrow' } ).lods[ 0 ]!;
-		const yarrowCenterY = yarrow.positions[ 1 ]!;
-		const yarrowRimY = [ 1, 2, 3, 4 ].reduce( ( sum, vertex ) => sum + yarrow.positions[ vertex * 3 + 1 ]!, 0 ) / 4;
-		expect( yarrowCenterY ).toBeGreaterThan( yarrowRimY );
+	it( 'draws the tulip silhouette', () => {
 
 		const tulip = generateFlowersData( { seed: 3, variety: 'tulip' } ).lods[ 0 ]!;
 		const stemTip = [ 0, 0, 0 ];
@@ -240,12 +228,11 @@ describe( 'flowers core generator', () => {
 
 	} );
 
-	it( 'keeps both crossed stem cards on one curve for tulip and lupine', () => {
+	it( 'keeps both crossed tulip stem cards on one curve', () => {
 
 		// 段数や形の違う茎を重ねると、茎が 2 本に見える。
 		const cases = [
 			{ variety: 'tulip' as const, stemOffset: 18 * 4, plants: 4 },
-			{ variety: 'lupine' as const, stemOffset: 10 * 5, plants: 5 },
 		];
 		for ( const { variety, stemOffset } of cases ) {
 			const mesh = generateFlowersData( { seed: 5, variety } ).lods[ 0 ]!;

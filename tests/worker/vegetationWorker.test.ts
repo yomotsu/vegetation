@@ -104,16 +104,16 @@ describe( 'vegetation worker handler', () => {
 
 	}, 30000 );
 
-	it( 'returns lupine, yarrow, and tulip geometry, colors, and impostors byte-identical to sync generation', () => {
+	it( 'returns tulip geometry, colors, and impostors byte-identical to sync generation', () => {
 
-		for ( const variety of [ 'lupine', 'yarrow', 'tulip' ] as const ) {
+		for ( const variety of [ 'tulip' ] as const ) {
 			const options = {
 				seed: 13,
 				variety,
-				count: variety === 'lupine' ? 5 : variety === 'tulip' ? 4 : 6,
+				count: 4,
 				spread: 0.3,
-				height: variety === 'lupine' ? 0.52 : variety === 'yarrow' ? 0.42 : 0.36,
-				petalColor: variety === 'lupine' ? 0x4f6fd8 : variety === 'yarrow' ? 0xd0508f : 0xd8322a,
+				height: 0.36,
+				petalColor: 0xd8322a,
 				centerColor: 0xf4d6a0,
 				stemColor: 0x81603d,
 			};

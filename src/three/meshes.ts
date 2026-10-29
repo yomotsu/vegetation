@@ -11,7 +11,7 @@ import { generatePebblesData } from '../core/generators/pebbles';
 import type { GrassOptions } from '../core/generators/grass';
 import { DEFAULT_BLADE_COLOR, generateGrassData } from '../core/generators/grass';
 import type { FlowersOptions } from '../core/generators/flowers';
-import { DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_LUPINE_CENTER_COLOR, DEFAULT_LUPINE_PETAL_COLOR, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_PETAL_COLOR, DEFAULT_YARROW_CENTER_COLOR, DEFAULT_YARROW_PETAL_COLOR, generateFlowersData } from '../core/generators/flowers';
+import { DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_PETAL_COLOR, generateFlowersData } from '../core/generators/flowers';
 import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
 import { DEFAULT_MOSS_COLOR } from '../core/rockTexture';
 import { DEFAULT_BARK_COLOR } from '../core/barkTexture';
@@ -127,8 +127,8 @@ function normalizeGrassOptions( options: GrassMeshOptions ): ReturnType<typeof n
 function normalizeFlowersOptions( options: FlowersMeshOptions ): ReturnType<typeof normalizeFlowersGenerationOptions> {
 
 	const variety = options.variety ?? 'allium';
-	const defaultPetalColor = variety === 'allium' ? DEFAULT_ALLIUM_PETAL_COLOR : variety === 'daisy' ? DEFAULT_DAISY_PETAL_COLOR : variety === 'lupine' ? DEFAULT_LUPINE_PETAL_COLOR : variety === 'yarrow' ? DEFAULT_YARROW_PETAL_COLOR : DEFAULT_TULIP_PETAL_COLOR;
-	const defaultCenterColor = variety === 'allium' ? DEFAULT_ALLIUM_CENTER_COLOR : variety === 'daisy' ? DEFAULT_DAISY_CENTER_COLOR : variety === 'lupine' ? DEFAULT_LUPINE_CENTER_COLOR : variety === 'yarrow' ? DEFAULT_YARROW_CENTER_COLOR : DEFAULT_TULIP_CENTER_COLOR;
+	const defaultPetalColor = variety === 'allium' ? DEFAULT_ALLIUM_PETAL_COLOR : variety === 'daisy' ? DEFAULT_DAISY_PETAL_COLOR : DEFAULT_TULIP_PETAL_COLOR;
+	const defaultCenterColor = variety === 'allium' ? DEFAULT_ALLIUM_CENTER_COLOR : variety === 'daisy' ? DEFAULT_DAISY_CENTER_COLOR : DEFAULT_TULIP_CENTER_COLOR;
 	return normalizeFlowersGenerationOptions( {
 		seed: options.seed,
 		variety,
@@ -365,7 +365,7 @@ export class FlowersMesh extends VegetationMesh {
 
 	static createLOD( options: FlowersMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
-		const defaultHeight = options.height ?? ( options.variety === 'daisy' ? 0.285 : options.variety === 'lupine' ? 0.52 : options.variety === 'yarrow' ? 0.42 : options.variety === 'tulip' ? 0.36 : 0.37 );
+		const defaultHeight = options.height ?? ( options.variety === 'daisy' ? 0.285 : options.variety === 'tulip' ? 0.36 : 0.37 );
 		const distancesForHeight = [ 0, 1, 2, 4, 8 ].map( ( distance ) => distance * defaultHeight / 0.43 );
 		return VegetationMesh.fromAsset( generateFlowers( options ), distances ?? distancesForHeight, true );
 

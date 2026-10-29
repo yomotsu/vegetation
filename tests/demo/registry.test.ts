@@ -77,8 +77,6 @@ describe( 'demo registry', () => {
 		expect( flowerPetalColorPresets ).toEqual( {
 			allium: { white: '#f1efe8', lavender: '#a98bd6', pink: '#e889b5', orange: '#d2600c' },
 			daisy: { orange: '#d2600c', yellow: '#f2c230', red: '#c8352a', white: '#f1efe8' },
-			lupine: { blue: '#4f6fd8', purple: '#8a5ad0', pink: '#e27aa8', white: '#eeeef4' },
-			yarrow: { magenta: '#d0508f', white: '#f2efe4', yellow: '#e8c84a', pink: '#f0a0c0' },
 			tulip: { red: '#d8322a', yellow: '#f2c230', pink: '#ef7fa8', white: '#f4f1ea', orange: '#f07a28' },
 		} );
 
@@ -89,11 +87,9 @@ describe( 'demo registry', () => {
 		expect( flowerVarietyDefaults ).toEqual( {
 			allium: { count: 6, spread: 0.29, height: 0.37, petal: '#f1efe8', centerColor: '#8a9670' },
 			daisy: { count: 6, spread: 0.37, height: 0.285, petal: '#d2600c', centerColor: '#8a7414' },
-			lupine: { count: 5, spread: 0.3, height: 0.52, petal: '#4f6fd8', centerColor: '#e7ce80' },
-			yarrow: { count: 6, spread: 0.3, height: 0.42, petal: '#d0508f', centerColor: '#f4d6a0' },
 			tulip: { count: 4, spread: 0.3, height: 0.36, petal: '#d8322a', centerColor: '#000000' },
 		} );
-		expect( Object.keys( flowerPetalColorPresets ) ).toEqual( [ 'allium', 'daisy', 'lupine', 'yarrow', 'tulip' ] );
+		expect( Object.keys( flowerPetalColorPresets ) ).toEqual( [ 'allium', 'daisy', 'tulip' ] );
 
 	} );
 

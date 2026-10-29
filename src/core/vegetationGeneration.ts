@@ -6,7 +6,7 @@ import type { PebblesOptions } from './generators/pebbles';
 import type { GrassOptions } from './generators/grass';
 import type { RockOptions } from './generators/rock';
 import type { TreeOptions } from './generators/tree';
-import { DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_LUPINE_CENTER_COLOR, DEFAULT_LUPINE_PETAL_COLOR, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_PETAL_COLOR, DEFAULT_YARROW_CENTER_COLOR, DEFAULT_YARROW_PETAL_COLOR } from './generators/flowers';
+import { DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_PETAL_COLOR } from './generators/flowers';
 import type { FlowersOptions } from './generators/flowers';
 
 export interface NormalizedVegetationGeneration<Options> {
@@ -38,8 +38,8 @@ export function normalizeFlowersGenerationOptions(
 ): NormalizedVegetationGeneration<FlowersOptions> {
 
 	const variety = options.variety ?? 'allium';
-	const defaultPetalColor = variety === 'allium' ? DEFAULT_ALLIUM_PETAL_COLOR : variety === 'daisy' ? DEFAULT_DAISY_PETAL_COLOR : variety === 'lupine' ? DEFAULT_LUPINE_PETAL_COLOR : variety === 'yarrow' ? DEFAULT_YARROW_PETAL_COLOR : DEFAULT_TULIP_PETAL_COLOR;
-	const defaultCenterColor = variety === 'allium' ? DEFAULT_ALLIUM_CENTER_COLOR : variety === 'daisy' ? DEFAULT_DAISY_CENTER_COLOR : variety === 'lupine' ? DEFAULT_LUPINE_CENTER_COLOR : variety === 'yarrow' ? DEFAULT_YARROW_CENTER_COLOR : DEFAULT_TULIP_CENTER_COLOR;
+	const defaultPetalColor = variety === 'allium' ? DEFAULT_ALLIUM_PETAL_COLOR : variety === 'daisy' ? DEFAULT_DAISY_PETAL_COLOR : DEFAULT_TULIP_PETAL_COLOR;
+	const defaultCenterColor = variety === 'allium' ? DEFAULT_ALLIUM_CENTER_COLOR : variety === 'daisy' ? DEFAULT_DAISY_CENTER_COLOR : DEFAULT_TULIP_CENTER_COLOR;
 	const petalColor = colors.petal ?? options.petalColor ?? defaultPetalColor;
 	const stemColor = colors.stem ?? options.stemColor ?? DEFAULT_FLOWERS_STEM_COLOR;
 	const centerColor = options.centerColor ?? defaultCenterColor;

@@ -47,7 +47,7 @@ describe( 'flowers three.js API', () => {
 		const originalWorker = globalThis.Worker;
 		Object.defineProperty( globalThis, 'Worker', { configurable: true, value: undefined } );
 		try {
-			for ( const variety of [ 'allium', 'daisy', 'lupine', 'yarrow', 'tulip' ] as const ) {
+			for ( const variety of [ 'allium', 'daisy', 'tulip' ] as const ) {
 				const synchronous = generateFlowers( { seed: 11, variety, petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
 				const asynchronous = await generateFlowersAsync( { seed: 11, variety, petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
 				expect( areStructurallyByteIdentical( asynchronous.data, synchronous.data ) ).toBe( true );
@@ -63,7 +63,7 @@ describe( 'flowers three.js API', () => {
 
 	it( 'keeps generation, texture creation, and impostor baking under 50 ms per variety', () => {
 
-		for ( const variety of [ 'allium', 'daisy', 'lupine', 'yarrow', 'tulip' ] as const ) {
+		for ( const variety of [ 'allium', 'daisy', 'tulip' ] as const ) {
 			const start = performance.now();
 			const asset = generateFlowers( { seed: 1, variety } );
 			const elapsed = performance.now() - start;

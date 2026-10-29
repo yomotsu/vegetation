@@ -386,6 +386,16 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 - 頂点数: daisy LOD0 150、allium LOD0 144（参考 120。茎を 3 分割にして曲がりをなめらかにしたため。三角形は参考と同じ 96）
 - `count` は 1〜6
 
+### tulip（2026-10-29 ユーザー正式採用）
+
+- 参考アセットなし。`variety: 'tulip'`、コードは `src/core/flowers/tulip.ts`
+- 2026-10-29 に lupine / yarrow / tulip を試作し、tulip だけ採用。lupine と yarrow は廃棄（コードも削除）
+- 1 株 = 交差した茎カード 2 枚（同じ曲線に沿わせる。直線の茎を重ねると 2 本に見える）＋ 花びらカード 3 枚 ＋ 根元の葉 2 枚
+- 花は高さ 6 cm の卵形のカップ: 花びらカードは 3 段。付け根にも幅を持たせ、高さの 40% で最も外へ張り出し、口へすぼめる（ユーザー指定「下部をふっくら」）
+- 茎はほぼまっすぐ（上端のずれは高さの 3〜10%）
+- 既定: 高さ 0.36 m、4 株（LOD0 144 頂点）、花びら `#d8322a`。`centerColor` は使わない
+- デモのプリセット: red / yellow `#f2c230` / pink `#ef7fa8` / white `#f4f1ea` / orange `#f07a28`
+
 ### デモの草原（2026-10-29 ユーザー承認）
 
 - 草の scatter は専用の処理（`demo/grassScatter.ts`）。密度と距離の処理は terrain-gen の値に合わせる
@@ -417,7 +427,7 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 ### 未完了・保留
 
 - npm 0.1.0 の公開（ユーザーが `npm publish` を実行する）
-- 次は花の種類を増やす（候補をユーザーに提案中）。bush は今回は対象外
+- 花は allium / daisy / tulip で確定。bush は今回は対象外
 - ユーザーへの確認待ち: scatter のときに `collider` の項目も隠すか
 - 最終の全体レビューで扱うこと
   - ブラウザでの初回生成: JIT が温まるまで 1 個 1 秒前後。Worker 化で画面は止まらない
