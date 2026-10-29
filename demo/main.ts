@@ -3,6 +3,7 @@ import {
 	LineBasicMaterial,
 	LineSegments,
 	Mesh,
+	MeshNormalMaterial,
 	PerspectiveCamera,
 	WireframeGeometry,
 } from 'three';
@@ -241,20 +242,44 @@ function setPartColor( part: string, color: string ): void {
 
 }
 
+const wireframeMaterial = new MeshNormalMaterial( { wireframe: true } );
+const originalMaterials = new WeakMap<Mesh, Mesh[ 'material' ]>();
+
+// ワイヤーフレーム表示中はテクスチャなしの法線マテリアルに差し替えます。
 function setWireframe( enabled: boolean ): void {
 
-	for ( const current of [ asset, ...scatterVariants ] ) {
-		current.materials.forEach( ( material ) => {
-			if ( material.wireframe === enabled ) {
+	root.traverse( ( object ) => {
 
-				return;
+		if ( ! ( object instanceof Mesh ) ) {
+
+			return;
+
+		}
+
+		if ( enabled ) {
+
+			if ( ! originalMaterials.has( object ) ) {
+
+				originalMaterials.set( object, object.material );
 
 			}
 
-			material.wireframe = enabled;
-			material.needsUpdate = true;
-		} );
-	}
+			object.material = Array.isArray( object.material ) ? object.material.map( () => wireframeMaterial ) : wireframeMaterial;
+
+		} else {
+
+			const original = originalMaterials.get( object );
+
+			if ( original !== undefined ) {
+
+				object.material = original;
+				originalMaterials.delete( object );
+
+			}
+
+		}
+
+	} );
 
 }
 
