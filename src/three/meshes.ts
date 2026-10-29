@@ -132,8 +132,8 @@ function normalizeFlowersOptions( options: FlowersMeshOptions ): ReturnType<type
 		count: options.count,
 		spread: options.spread,
 		height: options.height,
-		petalColor: colorHex( options.petalColor, options.variety === 'daisy' ? 0xe07a1f : 0xf1efe8 ),
-		centerColor: colorHex( options.centerColor, options.variety === 'daisy' ? 0x5a4a1c : 0xb9cf6a ),
+		petalColor: colorHex( options.petalColor, options.variety === 'daisy' ? 0xd2600c : 0xf1efe8 ),
+		centerColor: colorHex( options.centerColor, options.variety === 'daisy' ? 0x8a7414 : 0x8a9670 ),
 		stemColor: colorHex( options.stemColor, DEFAULT_FLOWERS_STEM_COLOR ),
 	} );
 
@@ -362,7 +362,7 @@ export class FlowersMesh extends VegetationMesh {
 
 	static createLOD( options: FlowersMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
-		const defaultHeight = options.height ?? ( options.variety === 'daisy' ? 0.285 : 0.43 );
+		const defaultHeight = options.height ?? ( options.variety === 'daisy' ? 0.285 : 0.37 );
 		const distancesForHeight = [ 0, 1, 2, 4, 8 ].map( ( distance ) => distance * defaultHeight / 0.43 );
 		return VegetationMesh.fromAsset( generateFlowers( options ), distances ?? distancesForHeight, true );
 

@@ -60,9 +60,9 @@ describe( 'demo registry', () => {
 		expect( kinds[ 4 ]!.name ).toBe( 'Flowers' );
 		expect( kinds[ 4 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
 		expect( kinds[ 4 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
-		expect( kinds[ 4 ]!.defaultColors ).toEqual( { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#b9cf6a' } );
-		expect( kinds[ 4 ]!.textureColors ).toEqual( { centerColor: '#b9cf6a' } );
-		expect( kinds[ 4 ]!.options ).toEqual( { seed: 1, variety: 'allium', count: 6, spread: 0.29, height: 0.43 } );
+		expect( kinds[ 4 ]!.defaultColors ).toEqual( { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#8a9670' } );
+		expect( kinds[ 4 ]!.textureColors ).toEqual( { centerColor: '#8a9670' } );
+		expect( kinds[ 4 ]!.options ).toEqual( { seed: 1, variety: 'allium', count: 6, spread: 0.29, height: 0.37 } );
 
 	} );
 
@@ -78,7 +78,7 @@ describe( 'demo registry', () => {
 			white: '#f1efe8',
 			lavender: '#a98bd6',
 			pink: '#e889b5',
-			orange: '#e07a1f',
+			orange: '#d2600c',
 			yellow: '#f2c230',
 			red: '#c8352a',
 		} );

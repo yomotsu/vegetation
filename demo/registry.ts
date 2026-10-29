@@ -29,7 +29,7 @@ export const flowerPetalColorPresets = {
 	white: '#f1efe8',
 	lavender: '#a98bd6',
 	pink: '#e889b5',
-	orange: '#e07a1f',
+	orange: '#d2600c',
 	yellow: '#f2c230',
 	red: '#c8352a',
 };
@@ -104,14 +104,14 @@ export const kinds: VegetationKind[] = [
 		createAsync: ( opts ) => generateFlowersAsync( opts as FlowersMeshOptions ),
 		colorParts: [ 'petal', 'stem' ],
 		colorOptions: { petal: 'petalColor', stem: 'stemColor' },
-		defaultColors: { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#b9cf6a' },
-		textureColors: { centerColor: '#b9cf6a' },
+		defaultColors: { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#8a9670' },
+		textureColors: { centerColor: '#8a9670' },
 		options: {
 			seed: 1,
 			variety: 'allium',
 			count: 6,
 			spread: 0.29,
-			height: 0.43,
+			height: 0.37,
 		},
 	},
 ];

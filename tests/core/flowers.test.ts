@@ -72,7 +72,7 @@ describe( 'flowers core generator', () => {
 
 			const first = generateFlowersData( { seed: 31, variety } );
 			const second = generateFlowersData( { seed: 31, variety } );
-			const caps = variety === 'allium' ? [ [ 120, 96 ], [ 48, 24 ] ] : [ [ 150, 120 ], [ 78, 48 ] ];
+			const caps = variety === 'allium' ? [ [ 144, 96 ], [ 48, 24 ] ] : [ [ 150, 120 ], [ 78, 48 ] ];
 
 			expect( first.kind ).toBe( 'flowers' );
 			expect( first.collider ).toBeNull();
@@ -117,6 +117,17 @@ describe( 'flowers core generator', () => {
 
 	} );
 
+	it( 'keeps the textures within the reference 256 x 256 atlas', () => {
+
+		// 参考 glTF は花 1 種につき 256×256 のアトラス 1 枚。花と茎の合計がそれを超えないこと。
+		for ( const variety of [ 'allium', 'daisy' ] as const ) {
+			const data = generateFlowersData( { seed: 3, variety } );
+			const pixels = Object.values( data.textures ).reduce( ( sum, texture ) => sum + texture.width * texture.height, 0 );
+			expect( pixels ).toBeLessThanOrEqual( 256 * 256 );
+		}
+
+	} );
+
 	it( 'centers the compact allium umbel on a curved stem tip', () => {
 
 		const data = generateFlowersData( { seed: 7, variety: 'allium' } );
@@ -137,33 +148,35 @@ describe( 'flowers core generator', () => {
 			}
 		}
 
-		expect( maxX - minX + 1 ).toBeGreaterThanOrEqual( 82 );
-		expect( maxX - minX + 1 ).toBeLessThanOrEqual( 104 );
-		expect( maxY - minY + 1 ).toBeGreaterThanOrEqual( 82 );
-		expect( maxY - minY + 1 ).toBeLessThanOrEqual( 104 );
+		// 花房のカードは 0.24 m。参考の花房は幅約 9〜12 cm。
+		expect( ( maxX - minX + 1 ) / petalTexture.width ).toBeGreaterThanOrEqual( 0.375 );
+		expect( ( maxX - minX + 1 ) / petalTexture.width ).toBeLessThanOrEqual( 0.5 );
+		expect( ( maxY - minY + 1 ) / petalTexture.height ).toBeGreaterThanOrEqual( 0.33 );
+		expect( ( maxY - minY + 1 ) / petalTexture.height ).toBeLessThanOrEqual( 0.5 );
 
 		for ( const lod of [ mesh, data.lods[ 1 ]! ] ) {
 			const isLod0 = lod === mesh;
 			const petalsPerPlant = isLod0 ? 8 : 4;
 			const petalVertices = isLod0 ? 48 : 24;
-			const stemVerticesPerPlant = isLod0 ? 12 : 4;
-			const stemSegments = isLod0 ? 2 : 1;
+			const stemVerticesPerPlant = isLod0 ? 16 : 4;
+			const stemSegments = isLod0 ? 3 : 1;
 			for ( let plant = 0; plant < 6; plant ++ ) {
 				const petalCenterVertex = plant * petalsPerPlant;
 				const headCenter = quadCenter( lod, petalCenterVertex );
 				const stemOffset = petalVertices + plant * stemVerticesPerPlant;
 				const stemTip = cardRowCenter( lod, stemOffset, stemSegments );
-				const distance = Math.hypot( headCenter[ 0 ] - stemTip[ 0 ], headCenter[ 1 ] - stemTip[ 1 ], headCenter[ 2 ] - stemTip[ 2 ] );
+				// 花房は茎の先より 3.5 cm 上に中心を置き、茎の先が房の下寄りに入る。
+				const distance = Math.hypot( headCenter[ 0 ] - stemTip[ 0 ], headCenter[ 1 ] - stemTip[ 1 ] - 0.035, headCenter[ 2 ] - stemTip[ 2 ] );
 				expect( distance ).toBeLessThan( 1e-6 );
 			}
 		}
 
 		let maximumStemTip = - Infinity;
 		for ( let plant = 0; plant < 6; plant ++ ) {
-			const stemOffset = 48 + plant * 12;
+			const stemOffset = 48 + plant * 16;
 			const base = cardRowCenter( mesh, stemOffset, 0 );
-			const middle = cardRowCenter( mesh, stemOffset, 1 );
-			const tip = cardRowCenter( mesh, stemOffset, 2 );
+			const middle = cardRowCenter( mesh, stemOffset, 2 );
+			const tip = cardRowCenter( mesh, stemOffset, 3 );
 			maximumStemTip = Math.max( maximumStemTip, tip[ 1 ] );
 			const curve = Math.hypot( middle[ 0 ] - ( base[ 0 ] + tip[ 0 ] ) * 0.5, middle[ 2 ] - ( base[ 2 ] + tip[ 2 ] ) * 0.5 );
 			expect( curve ).toBeGreaterThan( 0.003 );
@@ -182,10 +195,12 @@ describe( 'flowers core generator', () => {
 		for ( let plant = 0; plant < 6; plant ++ ) {
 			const headVertex = plant * 5;
 			const center = vertexPosition( mesh, headVertex );
-			const firstCorner = vertexPosition( mesh, headVertex + 1 );
-			const secondCorner = vertexPosition( mesh, headVertex + 2 );
-			const firstEdge = firstCorner.map( ( value, axis ) => value - center[ axis ]! );
-			const secondEdge = secondCorner.map( ( value, axis ) => value - center[ axis ]! );
+			const corners = [ 1, 2, 3, 4 ].map( ( corner ) => vertexPosition( mesh, headVertex + corner ) );
+			// 傾きは四隅の面で測る。中心は四隅より低い（お椀形）。
+			const firstEdge = corners[ 1 ]!.map( ( value, axis ) => value - corners[ 0 ]![ axis ]! );
+			const secondEdge = corners[ 2 ]!.map( ( value, axis ) => value - corners[ 0 ]![ axis ]! );
+			const cornerHeight = corners.reduce( ( sum, corner ) => sum + corner[ 1 ]!, 0 ) / 4;
+			expect( cornerHeight - center[ 1 ] ).toBeGreaterThan( 0.03 );
 			const normal = [
 				firstEdge[ 1 ]! * secondEdge[ 2 ]! - firstEdge[ 2 ]! * secondEdge[ 1 ]!,
 				firstEdge[ 2 ]! * secondEdge[ 0 ]! - firstEdge[ 0 ]! * secondEdge[ 2 ]!,

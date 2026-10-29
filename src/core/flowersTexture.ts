@@ -2,7 +2,11 @@ import { createRandom } from './random';
 import { linearToSrgbByte } from './color';
 import type { TextureData } from './types';
 
-export const FLOWERS_TEXTURE_SIZE = 256;
+// 参考 glTF は花 1 種につき 256×256 のアトラス 1 枚。花と茎を合わせて
+// その画素数を超えないよう、花は 128×128、茎は 128×256 にする。
+export const FLOWERS_PETAL_TEXTURE_SIZE = 128;
+export const FLOWERS_STEM_TEXTURE_WIDTH = 128;
+export const FLOWERS_STEM_TEXTURE_HEIGHT = 256;
 const SHADE_LEVELS = 2048;
 const SHADE_SCALE = ( SHADE_LEVELS - 1 ) / 2;
 const shadeColorLut = new Uint8Array( SHADE_LEVELS * 256 );
@@ -21,35 +25,51 @@ for ( let channel = 0; channel < 256; channel ++ ) {
 type Point = [ number, number ];
 
 interface FlowerTextureShape {
+	width: number;
+	height: number;
 	alpha: Uint8Array;
 	shade: Float32Array;
 	fixed: Uint8Array;
 	fixedShade: Float32Array;
 }
 
-function shapeBuffer(): FlowerTextureShape {
+function shapeBuffer( width: number, height: number ): FlowerTextureShape {
 
-	const count = FLOWERS_TEXTURE_SIZE * FLOWERS_TEXTURE_SIZE;
-	return { alpha: new Uint8Array( count ), shade: new Float32Array( count ), fixed: new Uint8Array( count ), fixedShade: new Float32Array( count ) };
+	const count = width * height;
+	return { width, height, alpha: new Uint8Array( count ), shade: new Float32Array( count ), fixed: new Uint8Array( count ), fixedShade: new Float32Array( count ) };
 
 }
 
-function composite( shape: FlowerTextureShape, pixel: number, coverage: number, shade: number ): void {
+function clamp01( value: number ): number {
+
+	return Math.max( 0, Math.min( 1, value ) );
+
+}
+
+function composite( shape: FlowerTextureShape, pixel: number, coverage: number, shade: number, fixed: boolean ): void {
 
 	if ( coverage <= 0 ) return;
 	const previousAlpha = shape.alpha[ pixel ]! / 255;
 	const alpha = coverage + previousAlpha * ( 1 - coverage );
 	shape.shade[ pixel ] = ( shade * coverage + shape.shade[ pixel ]! * previousAlpha * ( 1 - coverage ) ) / alpha;
 	shape.alpha[ pixel ] = Math.round( alpha * 255 );
+	// 上に重なった色付きの画素は、下の固定色（花芯）を覆う。
+	if ( fixed ) {
+		shape.fixed[ pixel ] = coverage >= 0.5 || shape.fixed[ pixel ] === 1 ? 1 : 0;
+		shape.fixedShade[ pixel ] = shade;
+	}
+	else if ( coverage >= 0.5 ) {
+		shape.fixed[ pixel ] = 0;
+	}
 
 }
 
-function rasterPolygon( shape: FlowerTextureShape, points: Point[], shadeAt: ( x: number, y: number ) => number ): void {
+function rasterPolygon( shape: FlowerTextureShape, points: Point[], shadeAt: ( x: number, y: number ) => number, fixed = false ): void {
 
 	const minX = Math.max( 0, Math.floor( Math.min( ...points.map( ( point ) => point[ 0 ] ) ) - 1 ) );
-	const maxX = Math.min( FLOWERS_TEXTURE_SIZE - 1, Math.ceil( Math.max( ...points.map( ( point ) => point[ 0 ] ) ) + 1 ) );
+	const maxX = Math.min( shape.width - 1, Math.ceil( Math.max( ...points.map( ( point ) => point[ 0 ] ) ) + 1 ) );
 	const minY = Math.max( 0, Math.floor( Math.min( ...points.map( ( point ) => point[ 1 ] ) ) - 1 ) );
-	const maxY = Math.min( FLOWERS_TEXTURE_SIZE - 1, Math.ceil( Math.max( ...points.map( ( point ) => point[ 1 ] ) ) + 1 ) );
+	const maxY = Math.min( shape.height - 1, Math.ceil( Math.max( ...points.map( ( point ) => point[ 1 ] ) ) + 1 ) );
 	const samples = 4;
 	const inverseSamples = 1 / samples;
 	const coverage = new Float32Array( maxX - minX + 1 );
@@ -78,116 +98,102 @@ function rasterPolygon( shape: FlowerTextureShape, points: Point[], shadeAt: ( x
 			}
 		}
 		for ( let x = minX; x <= maxX; x ++ ) {
-			if ( coverage[ x - minX ]! > 0 ) composite( shape, y * FLOWERS_TEXTURE_SIZE + x, coverage[ x - minX ]!, shadeAt( x + 0.5, y + 0.5 ) );
+			if ( coverage[ x - minX ]! > 0 ) composite( shape, y * shape.width + x, Math.min( 1, coverage[ x - minX ]! ), shadeAt( x + 0.5, y + 0.5 ), fixed );
 		}
 	}
 
 }
 
-function rasterCircle( shape: FlowerTextureShape, centerX: number, centerY: number, radius: number, shade: number, fixed = false ): void {
+function rasterCircle( shape: FlowerTextureShape, centerX: number, centerY: number, radius: number, shadeAt: ( distance: number ) => number, fixed = false ): void {
 
 	const points: Point[] = [];
 	for ( let index = 0; index < 32; index ++ ) {
 		const angle = index / 32 * Math.PI * 2;
 		points.push( [ centerX + Math.cos( angle ) * radius, centerY + Math.sin( angle ) * radius ] );
 	}
-	rasterPolygon( shape, points, () => shade );
-	if ( fixed ) {
-		for ( let y = Math.max( 0, Math.floor( centerY - radius - 1 ) ); y <= Math.min( FLOWERS_TEXTURE_SIZE - 1, Math.ceil( centerY + radius + 1 ) ); y ++ ) {
-			for ( let x = Math.max( 0, Math.floor( centerX - radius - 1 ) ); x <= Math.min( FLOWERS_TEXTURE_SIZE - 1, Math.ceil( centerX + radius + 1 ) ); x ++ ) {
-				const pixel = y * FLOWERS_TEXTURE_SIZE + x;
-				if ( shape.alpha[ pixel ] === 0 ) continue;
-				if ( ( x + 0.5 - centerX ) ** 2 + ( y + 0.5 - centerY ) ** 2 <= radius * radius + radius ) {
-					shape.fixed[ pixel ] = 1;
-					shape.fixedShade[ pixel ] = shade;
-				}
-			}
-		}
+	rasterPolygon( shape, points, ( x, y ) => shadeAt( Math.hypot( x - centerX, y - centerY ) / radius ), fixed );
+
+}
+
+// 中心から外へ伸びる花びら 1 枚。根元が細く、先が丸い。
+function rasterPetal(
+	shape: FlowerTextureShape,
+	centerX: number,
+	centerY: number,
+	angle: number,
+	innerRadius: number,
+	outerRadius: number,
+	halfWidth: number,
+	shadeAt: ( along: number, across: number ) => number,
+): void {
+
+	const sideX = - Math.sin( angle );
+	const sideY = Math.cos( angle );
+	const directionX = Math.cos( angle );
+	const directionY = Math.sin( angle );
+	const tipCenter = outerRadius - halfWidth;
+	const addPoint = ( distance: number, lateral: number ): Point => [ centerX + directionX * distance + sideX * lateral, centerY + directionY * distance + sideY * lateral ];
+	const points: Point[] = [ addPoint( innerRadius, halfWidth * 0.2 ), addPoint( innerRadius + ( tipCenter - innerRadius ) * 0.35, halfWidth * 0.85 ) ];
+	for ( let step = 0; step <= 8; step ++ ) {
+		const angleOnTip = Math.PI * 0.5 - step / 8 * Math.PI;
+		points.push( addPoint( tipCenter + Math.cos( angleOnTip ) * halfWidth, Math.sin( angleOnTip ) * halfWidth ) );
 	}
+	points.push( addPoint( innerRadius + ( tipCenter - innerRadius ) * 0.35, - halfWidth * 0.85 ), addPoint( innerRadius, - halfWidth * 0.2 ) );
+	rasterPolygon( shape, points, ( x, y ) => {
+		const along = clamp01( ( ( x - centerX ) * directionX + ( y - centerY ) * directionY - innerRadius ) / ( outerRadius - innerRadius ) );
+		const across = Math.min( 1, Math.abs( ( x - centerX ) * sideX + ( y - centerY ) * sideY ) / halfWidth );
+		return shadeAt( along, across );
+	} );
 
 }
 
 function flowerTextureShape( variety: 'allium' | 'daisy', seed: number ): FlowerTextureShape {
 
-	const shape = shapeBuffer();
+	const size = FLOWERS_PETAL_TEXTURE_SIZE;
+	const shape = shapeBuffer( size, size );
 	const random = createRandom( seed + 71 );
+	const center = size * 0.5;
 
 	if ( variety === 'allium' ) {
-		const florets: Point[] = [ [ 128, 128 ] ];
+		// 参考の花房: 6 弁の星形の小花が 7 つ重なり、芯は灰緑。
+		// 奥の小花は暗く、手前（中央）ほど明るく描いて房の丸みを出す。
+		const florets: { x: number; y: number; depth: number }[] = [];
 		for ( let index = 0; index < 6; index ++ ) {
-			const angle = index / 6 * Math.PI * 2 + random.range( - 0.12, 0.12 );
-			const radius = random.range( 22, 26 );
-			florets.push( [ 128 + Math.cos( angle ) * radius, 128 + Math.sin( angle ) * radius ] );
+			const angle = index / 6 * Math.PI * 2 + random.range( - 0.15, 0.15 );
+			const radius = random.range( 15, 18 );
+			florets.push( { x: center + Math.cos( angle ) * radius, y: center + Math.sin( angle ) * radius * 0.85, depth: random.range( 0.72, 0.86 ) } );
 		}
+		florets.push( { x: center + random.range( - 2, 2 ), y: center + random.range( - 2, 2 ), depth: 1 } );
 
-		const centers: Point[] = [];
-		for ( const [ centerX, centerY ] of florets ) {
-			const outerRadius = random.range( 18, 20 );
-			const halfWidth = outerRadius * 0.22;
-			const rotation = random.range( - 0.2, 0.2 );
-			centers.push( [ centerX, centerY ] );
-
+		for ( const floret of florets ) {
+			const outerRadius = random.range( 11, 12.5 );
+			const rotation = random.range( 0, Math.PI / 3 );
 			for ( let petal = 0; petal < 6; petal ++ ) {
-				const angle = rotation + petal / 6 * Math.PI * 2;
-				const sideX = - Math.sin( angle );
-				const sideY = Math.cos( angle );
-				const directionX = Math.cos( angle );
-				const directionY = Math.sin( angle );
-				const tipCenter = outerRadius - halfWidth * 0.72;
-				const addPoint = ( distance: number, lateral: number ): Point => [ centerX + directionX * distance + sideX * lateral, centerY + directionY * distance + sideY * lateral ];
-				const points: Point[] = [
-					addPoint( 1, halfWidth * 0.24 ),
-					addPoint( outerRadius * 0.34, halfWidth * 0.72 ),
-					addPoint( tipCenter, halfWidth ),
-				];
-
-				for ( let step = 1; step <= 6; step ++ ) {
-					const angleOnTip = Math.PI * 0.5 - step / 6 * Math.PI;
-					points.push( addPoint( tipCenter + Math.cos( angleOnTip ) * halfWidth, Math.sin( angleOnTip ) * halfWidth ) );
-				}
-
-				points.push( addPoint( outerRadius * 0.34, - halfWidth * 0.72 ) );
-				points.push( addPoint( 1, - halfWidth * 0.24 ) );
-				rasterPolygon( shape, points, ( x, y ) => {
-					const distance = ( x - centerX ) * directionX + ( y - centerY ) * directionY;
-					const lateral = Math.abs( ( x - centerX ) * sideX + ( y - centerY ) * sideY );
-					const petalShade = 0.93 + 0.12 * Math.min( 1, distance / outerRadius );
-					const edgeShade = 0.12 * Math.min( 1, lateral / halfWidth );
-					return petalShade - edgeShade;
-				} );
+				// 花びらは根元が暗く先が明るい。縁も少し暗くする。
+				rasterPetal( shape, floret.x, floret.y, rotation + petal / 6 * Math.PI * 2, 0.5, outerRadius, outerRadius * 0.14, ( along, across ) => floret.depth * ( 0.55 + 0.5 * along - 0.14 * across * across ) );
 			}
+			rasterCircle( shape, floret.x, floret.y, 2.1, ( distance ) => floret.depth * ( 1.05 - 0.35 * distance ), true );
 		}
-		for ( const [ centerX, centerY ] of centers ) rasterCircle( shape, centerX, centerY, 2.2, 1.02, true );
 	}
 	else {
-		const centerX = 128;
-		const centerY = 128;
-		const petals = 14;
+		// 参考の花: 幅広の花びら 11 枚、花芯は直径の約 1/4。
+		// 花びらは根元が暗く先が明るい。縁と中央の筋を少し暗くする。
+		const petals = 11;
+		const outerRadius = 55;
+		const discRadius = 14;
+		const rotation = random.next() * Math.PI * 2;
 		for ( let index = 0; index < petals; index ++ ) {
-			const angle = index / petals * Math.PI * 2 + random.range( - 0.045, 0.045 );
-			const innerRadius = 19 + random.range( - 2, 2 );
-			const length = 82 + random.range( - 12, 12 );
-			const halfWidth = length * random.range( 0.125, 0.16 );
-			const sideX = - Math.sin( angle );
-			const sideY = Math.cos( angle );
-			const directionX = Math.cos( angle );
-			const directionY = Math.sin( angle );
-			const tipCenter = innerRadius + length - halfWidth * 0.65;
-			const addPoint = ( distance: number, lateral: number ): Point => [ centerX + directionX * distance + sideX * lateral, centerY + directionY * distance + sideY * lateral ];
-			const points: Point[] = [];
-			points.push( addPoint( innerRadius, halfWidth * 0.16 ) );
-			points.push( addPoint( innerRadius + 7, halfWidth * 0.66 ) );
-			points.push( addPoint( tipCenter, halfWidth ) );
-			for ( let step = 1; step <= 10; step ++ ) {
-				const angleOnTip = Math.PI * 0.5 - step / 10 * Math.PI;
-				points.push( addPoint( tipCenter + Math.cos( angleOnTip ) * halfWidth, Math.sin( angleOnTip ) * halfWidth ) );
-			}
-			points.push( addPoint( innerRadius + 7, - halfWidth * 0.66 ) );
-			points.push( addPoint( innerRadius, - halfWidth * 0.16 ) );
-			rasterPolygon( shape, points, ( x, y ) => 0.58 + 0.54 * Math.min( 1, Math.max( 0, ( Math.hypot( x - centerX, y - centerY ) - innerRadius ) / length ) ) );
+			const angle = rotation + index / petals * Math.PI * 2 + random.range( - 0.06, 0.06 );
+			const length = outerRadius * random.range( 0.88, 1 );
+			const halfWidth = length * random.range( 0.15, 0.18 );
+			const tone = random.range( 0.9, 1.04 );
+			rasterPetal( shape, center, center, angle, discRadius * 0.6, length, halfWidth, ( along, across ) => {
+				const groove = across < 0.18 ? 0.07 * ( 1 - along ) : 0;
+				return tone * ( 0.62 + 0.46 * Math.sqrt( along ) - 0.32 * across * across - groove );
+			} );
 		}
-		rasterCircle( shape, centerX, centerY, 36, 0.68, true );
-		rasterCircle( shape, centerX, centerY, 32, 0.84, true );
+		// 花芯: 外周がやや暗く、中央が明るい。
+		rasterCircle( shape, center, center, discRadius, ( distance ) => distance > 0.82 ? 0.72 : 1.08 - 0.3 * distance, true );
 	}
 
 	for ( let pixel = 0; pixel < shape.alpha.length; pixel ++ ) {
@@ -199,44 +205,61 @@ function flowerTextureShape( variety: 'allium' | 'daisy', seed: number ): Flower
 
 function stemTextureShape( variety: 'allium' | 'daisy', seed: number ): FlowerTextureShape {
 
-	const shape = shapeBuffer();
+	const width = FLOWERS_STEM_TEXTURE_WIDTH;
+	const height = FLOWERS_STEM_TEXTURE_HEIGHT;
+	const shape = shapeBuffer( width, height );
 	const random = createRandom( seed + 113 );
-	const halfWidth = FLOWERS_TEXTURE_SIZE * 0.5;
+	const variantWidth = width * 0.5;
+	// 茎のカード幅（allium 0.03 m / daisy 0.15 m）に対して、太さ約 9 mm になる半幅。
+	const stemHalfWidth = variety === 'daisy' ? 2 : 9.5;
+	// 参考 Flowers02 の葉の高さ（下から）。茎ごとに左右 1 対ずつ 2 段。
+	const leafLevels = [ [ 46, 156 ], [ 101, 216 ] ];
 
 	for ( let variant = 0; variant < 2; variant ++ ) {
-		const centerX = halfWidth * ( variant + 0.5 );
-		const lean = random.range( - 2.5, 2.5 );
-		const width = variety === 'daisy' ? 2.5 : 11;
+		const centerX = variantWidth * ( variant + 0.5 );
+		const lean = random.range( - 0.8, 0.8 );
 		const stem: Point[] = [
-			[ centerX - width, 1 ], [ centerX + width, 1 ],
-			[ centerX + lean + width * 0.72, 255 ], [ centerX + lean - width * 0.72, 255 ],
+			[ centerX - stemHalfWidth, 0 ], [ centerX + stemHalfWidth, 0 ],
+			[ centerX + lean + stemHalfWidth * 0.75, height ], [ centerX + lean - stemHalfWidth * 0.75, height ],
 		];
-		rasterPolygon( shape, stem, ( x, y ) => 0.62 + 0.26 * Math.max( 0, Math.min( 1, y / 255 ) ) + ( Math.abs( x - centerX ) < 1 ? 0.06 : 0 ) );
+		// 茎は円柱の陰影: 中央が明るく両端が暗い。根元ほど暗い。
+		rasterPolygon( shape, stem, ( x, y ) => {
+			const progress = y / height;
+			const middle = centerX + lean * progress;
+			const across = Math.min( 1, Math.abs( x - middle ) / ( stemHalfWidth * ( 1 - 0.25 * progress ) ) );
+			return ( 0.66 + 0.32 * progress ) * ( 0.78 + 0.3 * ( 1 - across * across ) );
+		} );
 
 		if ( variety === 'daisy' ) {
-			for ( const level of [ 78, 154 ] ) {
+			for ( const level of leafLevels[ variant ]! ) {
 				for ( const side of [ - 1, 1 ] ) {
-					const startX = centerX + lean * level / 255;
-					const length = variant === 0 ? 40 : 46;
-					const drop = variant === 0 ? 28 : 32;
-					const halfWidth = variant === 0 ? 5.5 : 6.2;
+					const startX = centerX + lean * level / height;
+					const length = random.range( 24, 28 );
+					const rise = random.range( 6, 9 );
+					const drop = random.range( 18, 24 );
+					const leafHalfWidth = random.range( 2.6, 3.2 );
+					const levelY = level + side * random.range( 0, 6 );
 					const upper: Point[] = [];
 					const lower: Point[] = [];
-					for ( let step = 0; step <= 8; step ++ ) {
-						const progress = step / 8;
-						const centerLeafX = startX + side * length * progress;
-						const centerLeafY = level - drop * progress * progress;
+					// 葉は一度持ち上がってから垂れる弧。先は尖る。
+					for ( let step = 0; step <= 10; step ++ ) {
+						const progress = step / 10;
+						const leafX = startX + side * length * progress;
+						const leafY = levelY + rise * progress - drop * progress * progress * progress;
 						const tangentX = side * length;
-						const tangentY = - 2 * drop * progress;
+						const tangentY = rise - 3 * drop * progress * progress;
 						const tangentLength = Math.hypot( tangentX, tangentY );
 						const normalX = - tangentY / tangentLength;
 						const normalY = tangentX / tangentLength;
-						const width = halfWidth * Math.sin( Math.PI * progress ) ** 0.85;
-						upper.push( [ centerLeafX + normalX * width, centerLeafY + normalY * width ] );
-						lower.push( [ centerLeafX - normalX * width, centerLeafY - normalY * width ] );
+						const leafWidth = leafHalfWidth * Math.sin( Math.PI * Math.min( 1, progress * 1.15 ) ) ** 0.7;
+						upper.push( [ leafX + normalX * leafWidth, leafY + normalY * leafWidth ] );
+						lower.push( [ leafX - normalX * leafWidth, leafY - normalY * leafWidth ] );
 					}
-					const leaf = [ ...upper, ...lower.reverse() ];
-					rasterPolygon( shape, leaf, ( x, y ) => 0.72 + 0.2 * Math.max( 0, Math.min( 1, y / 255 ) ) );
+					// 葉: 根元が暗く先が明るい。中央の筋を暗く。
+					rasterPolygon( shape, [ ...upper, ...lower.reverse() ], ( x ) => {
+						const progress = clamp01( Math.abs( x - startX ) / length );
+						return 0.72 + 0.3 * progress;
+					} );
 				}
 			}
 		}
@@ -271,8 +294,8 @@ function createColorPixels( shape: FlowerTextureShape, color: number, fixedColor
 	}
 
 	return {
-		width: FLOWERS_TEXTURE_SIZE,
-		height: FLOWERS_TEXTURE_SIZE,
+		width: shape.width,
+		height: shape.height,
 		data,
 		colorFactors: factors,
 		colorPixelIndices: Uint32Array.from( indices ),

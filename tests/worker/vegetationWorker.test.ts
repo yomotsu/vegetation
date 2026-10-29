@@ -75,7 +75,7 @@ describe( 'vegetation worker handler', () => {
 				variety,
 				count: 6,
 				spread: variety === 'allium' ? 0.29 : 0.37,
-				height: variety === 'allium' ? 0.43 : 0.285,
+				height: variety === 'allium' ? 0.37 : 0.285,
 				petalColor: variety === 'allium' ? 0xa98bd6 : 0xf2c230,
 				centerColor: variety === 'allium' ? 0xb9cf6a : 0x5a4a1c,
 				stemColor: 0x81603d,

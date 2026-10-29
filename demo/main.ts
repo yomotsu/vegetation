@@ -568,9 +568,9 @@ function rebuildOptionFolders( gui: GUI ): void {
 			controller.onChange( ( next: string ) => {
 				if ( activeKind.name === 'Flowers' && key === 'variety' ) {
 					state.options.spread = next === 'daisy' ? 0.37 : 0.29;
-					state.options.height = next === 'daisy' ? 0.285 : 0.43;
-					state.colors.petal = next === 'daisy' ? '#e07a1f' : '#f1efe8';
-					state.colors.centerColor = next === 'daisy' ? '#5a4a1c' : '#b9cf6a';
+					state.options.height = next === 'daisy' ? 0.285 : 0.37;
+					state.colors.petal = next === 'daisy' ? '#d2600c' : '#f1efe8';
+					state.colors.centerColor = next === 'daisy' ? '#8a7414' : '#8a9670';
 					state.flowerPetalPreset = getFlowerPetalPreset( state.colors.petal );
 					rebuildOptionFolders( gui );
 				}

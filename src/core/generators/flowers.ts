@@ -1,15 +1,15 @@
 import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { registerTextureRegenerator, regenerateTexture } from '../textureRegenerator';
-import { composeFlowersColor, createFlowersPetalTexture, createFlowersStemTexture, FLOWERS_TEXTURE_SIZE } from '../flowersTexture';
+import { composeFlowersColor, createFlowersPetalTexture, createFlowersStemTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
 import { createRandom } from '../random';
 import type { MeshData, PartDef, TextureData, TextureGeneratorDef, VegetationData } from '../types';
 
 export const DEFAULT_FLOWERS_STEM_COLOR = 0x2f6f1e;
 export const DEFAULT_ALLIUM_PETAL_COLOR = 0xf1efe8;
-export const DEFAULT_ALLIUM_CENTER_COLOR = 0xb9cf6a;
-export const DEFAULT_DAISY_PETAL_COLOR = 0xe07a1f;
-export const DEFAULT_DAISY_CENTER_COLOR = 0x5a4a1c;
+export const DEFAULT_ALLIUM_CENTER_COLOR = 0x8a9670;
+export const DEFAULT_DAISY_PETAL_COLOR = 0xd2600c;
+export const DEFAULT_DAISY_CENTER_COLOR = 0x8a7414;
 export const DEFAULT_FLOWERS_COUNT = 6;
 
 export type FlowersVariety = 'allium' | 'daisy';
@@ -87,7 +87,8 @@ function createPlacements( seed: number, count: number, spread: number, height: 
 		const crossAngle = 1.32 + random.next() * 0.5;
 		const plantHeight = height * ( 0.91 + random.next() * 0.18 );
 		const leanAngle = random.next() * Math.PI * 2;
-		const lean = random.range( 0.045, 0.075 ) * plantHeight;
+		// 参考 glTF の茎は、上端が高さの 8〜27%（daisy は 11〜35%）横へずれる。
+		const lean = ( variety === 'daisy' ? random.range( 0.11, 0.35 ) : random.range( 0.08, 0.27 ) ) * plantHeight;
 		const headTilt = variety === 'daisy' ? random.range( 15, 35 ) * Math.PI / 180 : 0;
 		const headTiltYaw = random.next() * Math.PI * 2;
 
@@ -107,6 +108,9 @@ function createPlacements( seed: number, count: number, spread: number, height: 
 
 }
 
+const STEM_BEND_EXPONENT = 2.4;
+const STEM_ROW_BIAS = 1.6;
+
 function addVerticalCard(
 	builder: MeshBuilder,
 	placement: PlantPlacement,
@@ -125,9 +129,11 @@ function addVerticalCard(
 	const halfWidth = width * 0.5;
 	const vertices: number[] = [];
 	for ( let row = 0; row <= segments; row ++ ) {
-		const progress = row / segments;
+		// 曲がりは上に集まるので、段も上に寄せる。
+		const progress = 1 - ( 1 - row / segments ) ** STEM_ROW_BIAS;
 		const y = bottom + ( top - bottom ) * progress;
-		const bend = progress * progress;
+		// 根元はほぼまっすぐで、上ほど強く曲がる（参考の茎の実測）。
+		const bend = progress ** STEM_BEND_EXPONENT;
 		const centerX = placement.x + placement.leanX * bend;
 		const centerZ = placement.z + placement.leanZ * bend;
 		const shiftX = cosine * halfWidth;
@@ -155,7 +161,7 @@ function addFlowerQuad( builder: MeshBuilder, placement: PlantPlacement, width: 
 	const cosine = Math.cos( yaw );
 	const sine = Math.sin( yaw );
 	const centerX = placement.x + placement.leanX;
-	const centerY = placement.height;
+	const centerY = placement.height + ALLIUM_HEAD_RISE;
 	const centerZ = placement.z + placement.leanZ;
 	const halfWidth = width * 0.5;
 	const halfHeight = height * 0.5;
@@ -173,6 +179,14 @@ function addFlowerQuad( builder: MeshBuilder, placement: PlantPlacement, width: 
 
 }
 
+// 花の頭の深さ（直径に対する比）。参考 Flowers02 は直径 0.19 m で四隅が中心より 2〜3 cm 高い。
+const DAISY_CUP_DEPTH = 0.2;
+// 花の頭のカードの一辺。参考 Flowers02 は 0.157 m で、花の直径は約 0.14 m。
+const DAISY_HEAD_SIZE = 0.16;
+// allium の花房のカード。参考の花房は幅約 11 cm で、茎の先が房の下寄りに入る。
+const ALLIUM_HEAD_SIZE = 0.24;
+const ALLIUM_HEAD_RISE = 0.035;
+
 function addDaisyHead( builder: MeshBuilder, placement: PlantPlacement, size: number ): void {
 
 	const centerY = placement.height;
@@ -186,7 +200,9 @@ function addDaisyHead( builder: MeshBuilder, placement: PlantPlacement, size: nu
 		const x = Math.cos( angle ) * outerRadius;
 		const z = Math.sin( angle ) * outerRadius;
 		const tilt = ( x * Math.cos( placement.headTiltYaw ) + z * Math.sin( placement.headTiltYaw ) ) * Math.tan( placement.headTilt );
-		corners.push( builder.addVertex( [ placement.x + placement.leanX + x, centerY + tilt, placement.z + placement.leanZ + z ], [ 0, 1, 0 ], uvs[ corner ]!, [ 1, 1, 1 ], 1 ) );
+		// 参考と同じく四隅を持ち上げ、花びらが中心から弧を描くお椀形にする。
+		const cup = size * DAISY_CUP_DEPTH;
+		corners.push( builder.addVertex( [ placement.x + placement.leanX + x, centerY + tilt + cup, placement.z + placement.leanZ + z ], [ 0, 1, 0 ], uvs[ corner ]!, [ 1, 1, 1 ], 1 ) );
 	}
 	for ( let corner = 0; corner < 4; corner ++ ) builder.addTriangle( center, corners[ corner ]!, corners[ ( corner + 1 ) % 4 ]! );
 
@@ -199,14 +215,14 @@ function buildFlowersPart( variety: FlowersVariety, lod: number, plants: PlantPl
 	if ( part === 'petal' ) {
 		for ( const placement of plants ) {
 			if ( variety === 'daisy' ) {
-				addDaisyHead( builder, placement, 0.19 );
+				addDaisyHead( builder, placement, DAISY_HEAD_SIZE );
 			}
 			else if ( lod === 0 ) {
-				addFlowerQuad( builder, placement, 0.22, 0.22, placement.yaw );
-				addFlowerQuad( builder, placement, 0.22, 0.22, placement.yaw + placement.crossAngle );
+				addFlowerQuad( builder, placement, ALLIUM_HEAD_SIZE, ALLIUM_HEAD_SIZE, placement.yaw );
+				addFlowerQuad( builder, placement, ALLIUM_HEAD_SIZE, ALLIUM_HEAD_SIZE, placement.yaw + placement.crossAngle );
 			}
 			else if ( lod === 1 ) {
-				addFlowerQuad( builder, placement, 0.22, 0.22, placement.yaw + placement.crossAngle );
+				addFlowerQuad( builder, placement, ALLIUM_HEAD_SIZE, ALLIUM_HEAD_SIZE, placement.yaw + placement.crossAngle );
 			}
 			else {
 				const width = 0.20;
@@ -227,14 +243,15 @@ function buildFlowersPart( variety: FlowersVariety, lod: number, plants: PlantPl
 			const placement = plants[ index ]!;
 			const u0 = placement.variant * 0.5;
 			const u1 = u0 + 0.5;
-			const stemWidth = variety === 'daisy' ? 0.075 : 0.012;
+			// 茎は参考と同じく約 9 mm。daisy のカードは左右の葉（約 6 cm）が収まる幅にする。
+			const stemWidth = variety === 'daisy' ? 0.15 : 0.03;
 			if ( variety === 'daisy' && lod === 0 ) {
 				addVerticalCard( builder, placement, stemWidth, 0, placement.height, placement.yaw, 4, u0, u1 );
 				addVerticalCard( builder, placement, stemWidth, 0, placement.height, placement.yaw + placement.crossAngle, 4, ( 1 - placement.variant ) * 0.5, ( 1 - placement.variant ) * 0.5 + 0.5 );
 			}
 			else if ( variety === 'allium' && lod === 0 ) {
-				addVerticalCard( builder, placement, stemWidth, 0, placement.height, placement.yaw, 2, u0, u1 );
-				addVerticalCard( builder, placement, stemWidth, 0, placement.height, placement.yaw + placement.crossAngle, 2, ( 1 - placement.variant ) * 0.5, ( 1 - placement.variant ) * 0.5 + 0.5 );
+				addVerticalCard( builder, placement, stemWidth, 0, placement.height, placement.yaw, 3, u0, u1 );
+				addVerticalCard( builder, placement, stemWidth, 0, placement.height, placement.yaw + placement.crossAngle, 3, ( 1 - placement.variant ) * 0.5, ( 1 - placement.variant ) * 0.5 + 0.5 );
 			}
 			else if ( variety === 'daisy' && lod === 1 ) {
 				addVerticalCard( builder, placement, stemWidth, 0, placement.height, placement.yaw, 1, u0, u1 );
@@ -304,7 +321,7 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	if ( ! Number.isInteger( count ) || count < 1 || count > DEFAULT_FLOWERS_COUNT ) throw new RangeError( 'Flowers count must be an integer from 1 to 6' );
 	const defaults = defaultColors( variety );
 	const spread = positive( options.spread ?? ( variety === 'allium' ? 0.29 : 0.37 ), 'spread' );
-	const height = positive( options.height ?? ( variety === 'allium' ? 0.43 : 0.285 ), 'height' );
+	const height = positive( options.height ?? ( variety === 'allium' ? 0.37 : 0.285 ), 'height' );
 	const petalColor = options.petalColor ?? defaults.petalColor;
 	const centerColor = options.centerColor ?? defaults.centerColor;
 	const stemColor = options.stemColor ?? DEFAULT_FLOWERS_STEM_COLOR;
@@ -317,8 +334,8 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const lod2 = combineParts( buildFlowersPart( variety, 2, plants, 'petal' ), buildFlowersPart( variety, 2, plants, 'stem' ) );
 	const maximumPlantHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
 	const headRise = variety === 'allium'
-		? 0.045
-		: Math.max( ...plants.map( ( plant ) => 0.095 * Math.tan( plant.headTilt ) ) );
+		? ALLIUM_HEAD_SIZE * 0.5 + ALLIUM_HEAD_RISE
+		: Math.max( ...plants.map( ( plant ) => DAISY_HEAD_SIZE * 0.5 * Math.tan( plant.headTilt ) ) ) + DAISY_HEAD_SIZE * DAISY_CUP_DEPTH;
 	const bounds = { radius: spread, height: maximumPlantHeight + headRise };
 	const lod3Index = 2;
 	const lod4Index = 3;
@@ -373,8 +390,8 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 		collider: null,
 		textures,
 		textureGenerators: {
-			petal: { type: 'flowers-petal', seed, size: FLOWERS_TEXTURE_SIZE, variety, fixedColor: centerColor },
-			stem: { type: 'flowers-stem', seed, size: FLOWERS_TEXTURE_SIZE, variety },
+			petal: { type: 'flowers-petal', seed, size: FLOWERS_PETAL_TEXTURE_SIZE, variety, fixedColor: centerColor },
+			stem: { type: 'flowers-stem', seed, size: FLOWERS_STEM_TEXTURE_HEIGHT, variety },
 		},
 		bounds,
 	};
