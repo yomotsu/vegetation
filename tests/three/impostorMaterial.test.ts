@@ -1,6 +1,6 @@
 import { MeshStandardMaterial } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { generateRockData, generateTreeData } from '../../src/core';
+import { generateFlowersData, generatePebblesData, generateRockData, generateTreeData } from '../../src/core';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { registerImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
 import { VegetationMesh } from '../../src/three/VegetationMesh';
@@ -9,7 +9,7 @@ describe( 'impostor materials', () => {
 
 	it( 'adds the view-angle fade to LOD4 WebGL shader and its cache key', () => {
 
-		const asset = new VegetationAsset( generateRockData( { seed: 1 } ) );
+		const asset = new VegetationAsset( generateFlowersData( { seed: 1 } ) );
 		const material = asset.materials[ asset.data.parts.findIndex( ( part ) => part.name === 'impostor' ) ]!;
 		const shader = {
 			vertexShader: '#include <common>\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n}',
@@ -28,19 +28,24 @@ describe( 'impostor materials', () => {
 
 	} );
 
-	it( 'draws every tree impostor card without the view-angle fade', () => {
+	it( 'draws every tree, rock and pebbles impostor card without the view-angle fade', () => {
 
-		const asset = new VegetationAsset( generateTreeData( { seed: 1 } ) );
+		for ( const data of [ generateTreeData( { seed: 1 } ), generateRockData( { seed: 1 } ), generatePebblesData( { seed: 1 } ) ] ) {
 
-		for ( const name of [ 'impostor-lod3', 'impostor' ] ) {
+			const asset = new VegetationAsset( data );
+			const impostorIndices = data.parts.flatMap( ( part, index ) => part.impostorViews !== undefined || part.impostorYawAngles !== undefined ? [ index ] : [] );
 
-			const material = asset.materials[ asset.data.parts.findIndex( ( part ) => part.name === name ) ]!;
+			expect( impostorIndices.length ).toBeGreaterThan( 0 );
 
-			expect( material.customProgramCacheKey() ).not.toContain( 'vegetation-impostor-view-fade-v1' );
+			for ( const index of impostorIndices ) {
+
+				expect( asset.materials[ index ]!.customProgramCacheKey(), data.kind ).not.toContain( 'vegetation-impostor-view-fade-v1' );
+
+			}
+
+			asset.dispose();
 
 		}
-
-		asset.dispose();
 
 	} );
 
@@ -72,7 +77,7 @@ describe( 'impostor materials', () => {
 
 		try {
 
-			const asset = new VegetationAsset( generateRockData( { seed: 2 } ) );
+			const asset = new VegetationAsset( generateFlowersData( { seed: 2 } ) );
 
 			try {
 

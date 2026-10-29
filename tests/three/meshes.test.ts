@@ -129,7 +129,7 @@ describe( 'tree meshes', () => {
 
 	} );
 
-	it( 'turns only the LOD4 side quad toward the camera and skips shadow cameras', () => {
+	it( 'turns only the LOD4 side quad toward the camera, and toward the light for shadows', () => {
 
 		const asset = generateTree( { seed: 1 } );
 		const mesh = new VegetationMesh( asset, 4 );
@@ -142,19 +142,13 @@ describe( 'tree meshes', () => {
 		const part = mesh.parts[ 0 ]!;
 		const topCard = mesh.parts[ 1 ]!;
 		const shadowCamera = new PerspectiveCamera();
-		shadowCamera.position.set( - 10, 0, 0 );
+		shadowCamera.position.copy( mesh.localToWorld( new Vector3( 0, 5, - 10 ) ) );
 		shadowCamera.updateMatrixWorld( true );
-		const updateMeshWorld = vi.spyOn( mesh, 'updateWorldMatrix' );
-		const updateCameraWorld = vi.spyOn( camera, 'updateWorldMatrix' );
-		const updateShadowCameraWorld = vi.spyOn( shadowCamera, 'updateWorldMatrix' );
 
 		part.onBeforeShadow( undefined as never, undefined as never, camera, shadowCamera, part.geometry, undefined as never, undefined as never );
-		part.onBeforeRender( undefined as never, undefined as never, shadowCamera, part.geometry, part.material, undefined as never );
 
-		expect( part.rotation.y ).toBe( 0 );
-		expect( updateMeshWorld ).not.toHaveBeenCalled();
-		expect( updateCameraWorld ).not.toHaveBeenCalled();
-		expect( updateShadowCameraWorld ).not.toHaveBeenCalled();
+		expect( Math.abs( part.rotation.y ) ).toBeCloseTo( Math.PI );
+		expect( part.modelViewMatrix.equals( new Matrix4().multiplyMatrices( shadowCamera.matrixWorldInverse, part.matrixWorld ) ) ).toBe( true );
 
 		part.onAfterShadow( undefined as never, undefined as never, camera, shadowCamera, part.geometry, undefined as never, undefined as never );
 

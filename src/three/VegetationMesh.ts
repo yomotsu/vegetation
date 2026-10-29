@@ -210,33 +210,33 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 			billboard.receiveShadow = this.shadowReceive;
 			topCard.castShadow = false;
 			topCard.receiveShadow = this.shadowReceive;
-			const shadowCameras = new WeakSet<Camera>();
 			const inverseWorldMatrix = new Matrix4();
 			if ( isCameraFacingBillboard ) {
 
-				billboard.onBeforeShadow = ( renderer, object, camera, shadowCamera ) => {
-
-					shadowCameras.add( shadowCamera );
-
-				};
-
-				billboard.onAfterShadow = ( renderer, object, camera, shadowCamera ) => {
-
-					shadowCameras.delete( shadowCamera );
-
-				};
-
-				billboard.onBeforeRender = ( renderer, scene, camera ) => {
-
-					if ( shadowCameras.has( camera ) ) {
-						return;
-					}
+				const faceCamera = ( camera: Camera ): void => {
 
 					cameraPosition.setFromMatrixPosition( camera.matrixWorld );
 					inverseWorldMatrix.copy( this.matrixWorld ).invert();
 					cameraPosition.applyMatrix4( inverseWorldMatrix );
 					billboard.rotation.set( 0, Math.atan2( cameraPosition.x, cameraPosition.z ), 0 );
 					billboard.updateMatrixWorld( true );
+
+				};
+
+				// 影は光源へ向けて落とす。視点カメラの向きのままだと、オービットに合わせて影の幅と位置が変わる。
+				// WebGL は onBeforeShadow の前に modelViewMatrix を求めるので、向きを変えた後に求め直す。
+				billboard.onBeforeShadow = ( renderer, object, camera, shadowCamera ) => {
+
+					faceCamera( shadowCamera );
+					billboard.modelViewMatrix.multiplyMatrices( shadowCamera.matrixWorldInverse, billboard.matrixWorld );
+					billboard.normalMatrix.getNormalMatrix( billboard.modelViewMatrix );
+
+				};
+
+				// WebGPU は影の描画でも影用カメラを渡して onBeforeRender を呼ぶ。
+				billboard.onBeforeRender = ( renderer, scene, camera ) => {
+
+					faceCamera( camera );
 
 				};
 
