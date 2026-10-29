@@ -12,7 +12,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
-import { VegetationMesh } from 'vegetation';
+import { disposeVegetationWorkers, VegetationMesh } from 'vegetation';
 import type { VegetationAsset } from 'vegetation';
 import { kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
@@ -71,13 +71,15 @@ const state: DemoState = {
 	seedVariants: 4,
 	leafPreset: 'green',
 	options: { ...kinds[ 0 ]!.options },
-	colors: {},
+	colors: { ...kinds[ 0 ]!.defaultColors },
 };
 
 let activeKind: VegetationKind = kinds[ 0 ]!;
-let asset: VegetationAsset = activeKind.create( { ...state.options } );
+let asset: VegetationAsset;
 let scatter: ScatterController | null = null;
 let scatterVariants: VegetationAsset[] = [];
+let rebuildRequest = 0;
+let isGenerating = false;
 let optionFolder: GUI | null = null;
 let colorFolder: GUI | null = null;
 let resetCameraButton: HTMLElement | null = null;
@@ -87,15 +89,15 @@ let lastScatterShadowUpdate = - Infinity;
 const colliderMaterialController = createColliderMaterialController();
 const scheduleColorUpdate = createColorUpdateScheduler( ( colors ) => {
 
-	for ( const current of [ asset, ...scatterVariants ] ) current.setColors( colors );
+	for ( const current of [ asset, ...scatterVariants ] ) {
+
+		const partNames = new Set( current.data.parts.map( ( part ) => part.name ) );
+		const matchingColors = Object.fromEntries( Object.entries( colors ).filter( ( [ part ] ) => partNames.has( part ) ) );
+		if ( Object.keys( matchingColors ).length > 0 ) current.setColors( matchingColors );
+
+	}
 
 } );
-
-for ( const part of activeKind.colorParts ) {
-
-	state.colors[ part ] = `#${ asset.getColor( part ).getHexString() }`;
-
-}
 
 function getLeafPreset( color: string ): string {
 
@@ -215,29 +217,16 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 
 }
 
-function makeAsset( kind: VegetationKind, options: Record<string, number | boolean>, colors: Record<string, string> ): VegetationAsset {
+function makeAsset( kind: VegetationKind, options: Record<string, number | boolean>, colors: Record<string, string> ): Promise<VegetationAsset> {
 
 	const textureColors = Object.fromEntries( Object.keys( kind.textureColors ?? {} ).flatMap( ( key ) => colors[ key ] === undefined ? [] : [ [ key, colors[ key ]! ] ] ) );
-	const next = kind.create( { ...options, ...textureColors, ...( colors.leaf !== undefined ? { leafColor: colors.leaf } : {} ) } );
-
-	for ( const part of kind.colorParts ) {
-
-		if ( part === 'leaf' ) {
-
-			continue;
-
-		}
-		if ( colors[ part ] !== undefined ) {
-
-			next.setColor( part, colors[ part ]! );
-
-		}
-
-	}
-
-	return next;
+	const colorOptions = Object.fromEntries( Object.entries( kind.colorOptions ).flatMap( ( [ part, option ] ) => colors[ part ] === undefined ? [] : [ [ option, colors[ part ]! ] ] ) );
+	return kind.createAsync( { ...options, ...textureColors, ...colorOptions } );
 
 }
+
+const initialAssetPromise = makeAsset( activeKind, { ...state.options }, { ...state.colors } );
+window.addEventListener( 'pagehide', disposeVegetationWorkers );
 
 function setPartColor( part: string, color: string ): void {
 
@@ -286,7 +275,7 @@ function setWireframe( enabled: boolean ): void {
 
 }
 
-function disposePreview(): void {
+function disposePreview( disposeVariants = true ): void {
 
 	colliderMaterialController.restore();
 
@@ -295,8 +284,12 @@ function disposePreview(): void {
 		scatter = null;
 	}
 
-	for ( const variant of scatterVariants ) variant.dispose();
-	scatterVariants = [];
+	if ( disposeVariants ) {
+
+		for ( const variant of scatterVariants ) variant.dispose();
+		scatterVariants = [];
+
+	}
 
 	for ( const lines of colliderLines ) {
 
@@ -373,7 +366,13 @@ function resetCamera(): void {
 
 function rebuildPreview(): void {
 
-	disposePreview();
+	disposePreview( false );
+	if ( state.mode !== 'scatter' ) {
+
+		for ( const variant of scatterVariants ) variant.dispose();
+		scatterVariants = [];
+
+	}
 
 	if ( state.mode === 'single' ) {
 		const mesh = new VegetationMesh( asset, state.lod );
@@ -404,12 +403,7 @@ function rebuildPreview(): void {
 		}
 	} else {
 		const seedCount = Math.max( 1, Math.min( 4, Math.floor( state.seedVariants ) ) );
-		scatterVariants = Array.from( { length: seedCount - 1 }, ( _, index ) => makeAsset(
-			activeKind,
-			{ ...state.options, seed: Number( state.options.seed ?? 1 ) + index + 1 },
-			state.colors,
-		) );
-		scatter = createScatter( [ asset, ...scatterVariants ], state.scatterCount, Number( state.options.seed ?? 1 ) );
+		scatter = createScatter( [ asset, ...scatterVariants.slice( 0, seedCount - 1 ) ], state.scatterCount, Number( state.options.seed ?? 1 ) );
 		root.add( scatter.group );
 	}
 
@@ -417,16 +411,75 @@ function rebuildPreview(): void {
 	updateColliderVisualization();
 	sunlight.shadow.needsUpdate = true;
 	lastScatterShadowUpdate = - Infinity;
-	status.hidden = state.mode !== 'scatter';
+	status.hidden = ! isGenerating && state.mode !== 'scatter';
 
 }
 
-function rebuildAsset(): void {
+async function rebuildAsset(): Promise<void> {
 
-	const previous = asset;
-	asset = makeAsset( activeKind, state.options, state.colors );
-	rebuildPreview();
-	previous.dispose();
+	const request = ++ rebuildRequest;
+	const kind = activeKind;
+	const options = { ...state.options };
+	const colors = { ...state.colors };
+	const seedCount = state.mode === 'scatter' ? Math.max( 1, Math.min( 4, Math.floor( state.seedVariants ) ) ) : 1;
+	const jobs = [ makeAsset( kind, options, colors ) ];
+
+	for ( let variant = 1; variant < seedCount; variant ++ ) {
+
+		jobs.push( makeAsset( kind, { ...options, seed: Number( options.seed ?? 1 ) + variant }, colors ) );
+
+	}
+
+	isGenerating = true;
+	status.hidden = false;
+	status.textContent = 'generating…';
+
+	try {
+
+		const results = await Promise.allSettled( jobs );
+		const generated = results.flatMap( ( result ) => result.status === 'fulfilled' ? [ result.value ] : [] );
+
+		if ( request !== rebuildRequest ) {
+
+			for ( const next of generated ) next.dispose();
+			return;
+
+		}
+
+		const failure = results.find( ( result ) => result.status === 'rejected' );
+		if ( failure !== undefined ) {
+
+			for ( const next of generated ) next.dispose();
+			throw failure.reason;
+
+		}
+
+		const nextAsset = generated[ 0 ]!;
+		const nextVariants = generated.slice( 1 );
+		for ( const part of kind.colorParts ) {
+
+			if ( colors[ part ] !== state.colors[ part ] && state.colors[ part ] !== undefined ) nextAsset.setColor( part, state.colors[ part ]! );
+
+		}
+
+		const previous = asset;
+		disposePreview( false );
+		for ( const variant of scatterVariants ) variant.dispose();
+		asset = nextAsset;
+		scatterVariants = nextVariants;
+		isGenerating = false;
+		rebuildPreview();
+		previous.dispose();
+
+	} catch ( error ) {
+
+		if ( request !== rebuildRequest ) return;
+		isGenerating = false;
+		status.hidden = false;
+		status.textContent = error instanceof Error ? error.message : String( error );
+		console.error( error );
+
+	}
 
 }
 
@@ -444,7 +497,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 			: optionFolder.add( state.options, key, ...getOptionBounds( key ) );
 		controller
 			.name( key )
-			.onFinishChange( rebuildAsset );
+			.onFinishChange( () => void rebuildAsset() );
 
 	}
 
@@ -497,7 +550,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 	}
 
 	for ( const key of Object.keys( activeKind.textureColors ?? {} ) ) {
-		colorFolder.addColor( state.colors, key ).name( key ).onFinishChange( rebuildAsset );
+		colorFolder.addColor( state.colors, key ).name( key ).onFinishChange( () => void rebuildAsset() );
 	}
 
 	if ( resetCameraButton === null ) {
@@ -516,26 +569,19 @@ function createGui(): void {
 	const gui = new GUI( { title: 'Vegetation', width: 285 } );
 	gui.add( state, 'kind', kinds.map( ( kind ) => kind.name ) ).name( 'species' ).onChange( ( name: string ) => {
 
-		const previous = asset;
 		activeKind = kinds.find( ( kind ) => kind.name === name )!;
 		state.options = { ...activeKind.options };
-		const next = activeKind.create( { ...state.options } );
-		state.colors = {
-			...activeKind.textureColors,
-			...Object.fromEntries( activeKind.colorParts.map( ( part ) => [ part, `#${ next.getColor( part ).getHexString() }` ] ) ),
-		};
+		state.colors = { ...activeKind.defaultColors };
 		state.leafPreset = getLeafPreset( state.colors.leaf ?? '' );
-		asset = next;
 		rebuildOptionFolders( gui );
-		rebuildPreview();
-		previous.dispose();
+		void rebuildAsset();
 
 	} );
 
 	gui.add( state, 'mode', [ 'single', 'compare', 'scatter' ] ).name( 'view' ).onChange( () => {
 
 		updateViewControls();
-		rebuildPreview();
+		void rebuildAsset();
 
 	} );
 	const lodController = gui.add( state, 'lod', 0, 4, 1 ).name( 'LOD' ).onChange( () => {
@@ -567,7 +613,7 @@ function createGui(): void {
 
 		if ( state.mode === 'scatter' ) {
 
-			rebuildPreview();
+			void rebuildAsset();
 
 		}
 
@@ -614,7 +660,8 @@ function showRendererError( error: unknown ): void {
 
 async function start(): Promise<void> {
 
-	const { renderer, label } = await createPreviewRenderer();
+	const [ { renderer, label }, initialAsset ] = await Promise.all( [ createPreviewRenderer(), initialAssetPromise ] );
+	asset = initialAsset;
 	rendererLabel.textContent = `${ label } renderer`;
 	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
 	renderer.setSize( window.innerWidth, window.innerHeight );
@@ -659,7 +706,7 @@ async function start(): Promise<void> {
 
 			frames ++;
 
-			if ( now - lastFpsTime >= 500 ) {
+			if ( ! isGenerating && now - lastFpsTime >= 500 ) {
 				const fps = Math.round( frames * 1000 / ( now - lastFpsTime ) );
 				status.textContent = `${ fps } FPS · ${ Math.round( triangles ).toLocaleString() } tris`;
 				frames = 0;

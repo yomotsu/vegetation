@@ -1,0 +1,67 @@
+import { hexToLinear } from './color';
+import { bakeImpostor, impostorViewsForPart } from './impostor';
+import { regenerateTexture } from './textureRegenerator';
+import type { Color3, ImpostorView, TextureData, VegetationData } from './types';
+
+export interface PreparedVegetationAsset {
+	data: VegetationData;
+	partColorsHex: Record<string, number>;
+	partColorsLinear: Record<string, Color3>;
+	impostorTextures: Record<string, TextureData>;
+	impostorViews: Record<string, readonly ImpostorView[]>;
+	impostorSize: number;
+}
+
+function copyTextureData( data: VegetationData ): VegetationData {
+
+	const textures = Object.fromEntries( Object.entries( data.textures ).map( ( [ name, texture ] ) => [ name, {
+		...texture,
+		data: texture.data.slice(),
+		...( texture.colorFactors === undefined ? {} : { colorFactors: texture.colorFactors.slice() } ),
+		...( texture.colorPixelIndices === undefined ? {} : { colorPixelIndices: texture.colorPixelIndices.slice() } ),
+		...( texture.colorOffsets === undefined ? {} : { colorOffsets: texture.colorOffsets.slice() } ),
+	} ] ) );
+
+	return { ...data, textures };
+
+}
+
+export function prepareVegetationAsset(
+	data: VegetationData,
+	partColorsHex: Record<string, number> = {},
+	impostorSize = 128,
+	partColorsLinear: Record<string, Color3> = {},
+): PreparedVegetationAsset {
+
+	const preparedData = copyTextureData( data );
+	const colors = Object.fromEntries( preparedData.parts.map( ( part ) => [ part.name, partColorsHex[ part.name ] ?? part.defaultColor ] ) );
+	const linearColors = Object.fromEntries( preparedData.parts.map( ( part ) => [ part.name, partColorsLinear[ part.name ] ?? hexToLinear( colors[ part.name ]! ) ] ) );
+
+	for ( let index = 0; index < preparedData.parts.length; index ++ ) {
+
+		const part = preparedData.parts[ index ]!;
+
+		if ( ! part.colorizesTexture || part.texture === null ) continue;
+		if ( colors[ part.name ] === part.defaultColor ) continue;
+
+		preparedData.textures[ part.texture ] = regenerateTexture( preparedData, part.texture, colors[ part.name ]! );
+
+	}
+
+	const materialColors = preparedData.parts.map( ( part ) => part.colorizesTexture ? [ 1, 1, 1 ] as [ number, number, number ] : linearColors[ part.name ]! );
+	const impostorTextures: Record<string, TextureData> = {};
+	const impostorViews: Record<string, readonly ImpostorView[]> = {};
+
+	for ( const part of preparedData.parts ) {
+
+		const views = impostorViewsForPart( part );
+		if ( part.texture === null || views === undefined || impostorTextures[ part.texture ] !== undefined ) continue;
+
+		impostorViews[ part.texture ] = views;
+		impostorTextures[ part.texture ] = bakeImpostor( preparedData, materialColors, impostorSize, views );
+
+	}
+
+	return { data: preparedData, partColorsHex: colors, partColorsLinear: linearColors, impostorTextures, impostorViews, impostorSize };
+
+}

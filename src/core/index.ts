@@ -7,6 +7,8 @@ export * from './meshBuilder';
 export * from './primitives';
 export * from './impostor';
 export * from './impostorFade';
+export * from './vegetationAssetPreparation';
+export * from './vegetationGeneration';
 export { createFirSprigTexture, DEFAULT_LEAF_COLOR } from './leafTexture';
 export * from './barkTexture';
 export * from './rockTexture';

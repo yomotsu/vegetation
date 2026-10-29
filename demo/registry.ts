@@ -1,10 +1,13 @@
-import { generatePebbles, generateRock, generateTree } from '../src/index';
+import { generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
 import type { PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
 
 export interface VegetationKind {
 	name: string;
 	create: ( opts: Record<string, unknown> ) => VegetationAsset;
+	createAsync: ( opts: Record<string, unknown> ) => Promise<VegetationAsset>;
 	colorParts: string[];
+	colorOptions: Record<string, string>;
+	defaultColors: Record<string, string>;
 	textureColors?: Record<string, string>;
 	options: Record<string, number | boolean>;
 }
@@ -20,7 +23,10 @@ export const kinds: VegetationKind[] = [
 	{
 		name: 'Tree',
 		create: ( opts ) => generateTree( opts as TreeMeshOptions ),
+		createAsync: ( opts ) => generateTreeAsync( opts as TreeMeshOptions ),
 		colorParts: [ 'leaf', 'bark' ],
+		colorOptions: { leaf: 'leafColor', bark: 'barkColor' },
+		defaultColors: { leaf: '#2f7d1f', bark: '#6b4c32' },
 		options: {
 			seed: 1,
 			height: 7.5,
@@ -32,7 +38,10 @@ export const kinds: VegetationKind[] = [
 	{
 		name: 'Rock',
 		create: ( opts ) => generateRock( opts as RockMeshOptions ),
+		createAsync: ( opts ) => generateRockAsync( opts as RockMeshOptions ),
 		colorParts: [ 'rock' ],
+		colorOptions: { rock: 'rockColor' },
+		defaultColors: { rock: '#ffffff', mossColor: '#7cb83a' },
 		textureColors: { mossColor: '#7cb83a' },
 		options: {
 			seed: 1,
@@ -47,7 +56,10 @@ export const kinds: VegetationKind[] = [
 	{
 		name: 'Pebbles',
 		create: ( opts ) => generatePebbles( { ...opts as PebblesMeshOptions, stoneColor: '#ffffff' } ),
+		createAsync: ( opts ) => generatePebblesAsync( opts as PebblesMeshOptions ),
 		colorParts: [ 'stone' ],
+		colorOptions: { stone: 'stoneColor' },
+		defaultColors: { stone: '#ffffff', mossColor: '#7cb83a' },
 		textureColors: { mossColor: '#7cb83a' },
 		options: {
 			seed: 1,

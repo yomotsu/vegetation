@@ -19,6 +19,8 @@ import {
 import type { ColorRepresentation, Texture } from 'three';
 import { bakeImpostor, impostorViewsForPart } from '../core/impostor';
 import { regenerateTexture } from '../core/textureRegenerator';
+import { prepareVegetationAsset } from '../core/vegetationAssetPreparation';
+import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
 import type { ImpostorView, LodLevel, MeshData, PartDef, TextureData, VegetationData } from '../core/types';
 import { addImpostorFade } from './impostorFadeMaterial';
 import { getImpostorMaterialFactory } from './impostorMaterialFactory';
@@ -86,20 +88,6 @@ function toLinearColors( colors: Color[] ): [ number, number, number ][] {
 
 }
 
-function copyTextureData( data: VegetationData ): VegetationData {
-
-	const textures = Object.fromEntries( Object.entries( data.textures ).map( ( [ name, texture ] ) => [ name, {
-		...texture,
-		data: texture.data.slice(),
-		...( texture.colorFactors === undefined ? {} : { colorFactors: texture.colorFactors.slice() } ),
-		...( texture.colorPixelIndices === undefined ? {} : { colorPixelIndices: texture.colorPixelIndices.slice() } ),
-		...( texture.colorOffsets === undefined ? {} : { colorOffsets: texture.colorOffsets.slice() } ),
-	} ] ) );
-
-	return { ...data, textures };
-
-}
-
 export class VegetationAsset {
 
 	readonly data: VegetationData;
@@ -116,52 +104,39 @@ export class VegetationAsset {
 	private readonly impostorSize: number;
 	private disposed = false;
 
-	constructor( data: VegetationData, colors: Record<string, ColorRepresentation> = {}, impostorSize = 128 ) {
+	constructor( data: VegetationData, colors?: Record<string, ColorRepresentation>, impostorSize?: number );
+	constructor( data: VegetationData, colors: Record<string, ColorRepresentation> = {}, impostorSize = 128, prepared?: PreparedVegetationAsset ) {
 
-		this.data = copyTextureData( data );
-		this.impostorSize = impostorSize;
+		const colorObjects = Object.fromEntries( data.parts.map( ( part ) => [ part.name, new Color( colors[ part.name ] ?? part.defaultColor ) ] ) );
+		const partColorsHex = prepared?.partColorsHex ?? Object.fromEntries( Object.entries( colorObjects ).map( ( [ name, color ] ) => [ name, color.getHex() ] ) );
+		const partColorsLinear = prepared?.partColorsLinear ?? Object.fromEntries( Object.entries( colorObjects ).map( ( [ name, color ] ) => [ name, [ color.r, color.g, color.b ] as [ number, number, number ] ] ) );
+		const payload = prepared ?? prepareVegetationAsset( data, partColorsHex, impostorSize, partColorsLinear );
+		this.data = payload.data;
+		this.impostorSize = payload.impostorSize;
 		this.geometries = this.data.lods.map( createGeometry );
 		this.collider = createCollider( this.data.collider );
+		this.partColors = this.data.parts.map( ( part ) => {
 
-		this.partColors = this.data.parts.map( ( part ) => new Color( colors[ part.name ] ?? part.defaultColor ) );
+			if ( prepared === undefined ) return colorObjects[ part.name ]!;
+
+			const color = new Color();
+			const linear = payload.partColorsLinear[ part.name ]!;
+			color.r = linear[ 0 ];
+			color.g = linear[ 1 ];
+			color.b = linear[ 2 ];
+			return color;
+
+		} );
 		const materialColors = this.getMaterialColors();
 
-		for ( let index = 0; index < this.data.parts.length; index ++ ) {
+		for ( const [ textureName, views ] of Object.entries( payload.impostorViews ) ) {
 
-			const part = this.data.parts[ index ]!;
-
-			if ( ! part.colorizesTexture || part.texture === null ) {
-
-				continue;
-
-			}
-			if ( this.partColors[ index ]!.getHex() === part.defaultColor ) {
-
-				continue;
-
-			}
-
-			this.data.textures[ part.texture ] = regenerateTexture( this.data, part.texture, this.partColors[ index ]!.getHex() );
+			this.impostorViews.set( textureName, views );
 
 		}
+		for ( const [ textureName, textureData ] of Object.entries( payload.impostorTextures ) ) {
 
-		for ( const part of this.data.parts ) {
-
-			const views = impostorViewsForPart( part );
-
-			if ( part.texture === null || views === undefined ) {
-
-				continue;
-
-			}
-			if ( this.impostorTextures.has( part.texture ) ) {
-
-				continue;
-
-			}
-
-			this.impostorViews.set( part.texture, views );
-			this.impostorTextures.set( part.texture, createTexture( bakeImpostor( this.data, toLinearColors( materialColors ), impostorSize, views ) ) );
+			this.impostorTextures.set( textureName, createTexture( textureData ) );
 
 		}
 
@@ -211,6 +186,12 @@ export class VegetationAsset {
 			return material;
 
 		} );
+
+	}
+
+	static fromPrepared( prepared: PreparedVegetationAsset ): VegetationAsset {
+
+		return Reflect.construct( VegetationAsset, [ prepared.data, {}, prepared.impostorSize, prepared ] ) as VegetationAsset;
 
 	}
 
