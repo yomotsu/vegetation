@@ -29,12 +29,20 @@ export const flowerPetalColorPresets = {
 	allium: { white: '#f1efe8', lavender: '#a98bd6', pink: '#e889b5', orange: '#d2600c' },
 	daisy: { orange: '#d2600c', yellow: '#f2c230', red: '#c8352a', white: '#f1efe8' },
 	tulip: { red: '#d8322a', yellow: '#f2c230', pink: '#ef7fa8', white: '#f4f1ea', orange: '#f07a28' },
+	poppy: { red: '#d8281e', orange: '#f08a24', white: '#f4f1ea', pink: '#ef8fb0' },
+	bluebell: { violet: '#7a5ad8', blue: '#4f7fe0', pink: '#ec90c0', white: '#f2f0f6' },
+	calla: { white: '#f4f1e8', yellow: '#f2c94a', pink: '#ee9ab8', purple: '#6e3a8a' },
+	primrose: { yellow: '#f2d24a', pink: '#f08ab8', purple: '#9a6ad8', white: '#f6f2e6' },
 };
 
 export const flowerVarietyDefaults = {
 	allium: { count: 6, spread: 0.29, height: 0.37, petal: '#f1efe8', centerColor: '#8a9670' },
 	daisy: { count: 6, spread: 0.37, height: 0.285, petal: '#d2600c', centerColor: '#8a7414' },
 	tulip: { count: 4, spread: 0.3, height: 0.36, petal: '#d8322a', centerColor: '#000000' },
+	poppy: { count: 3, spread: 0.28, height: 0.42, petal: '#d8281e', centerColor: '#1e1a18' },
+	bluebell: { count: 3, spread: 0.28, height: 0.36, petal: '#7a5ad8', centerColor: '#2f6f1e' },
+	calla: { count: 3, spread: 0.3, height: 0.42, petal: '#f4f1e8', centerColor: '#f0c030' },
+	primrose: { count: 4, spread: 0.26, height: 0.12, petal: '#f2d24a', centerColor: '#c0a020' },
 };
 
 export const kinds: VegetationKind[] = [

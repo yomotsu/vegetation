@@ -214,7 +214,7 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 	}
 	if ( activeKind.name === 'Flowers' && name === 'count' ) return [ 1, 6, 1 ];
 	if ( activeKind.name === 'Flowers' && name === 'spread' ) return [ 0.1, 0.8, 0.01 ];
-	if ( activeKind.name === 'Flowers' && name === 'height' ) return [ 0.15, 0.6, 0.01 ];
+	if ( activeKind.name === 'Flowers' && name === 'height' ) return state.options.variety === 'primrose' ? [ 0.05, 0.25, 0.005 ] : [ 0.15, 0.6, 0.01 ];
 	if ( name === 'height' ) {
 
 		return [ 2, 14, 0.1 ];
@@ -571,7 +571,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 		const value = state.options[ key ];
 		if ( typeof value === 'string' ) {
-			const controller = optionFolder.add( state.options, key, key === 'variety' ? [ 'allium', 'daisy', 'tulip' ] : [ value ] ).name( key );
+			const controller = optionFolder.add( state.options, key, key === 'variety' ? Object.keys( flowerPetalColorPresets ) : [ value ] ).name( key );
 			controller.onChange( ( next: string ) => {
 				if ( activeKind.name === 'Flowers' && key === 'variety' ) {
 					const defaults = flowerVarietyDefaults[ next as keyof typeof flowerVarietyDefaults ];
@@ -689,7 +689,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 	}
 
 	for ( const key of Object.keys( activeKind.textureColors ?? {} ) ) {
-		if ( activeKind.name === 'Flowers' && state.options.variety === 'tulip' && key === 'centerColor' ) continue;
+		if ( activeKind.name === 'Flowers' && ( state.options.variety === 'tulip' || state.options.variety === 'bluebell' ) && key === 'centerColor' ) continue;
 		colorFolder.addColor( state.colors, key ).name( key ).onFinishChange( () => void rebuildAsset() );
 	}
 
