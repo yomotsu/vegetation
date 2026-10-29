@@ -220,11 +220,6 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 		return [ 2, 14, 0.1 ];
 
 	}
-	if ( name === 'rootDepth' ) {
-
-		return [ 0, 1, 0.05 ];
-
-	}
 	if ( name === 'crownSize' ) {
 
 		return [ 0.5, 1.5, 0.01 ];

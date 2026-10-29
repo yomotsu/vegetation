@@ -22,7 +22,6 @@ describe( 'demo registry', () => {
 		expect( kinds[ 0 ]!.options ).toEqual( {
 			seed: 1,
 			height: 7.5,
-			rootDepth: 0.3 * ( 7.5 / 7.55 ),
 			crownSize: 1,
 			branchCount: 10,
 		} );
