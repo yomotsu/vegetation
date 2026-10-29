@@ -1,13 +1,33 @@
 import { DEFAULT_BARK_COLOR } from './barkTexture';
 import { DEFAULT_LEAF_COLOR } from './leafTexture';
 import { DEFAULT_MOSS_COLOR } from './rockTexture';
+import { DEFAULT_BLADE_COLOR } from './generators/grass';
 import type { PebblesOptions } from './generators/pebbles';
+import type { GrassOptions } from './generators/grass';
 import type { RockOptions } from './generators/rock';
 import type { TreeOptions } from './generators/tree';
 
 export interface NormalizedVegetationGeneration<Options> {
 	options: Options;
 	colors: Record<string, number>;
+}
+
+export function normalizeGrassGenerationOptions(
+	options: GrassOptions,
+	colors: Record<string, number> = {},
+): NormalizedVegetationGeneration<GrassOptions> {
+
+	const bladeColor = colors.blade ?? options.bladeColor ?? DEFAULT_BLADE_COLOR;
+	return {
+		options: {
+			seed: options.seed,
+			height: options.height,
+			width: options.width,
+			bladeColor,
+		},
+		colors: { blade: bladeColor },
+	};
+
 }
 
 export function normalizeTreeGenerationOptions(
