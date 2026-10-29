@@ -52,7 +52,7 @@ export interface TextureGeneratorDef {
 	type: string;
 	seed: number;
 	size: number;
-	variety?: 'allium' | 'daisy' | 'tulip';
+	variety?: 'allium' | 'daisy' | 'tulip' | 'poppy' | 'bluebell' | 'calla' | 'primrose';
 	fixedColor?: number;
 }
 

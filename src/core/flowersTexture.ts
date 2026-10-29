@@ -24,7 +24,7 @@ for ( let channel = 0; channel < 256; channel ++ ) {
 
 type Point = [ number, number ];
 
-interface FlowerTextureShape {
+export interface FlowerTextureShape {
 	width: number;
 	height: number;
 	alpha: Uint8Array;
@@ -362,3 +362,5 @@ export function composeFlowersColor( texture: TextureData, color: number ): Text
 	return { ...texture, data };
 
 }
+
+export { shapeBuffer as createFlowerTextureShape, rasterPolygon as rasterFlowerPolygon, rasterCircle as rasterFlowerCircle };

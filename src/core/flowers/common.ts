@@ -12,6 +12,7 @@ export interface FlowerPlacement {
 	headTilt: number;
 	headTiltYaw: number;
 	variant: number;
+	bud?: boolean;
 }
 
 export function addStemCard( builder: MeshBuilder, plant: FlowerPlacement, width: number, yaw: number, segments: number, bottom = 0, top = plant.height ): void {

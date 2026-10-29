@@ -5,6 +5,10 @@ import { composeFlowersColor, createFlowersPetalTexture, createFlowersStemTextur
 import { createRandom } from '../random';
 import type { MeshData, PartDef, TextureData, TextureGeneratorDef, VegetationData } from '../types';
 import { buildTulipPart, createTulipPetalTexture, createTulipStemTexture } from '../flowers/tulip';
+import { buildPoppyPart, createPoppyPetalTexture, createPoppyStemTexture } from '../flowers/poppy';
+import { buildBluebellPart, createBluebellPetalTexture, createBluebellStemTexture } from '../flowers/bluebell';
+import { buildCallaPart, createCallaPetalTexture, createCallaStemTexture } from '../flowers/calla';
+import { buildPrimrosePart, createPrimrosePetalTexture, createPrimroseStemTexture } from '../flowers/primrose';
 import type { FlowerPlacement } from '../flowers/common';
 
 export const DEFAULT_FLOWERS_STEM_COLOR = 0x2f6f1e;
@@ -16,8 +20,29 @@ export const DEFAULT_FLOWERS_COUNT = 6;
 export const DEFAULT_TULIP_PETAL_COLOR = 0xd8322a;
 export const DEFAULT_TULIP_CENTER_COLOR = 0x000000;
 export const DEFAULT_TULIP_COUNT = 4;
+export const DEFAULT_POPPY_PETAL_COLOR = 0xd8281e;
+export const DEFAULT_POPPY_CENTER_COLOR = 0x1e1a18;
+export const DEFAULT_POPPY_COUNT = 3;
+export const DEFAULT_POPPY_HEIGHT = 0.42;
+export const DEFAULT_POPPY_SPREAD = 0.28;
+export const DEFAULT_BLUEBELL_PETAL_COLOR = 0x7a5ad8;
+// 花柄（釣り鐘と茎をつなぐ柄）の色。centerColor として焼き込む。
+export const DEFAULT_BLUEBELL_CENTER_COLOR = 0x2f6f1e;
+export const DEFAULT_BLUEBELL_COUNT = 3;
+export const DEFAULT_BLUEBELL_HEIGHT = 0.36;
+export const DEFAULT_BLUEBELL_SPREAD = 0.28;
+export const DEFAULT_CALLA_PETAL_COLOR = 0xf4f1e8;
+export const DEFAULT_CALLA_CENTER_COLOR = 0xf0c030;
+export const DEFAULT_CALLA_COUNT = 3;
+export const DEFAULT_CALLA_HEIGHT = 0.42;
+export const DEFAULT_CALLA_SPREAD = 0.3;
+export const DEFAULT_PRIMROSE_PETAL_COLOR = 0xf2d24a;
+export const DEFAULT_PRIMROSE_CENTER_COLOR = 0xc0a020;
+export const DEFAULT_PRIMROSE_COUNT = 4;
+export const DEFAULT_PRIMROSE_HEIGHT = 0.12;
+export const DEFAULT_PRIMROSE_SPREAD = 0.26;
 
-export type FlowersVariety = 'allium' | 'daisy' | 'tulip';
+export type FlowersVariety = 'allium' | 'daisy' | 'tulip' | 'poppy' | 'bluebell' | 'calla' | 'primrose';
 
 export interface FlowersOptions {
 	seed?: number;
@@ -43,7 +68,55 @@ function validateColor( value: number, name: string ): void {
 
 }
 
+function createTrialPlacements( seed: number, count: number, spread: number, height: number, variety: FlowersVariety ): FlowerPlacement[] {
+
+	const random = createRandom( seed + 149 );
+	const flowerRadius = variety === 'calla' ? 0.12 : variety === 'primrose' ? 0.105 : variety === 'poppy' ? 0.065 : 0.05;
+	const availableRadius = Math.max( 0, spread - flowerRadius );
+	const minimumSpacing = Math.min( 0.12, availableRadius * 0.6 );
+	const positions: [ number, number ][] = [];
+	for ( let plant = 0; plant < count; plant ++ ) {
+		let candidate: [ number, number ] = [ 0, 0 ];
+		for ( let attempt = 0; attempt < 120; attempt ++ ) {
+			const radius = availableRadius * Math.sqrt( random.next() );
+			const angle = random.next() * Math.PI * 2;
+			candidate = [ Math.cos( angle ) * radius, Math.sin( angle ) * radius ];
+			if ( positions.every( ( position ) => Math.hypot( position[ 0 ] - candidate[ 0 ], position[ 1 ] - candidate[ 1 ] ) >= minimumSpacing ) ) break;
+		}
+		positions.push( candidate );
+	}
+
+	return positions.map( ( position, index ) => {
+		const yaw = random.next() * Math.PI * 2;
+		const crossAngle = 1.32 + random.next() * 0.5;
+		const plantHeight = height * ( 0.97 + random.next() * 0.06 );
+		const leanAngle = random.next() * Math.PI * 2;
+		const leanFactor = variety === 'bluebell' ? random.range( 0.3, 0.42 ) : variety === 'poppy' ? random.range( 0.04, 0.11 ) : variety === 'calla' ? random.range( 0.01, 0.04 ) : variety === 'primrose' ? random.range( 0.08, 0.18 ) : random.range( 0.04, 0.12 );
+		const lean = plantHeight * leanFactor;
+		const headTilt = variety === 'poppy' ? random.range( 20, 30 ) * Math.PI / 180 : 0;
+		const bud = variety === 'poppy' && ( count === 1 ? index === 0 : index === 1 || ( count >= 5 && index === 4 ) );
+		return {
+			x: position[ 0 ],
+			z: position[ 1 ],
+			yaw,
+			crossAngle,
+			height: plantHeight,
+			leanX: Math.cos( leanAngle ) * lean,
+			leanZ: Math.sin( leanAngle ) * lean,
+			headTilt,
+			headTiltYaw: variety === 'poppy' ? Math.PI * 1.5 : random.next() * Math.PI * 2,
+			variant: Math.floor( random.next() * 2 ),
+			bud,
+		};
+	} );
+
+}
+
 function createPlacements( seed: number, count: number, spread: number, height: number, variety: FlowersVariety ): FlowerPlacement[] {
+
+	if ( variety === 'poppy' || variety === 'bluebell' || variety === 'calla' || variety === 'primrose' ) {
+		return createTrialPlacements( seed, count, spread, height, variety );
+	}
 
 	const random = createRandom( seed + 149 );
 	const flowerRadius = variety === 'allium' ? 0.12 : variety === 'daisy' ? 0.135 : 0.025;
@@ -204,6 +277,10 @@ function addDaisyHead( builder: MeshBuilder, placement: FlowerPlacement, size: n
 function buildFlowersPart( variety: FlowersVariety, lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
 
 	if ( variety === 'tulip' ) return buildTulipPart( lod, plants, part );
+	if ( variety === 'poppy' ) return buildPoppyPart( lod, plants, part );
+	if ( variety === 'bluebell' ) return buildBluebellPart( lod, plants, part );
+	if ( variety === 'calla' ) return buildCallaPart( lod, plants, part );
+	if ( variety === 'primrose' ) return buildPrimrosePart( lod, plants, part );
 
 	const builder = new MeshBuilder();
 
@@ -292,7 +369,14 @@ function defaultColors( variety: FlowersVariety ): { petalColor: number; centerC
 
 	if ( variety === 'allium' ) return { petalColor: DEFAULT_ALLIUM_PETAL_COLOR, centerColor: DEFAULT_ALLIUM_CENTER_COLOR };
 	if ( variety === 'daisy' ) return { petalColor: DEFAULT_DAISY_PETAL_COLOR, centerColor: DEFAULT_DAISY_CENTER_COLOR };
-	return { petalColor: DEFAULT_TULIP_PETAL_COLOR, centerColor: DEFAULT_TULIP_CENTER_COLOR };
+	if ( variety === 'tulip' ) return { petalColor: DEFAULT_TULIP_PETAL_COLOR, centerColor: DEFAULT_TULIP_CENTER_COLOR };
+	if ( variety === 'poppy' ) return { petalColor: DEFAULT_POPPY_PETAL_COLOR, centerColor: DEFAULT_POPPY_CENTER_COLOR };
+	if ( variety === 'bluebell' ) {
+		// ブルーベルの centerColor は花柄（釣り鐘と茎をつなぐ柄）の色。
+		return { petalColor: DEFAULT_BLUEBELL_PETAL_COLOR, centerColor: DEFAULT_BLUEBELL_CENTER_COLOR };
+	}
+	if ( variety === 'calla' ) return { petalColor: DEFAULT_CALLA_PETAL_COLOR, centerColor: DEFAULT_CALLA_CENTER_COLOR };
+	return { petalColor: DEFAULT_PRIMROSE_PETAL_COLOR, centerColor: DEFAULT_PRIMROSE_CENTER_COLOR };
 
 }
 
@@ -311,12 +395,14 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const seed = options.seed ?? 1;
 	const variety = options.variety ?? 'allium';
 	if ( ! Number.isFinite( seed ) ) throw new RangeError( 'Flowers seed must be finite' );
-	if ( variety !== 'allium' && variety !== 'daisy' && variety !== 'tulip' ) throw new RangeError( 'Flowers variety is unsupported' );
-	const count = options.count ?? ( variety === 'tulip' ? DEFAULT_TULIP_COUNT : DEFAULT_FLOWERS_COUNT );
+	if ( ! [ 'allium', 'daisy', 'tulip', 'poppy', 'bluebell', 'calla', 'primrose' ].includes( variety ) ) throw new RangeError( 'Flowers variety is unsupported' );
+	const count = options.count ?? ( variety === 'tulip' ? DEFAULT_TULIP_COUNT : variety === 'poppy' ? DEFAULT_POPPY_COUNT : variety === 'bluebell' ? DEFAULT_BLUEBELL_COUNT : variety === 'calla' ? DEFAULT_CALLA_COUNT : variety === 'primrose' ? DEFAULT_PRIMROSE_COUNT : DEFAULT_FLOWERS_COUNT );
 	if ( ! Number.isInteger( count ) || count < 1 || count > DEFAULT_FLOWERS_COUNT ) throw new RangeError( 'Flowers count must be an integer from 1 to 6' );
 	const defaults = defaultColors( variety );
-	const spread = positive( options.spread ?? ( variety === 'allium' ? 0.29 : variety === 'daisy' ? 0.37 : 0.3 ), 'spread' );
-	const height = positive( options.height ?? ( variety === 'allium' ? 0.37 : variety === 'daisy' ? 0.285 : 0.36 ), 'height' );
+	const defaultSpread = variety === 'allium' ? 0.29 : variety === 'daisy' ? 0.37 : variety === 'tulip' ? 0.3 : variety === 'poppy' ? DEFAULT_POPPY_SPREAD : variety === 'bluebell' ? DEFAULT_BLUEBELL_SPREAD : variety === 'calla' ? DEFAULT_CALLA_SPREAD : DEFAULT_PRIMROSE_SPREAD;
+	const defaultHeight = variety === 'allium' ? 0.37 : variety === 'daisy' ? 0.285 : variety === 'tulip' ? 0.36 : variety === 'poppy' ? DEFAULT_POPPY_HEIGHT : variety === 'bluebell' ? DEFAULT_BLUEBELL_HEIGHT : variety === 'calla' ? DEFAULT_CALLA_HEIGHT : DEFAULT_PRIMROSE_HEIGHT;
+	const spread = positive( options.spread ?? defaultSpread, 'spread' );
+	const height = positive( options.height ?? defaultHeight, 'height' );
 	const petalColor = options.petalColor ?? defaults.petalColor;
 	const centerColor = options.centerColor ?? defaults.centerColor;
 	const stemColor = options.stemColor ?? DEFAULT_FLOWERS_STEM_COLOR;
@@ -333,7 +419,12 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 		: variety === 'daisy'
 			? Math.max( ...plants.map( ( plant ) => DAISY_HEAD_SIZE * 0.5 * Math.tan( plant.headTilt ) ) ) + DAISY_HEAD_SIZE * DAISY_CUP_DEPTH
 			: 0;
-	const bounds = { radius: spread, height: maximumPlantHeight + headRise };
+	let maximumGeometryHeight = - Infinity;
+	if ( variety === 'poppy' || variety === 'bluebell' || variety === 'calla' || variety === 'primrose' ) {
+		for ( let offset = 1; offset < lod0.positions.length; offset += 3 ) maximumGeometryHeight = Math.max( maximumGeometryHeight, lod0.positions[ offset ]! );
+	}
+	const boundsHeight = Number.isFinite( maximumGeometryHeight ) ? maximumGeometryHeight : maximumPlantHeight + headRise;
+	const bounds = { radius: spread, height: boundsHeight };
 	const lod3Index = 2;
 	const lod4Index = 3;
 	const lod3 = buildSixPlaneImpostor( bounds.height, bounds.radius, lod3Index, lod0, bounds.height * 0.25 );
@@ -374,7 +465,15 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 			petal: createFlowersPetalTexture( seed, variety, petalColor, centerColor ),
 			stem: createFlowersStemTexture( seed, variety, stemColor ),
 		}
-		: { petal: createTulipPetalTexture( petalColor ), stem: createTulipStemTexture( stemColor ) };
+		: variety === 'tulip'
+			? { petal: createTulipPetalTexture( petalColor ), stem: createTulipStemTexture( stemColor ) }
+			: variety === 'poppy'
+				? { petal: createPoppyPetalTexture( seed, petalColor, centerColor ), stem: createPoppyStemTexture( stemColor ) }
+				: variety === 'bluebell'
+					? { petal: createBluebellPetalTexture( petalColor, centerColor ), stem: createBluebellStemTexture( stemColor ) }
+					: variety === 'calla'
+						? { petal: createCallaPetalTexture( petalColor, centerColor ), stem: createCallaStemTexture( stemColor ) }
+						: { petal: createPrimrosePetalTexture( seed, petalColor, centerColor ), stem: createPrimroseStemTexture( stemColor ) };
 
 	return {
 		kind: 'flowers',
