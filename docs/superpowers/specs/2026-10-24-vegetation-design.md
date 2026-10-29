@@ -396,6 +396,21 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 - 既定: 高さ 0.36 m、4 株（LOD0 144 頂点）、花びら `#d8322a`。`centerColor` は使わない
 - デモのプリセット: red / yellow `#f2c230` / pink `#ef7fa8` / white `#f4f1ea` / orange `#f07a28`
 
+### poppy / bluebell / calla / primrose（2026-10-29 ユーザー採用）
+
+- 参考: Sketchfab「Stylized Low Poly Flowers Pack 01 / Vol-8」のサムネイル（`.superpowers/sdd/2026-10-24-vegetation/flowers-ref/`）。どの花も地際に葉を広げる
+- 5 種を試作し、cushion（花のクッション）は廃棄。コードは種類ごとに `src/core/flowers/<名前>.ts`
+- 共通の決まり（試作で見つかった不具合から）
+  - 交差させた茎カードは同じ段数・同じ曲線に沿わせる。直線の茎を重ねない
+  - 花・つぼみ・釣り鐘は、実際に描かれる茎（段のあいだは直線）の先・上に付ける。曲線上の点に付けると、茎から浮いたりはみ出したりする
+  - 葉の UV は葉の絵の位置から求め、絵の根元を茎の根元に合わせる。ひし形のカードは絵の幅の 2 倍に広げ、絵が縁で切れないようにする。葉の絵はテクスチャ内で縦 1 列に並べ、隣の葉を拾わないようにする
+  - 位置と属性がまったく同じ頂点は LOD0〜2 で 1 つにまとめる（`weldIdenticalVertices`）。まっすぐなカードは 1 段にする
+- poppy: 4 弁のお椀形の花を茎の先に置く。一部の株は、曲がった茎の先から垂れる緑のつぼみ（茎のパーツ）。根元に切れ込みのある葉のロゼット。花芯 `#1e1a18`
+- bluebell: 先が杖のように曲がる茎に、下向きの釣り鐘 5 つ。花柄は釣り鐘のカードの上側に描き、色は `centerColor`（既定は茎と同じ `#2f6f1e`）。最後の釣り鐘は茎の先端に付く
+- calla: 実物のオランダカイウに合わせる。苞は筒から上へ広がるラッパ形で、背の先は尖って後ろへ反り、前の口は外へ反る。黄色い肉穂。葉は葉柄なしで根元から直接立ち上がり、中ほどで最も広く先が尖る。左右の縁を茎の側へ寄せて茎を包むように丸める。花の長さ 11 cm、葉の長さ約 27 cm・幅約 10 cm
+- primrose: 地面に張り付く葉のロゼット。花房は中心を下げたお椀形（LOD0 のみ）で、傾きは約 24°。茎のテクスチャは根元の 1 本から 5 本の花柄が扇形に分かれ、花房の縁まで届く
+- LOD0 の頂点数（既定の株数）: poppy 126 / bluebell 144 / calla 132 / primrose 148
+
 ### デモの草原（2026-10-29 ユーザー承認）
 
 - 草の scatter は専用の処理（`demo/grassScatter.ts`）。密度と距離の処理は terrain-gen の値に合わせる
@@ -427,7 +442,7 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 ### 未完了・保留
 
 - npm 0.1.0 の公開（ユーザーが `npm publish` を実行する）
-- 花は allium / daisy / tulip で確定。bush は今回は対象外
+- 花は allium / daisy / tulip / poppy / bluebell / calla / primrose で確定。bush は今回は対象外
 - ユーザーへの確認待ち: scatter のときに `collider` の項目も隠すか
 - 最終の全体レビューで扱うこと
   - ブラウザでの初回生成: JIT が温まるまで 1 個 1 秒前後。Worker 化で画面は止まらない
