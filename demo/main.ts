@@ -31,7 +31,6 @@ interface DemoState {
 	kind: string;
 	mode: ViewMode;
 	lod: number;
-	turntable: boolean;
 	wireframe: boolean;
 	collider: boolean;
 	scatterCount: number;
@@ -63,7 +62,6 @@ const state: DemoState = {
 	kind: kinds[ 0 ]!.name,
 	mode: 'compare',
 	lod: 0,
-	turntable: false,
 	wireframe: false,
 	collider: false,
 	scatterCount: 2000,
@@ -518,8 +516,13 @@ function createGui(): void {
 
 	} );
 
-	gui.add( state, 'mode', [ 'single', 'compare', 'scatter' ] ).name( 'view' ).onChange( rebuildPreview );
-	gui.add( state, 'lod', 0, 4, 1 ).name( 'single LOD' ).onChange( () => {
+	gui.add( state, 'mode', [ 'single', 'compare', 'scatter' ] ).name( 'view' ).onChange( () => {
+
+		updateViewControls();
+		rebuildPreview();
+
+	} );
+	const lodController = gui.add( state, 'lod', 0, 4, 1 ).name( 'LOD' ).onChange( () => {
 
 		if ( state.mode === 'single' ) {
 
@@ -528,7 +531,6 @@ function createGui(): void {
 		}
 
 	} );
-	gui.add( state, 'turntable' ).name( 'turntable' ).onChange( ( enabled: boolean ) => controls.autoRotate = enabled );
 	gui.add( state, 'wireframe' ).name( 'wireframe' ).onChange( setWireframe );
 	gui.add( state, 'collider' ).name( 'collider' ).onChange( ( visible: boolean ) => {
 
@@ -536,7 +538,7 @@ function createGui(): void {
 		updateColliderVisualization();
 
 	} );
-	gui.add( state, 'scatterCount', 0, 5000, 100 ).name( 'scatter count' ).onFinishChange( () => {
+	const scatterCountController = gui.add( state, 'scatterCount', 0, 5000, 100 ).name( 'scatter count' ).onFinishChange( () => {
 
 		if ( state.mode === 'scatter' ) {
 
@@ -545,7 +547,7 @@ function createGui(): void {
 		}
 
 	} );
-	gui.add( state, 'seedVariants', 1, 4, 1 ).name( 'seed variants' ).onFinishChange( () => {
+	const seedVariantsController = gui.add( state, 'seedVariants', 1, 4, 1 ).name( 'seed variants' ).onFinishChange( () => {
 
 		if ( state.mode === 'scatter' ) {
 
@@ -555,6 +557,16 @@ function createGui(): void {
 
 	} );
 
+	// 選択中のviewで効く項目だけを表示する。
+	const updateViewControls = (): void => {
+
+		lodController.show( state.mode === 'single' );
+		scatterCountController.show( state.mode === 'scatter' );
+		seedVariantsController.show( state.mode === 'scatter' );
+
+	};
+
+	updateViewControls();
 	rebuildOptionFolders( gui );
 
 }
@@ -594,7 +606,6 @@ async function start(): Promise<void> {
 	controls = new OrbitControls( camera, renderer.domElement );
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.06;
-	controls.autoRotateSpeed = 0.8;
 	controls.target.set( 0, 3, 0 );
 	createGui();
 	rebuildPreview();
