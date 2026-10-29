@@ -84,7 +84,8 @@ describe( 'impostor materials', () => {
 
 			try {
 
-				const impostorParts = asset.data.parts.filter( ( part ) => part.impostorViews !== undefined || part.impostorYawAngles !== undefined );
+				// 切り替え（impostorFade）を使うインポスターだけが factory を通る。
+				const impostorParts = asset.data.parts.filter( ( part ) => ( part.impostorViews !== undefined || part.impostorYawAngles !== undefined ) && part.impostorFade !== false );
 
 				expect( impostorParts.length ).toBeGreaterThan( 0 );
 				expect( factory ).toHaveBeenCalledTimes( impostorParts.length );

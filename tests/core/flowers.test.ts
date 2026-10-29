@@ -5,7 +5,7 @@ import { ALLIUM_HEAD_RISE, ALLIUM_HEAD_SIZE, ALLIUM_PLANT_CARD_TEXTURE_WIDTH, FL
 import { hexToLinear } from '../../src/core/color';
 import { bakeImpostor, getImpostorProjectionWindow, impostorViewsForPart, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
 import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
-import type { MeshData } from '../../src/core/types';
+import type { MeshData, VegetationData } from '../../src/core/types';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 import { validateMeshData } from '../helpers/validateMeshData';
 
@@ -207,6 +207,89 @@ function projectedCallaLeafSilhouette(
 		height: ( bottom - top + 1 ) * pixelHeight,
 		coverage: covered * pixelWidth * pixelHeight,
 	};
+
+}
+
+function projectedFlowerBounds( meshes: MeshData[], viewAngle: number ): { minX: number; maxX: number; minY: number; maxY: number } {
+
+	const viewX = Math.cos( viewAngle );
+	const viewZ = Math.sin( viewAngle );
+	const bounds = { minX: Infinity, maxX: - Infinity, minY: Infinity, maxY: - Infinity };
+	for ( const mesh of meshes ) {
+		for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
+			const x = mesh.positions[ vertex * 3 ]!;
+			const y = mesh.positions[ vertex * 3 + 1 ]!;
+			const z = mesh.positions[ vertex * 3 + 2 ]!;
+			const projectedX = x * viewX + z * viewZ;
+			bounds.minX = Math.min( bounds.minX, projectedX );
+			bounds.maxX = Math.max( bounds.maxX, projectedX );
+			bounds.minY = Math.min( bounds.minY, y );
+			bounds.maxY = Math.max( bounds.maxY, y );
+		}
+	}
+	return bounds;
+
+}
+
+function projectedFlowerSilhouette( data: VegetationData, mesh: MeshData, viewAngle: number, bounds: ReturnType<typeof projectedFlowerBounds>, size = 192 ): Uint8Array {
+
+	const mask = new Uint8Array( size * size );
+	const viewX = Math.cos( viewAngle );
+	const viewZ = Math.sin( viewAngle );
+	const width = bounds.maxX - bounds.minX;
+	const height = bounds.maxY - bounds.minY;
+	const toScreen = ( vertex: number ) => {
+		const offset = vertex * 3;
+		const projectedX = mesh.positions[ offset ]! * viewX + mesh.positions[ offset + 2 ]! * viewZ;
+		return [ ( projectedX - bounds.minX ) / width * size, ( bounds.maxY - mesh.positions[ offset + 1 ]! ) / height * size ] as const;
+	};
+
+	for ( const group of mesh.groups ) {
+		const part = data.parts[ group.partIndex ]!;
+		const texture = part.texture === null ? undefined : data.textures[ part.texture ];
+		for ( let offset = group.start; offset < group.start + group.count; offset += 3 ) {
+			const indices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
+			const points = indices.map( ( vertex ) => toScreen( vertex ) );
+			const [ a, b, c ] = points as [ readonly [ number, number ], readonly [ number, number ], readonly [ number, number ] ];
+			const denominator = ( b[ 1 ] - c[ 1 ] ) * ( a[ 0 ] - c[ 0 ] ) + ( c[ 0 ] - b[ 0 ] ) * ( a[ 1 ] - c[ 1 ] );
+			if ( Math.abs( denominator ) < 1e-8 ) continue;
+			const startX = Math.max( 0, Math.floor( Math.min( a[ 0 ], b[ 0 ], c[ 0 ] ) ) );
+			const endX = Math.min( size - 1, Math.ceil( Math.max( a[ 0 ], b[ 0 ], c[ 0 ] ) ) );
+			const startY = Math.max( 0, Math.floor( Math.min( a[ 1 ], b[ 1 ], c[ 1 ] ) ) );
+			const endY = Math.min( size - 1, Math.ceil( Math.max( a[ 1 ], b[ 1 ], c[ 1 ] ) ) );
+			for ( let y = startY; y <= endY; y ++ ) {
+				for ( let x = startX; x <= endX; x ++ ) {
+					const sampleX = x + 0.5;
+					const sampleY = y + 0.5;
+					const weightA = ( ( b[ 1 ] - c[ 1 ] ) * ( sampleX - c[ 0 ] ) + ( c[ 0 ] - b[ 0 ] ) * ( sampleY - c[ 1 ] ) ) / denominator;
+					const weightB = ( ( c[ 1 ] - a[ 1 ] ) * ( sampleX - c[ 0 ] ) + ( a[ 0 ] - c[ 0 ] ) * ( sampleY - c[ 1 ] ) ) / denominator;
+					const weightC = 1 - weightA - weightB;
+					if ( weightA < - 1e-6 || weightB < - 1e-6 || weightC < - 1e-6 ) continue;
+					if ( texture !== undefined ) {
+						const u = Math.max( 0, Math.min( 1, weightA * mesh.uvs[ indices[ 0 ]! * 2 ]! + weightB * mesh.uvs[ indices[ 1 ]! * 2 ]! + weightC * mesh.uvs[ indices[ 2 ]! * 2 ]! ) );
+						const v = Math.max( 0, Math.min( 1, weightA * mesh.uvs[ indices[ 0 ]! * 2 + 1 ]! + weightB * mesh.uvs[ indices[ 1 ]! * 2 + 1 ]! + weightC * mesh.uvs[ indices[ 2 ]! * 2 + 1 ]! ) );
+						const textureX = Math.min( texture.width - 1, Math.floor( u * texture.width ) );
+						const textureY = Math.min( texture.height - 1, Math.floor( v * texture.height ) );
+						if ( texture.data[ ( textureY * texture.width + textureX ) * 4 + 3 ]! <= 127 ) continue;
+					}
+					mask[ y * size + x ] = 1;
+				}
+			}
+		}
+	}
+	return mask;
+
+}
+
+function projectedFlowerIou( first: Uint8Array, second: Uint8Array ): number {
+
+	let intersection = 0;
+	let union = 0;
+	for ( let pixel = 0; pixel < first.length; pixel ++ ) {
+		if ( first[ pixel ] === 1 && second[ pixel ] === 1 ) intersection ++;
+		if ( first[ pixel ] === 1 || second[ pixel ] === 1 ) union ++;
+	}
+	return union === 0 ? 1 : intersection / union;
 
 }
 
@@ -756,8 +839,8 @@ describe( 'flowers core generator', () => {
 			for ( let lod = 0; lod < 5; lod ++ ) {
 				validateMeshData( first.lods[ lod ]! );
 				expect( areStructurallyByteIdentical( first.lods[ lod ]!, second.lods[ lod ]! ) ).toBe( true );
-				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( 150 );
-				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : 78 );
+				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'bluebell' ? 300 : 150 );
+				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : variety === 'bluebell' ? 150 : 78 );
 			}
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
 			expect( areByteIdentical( first.textures.petal!.data, second.textures.petal!.data ) ).toBe( true );
@@ -766,6 +849,109 @@ describe( 'flowers core generator', () => {
 		} );
 
 	}
+
+	it( 'keeps the captured bluebell LOD0 byte-for-byte as LOD1', async () => {
+
+		const data = generateFlowersData( { seed: 1, variety: 'bluebell' } );
+		const hash = async ( bytes: ArrayBufferView ) => {
+			const source = new Uint8Array( bytes.buffer, bytes.byteOffset, bytes.byteLength );
+			const digest = await globalThis.crypto.subtle.digest( 'SHA-256', Uint8Array.from( source ) );
+			return Array.from( new Uint8Array( digest ), ( value ) => value.toString( 16 ).padStart( 2, '0' ) ).join( '' );
+		};
+		const expectedMesh = {
+			positions: '086941e4f92ec0d1540ca5ebc72cbd059c200808cb95b338376214e6fe6c1f75',
+			normals: 'cba4e76064d6adda28439decc52b63f562c496bdea2cc18e87e70227a3cd0804',
+			uvs: '2793eb2df9ce8f1f4d514b07baa788972b577a2c2a72f70c655457bdc2ec9d24',
+			colors: '0ea47d33ef3e8d0d7838045b87de63fbfe65ce211faf6d5802fe7a7384718d7f',
+			windWeight: 'f16f07186490db5bd100c063ea125d1e8be481377d221f01e8319395af4fc705',
+			impostorCard: '1a0295f4bf5986c5f74eca9153a6a4cb10b073a01a76ba4a457fd862c78966a4',
+			indices: 'd780f3f6b368b1e9fc08f5b4f30290e795b3ec1fdfa7f1959ea83f2fe28452b8',
+		};
+		const lod1 = data.lods[ 1]!;
+		for ( const [ field, expected ] of Object.entries( expectedMesh ) as [ keyof typeof expectedMesh, string ][] ) expect( await hash( lod1[ field ] ) ).toBe( expected );
+		expect( lod1.groups ).toEqual( [ { start: 0, count: 90, partIndex: 0 }, { start: 90, count: 162, partIndex: 1 } ] );
+		expect( await hash( data.textures.petal!.data ) ).toBe( 'b8f9fd6d61a46f5e6433a7b76f933e4801007589b71a91bdeca9d19ed5e58d5b' );
+		expect( await hash( data.textures.stem!.data ) ).toBe( '2107c4a996a6437f7bdc891781e8f25e84c7e51ff4f2aa0d932e864a25d93288' );
+		expect( [ data.textures.petal!.width, data.textures.petal!.height ] ).toEqual( [ 128, 128 ] );
+		expect( [ data.textures.stem!.width, data.textures.stem!.height ] ).toEqual( [ 128, 256 ] );
+
+	} );
+
+	it( 'keeps bluebell LOD triangle budgets decreasing for counts one through six', () => {
+
+		const defaultData = generateFlowersData( { seed: 1, variety: 'bluebell' } );
+		const defaultTriangles = defaultData.lods.map( triangleCount );
+		expect( defaultTriangles ).toEqual( [ 180, 84, 81, 8, 4 ] );
+		expect( defaultTriangles[ 0 ] ).toBeGreaterThan( defaultTriangles[ 1 ]! * 1.5 );
+		expect( defaultTriangles[ 0 ] ).toBeLessThanOrEqual( defaultTriangles[ 1 ]! * 2.5 );
+		for ( let count = 1; count <= 6; count ++ ) {
+			const triangles = generateFlowersData( { seed: 1, variety: 'bluebell', count } ).lods.map( triangleCount );
+			expect( triangles ).toEqual( [ 60 * count, 28 * count, 27 * count, 8, 4 ] );
+			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
+		}
+
+	} );
+
+	it( 'keeps the bluebell LOD2 silhouette close to the new LOD0 from front and side', () => {
+
+		const data = generateFlowersData( { seed: 5, variety: 'bluebell', count: 1 } );
+		const lod0 = data.lods[ 0]!;
+		const lod1 = data.lods[ 1]!;
+		const lod2 = data.lods[ 2]!;
+		// 細い茎と小さな釣り鐘が主なので IoU の絶対値は低い。LOD1（旧 LOD0）と同程度以上に新 LOD0 へ近いことを確かめる。
+		for ( const angle of [ 0, Math.PI / 2 ] ) {
+			const bounds = projectedFlowerBounds( [ lod0, lod1, lod2 ], angle );
+			const lod0Mask = projectedFlowerSilhouette( data, lod0, angle, bounds );
+			const lod1Mask = projectedFlowerSilhouette( data, lod1, angle, bounds );
+			const lod2Mask = projectedFlowerSilhouette( data, lod2, angle, bounds );
+			const lod2Iou = projectedFlowerIou( lod0Mask, lod2Mask );
+			expect( lod2Iou ).toBeGreaterThan( 0.2 );
+			expect( lod2Iou ).toBeGreaterThanOrEqual( projectedFlowerIou( lod0Mask, lod1Mask ) - 0.01 );
+		}
+
+	} );
+
+	it( 'builds bluebell LOD3 from two subdivided vertical cards and keeps the LOD4 top card', () => {
+
+		const data = generateFlowersData( { seed: 5, variety: 'bluebell' } );
+		const lod3 = data.lods[ 3]!;
+		const lod4 = data.lods[ 4]!;
+		const [ lod3Part, lod4Part ] = data.parts.slice( 2 );
+		expect( triangleCount( lod3 ) ).toBe( 8 );
+		expect( lod3.impostorCard.every( ( card ) => card === 0 ) ).toBe( true );
+		expect( lod3.positions.length / 3 ).toBe( 12 );
+		for ( let vertex = 0; vertex < 6; vertex ++ ) expect( lod3.positions[ vertex * 3 + 2 ] ).toBeCloseTo( 0, 6 );
+		for ( let vertex = 6; vertex < 12; vertex ++ ) expect( lod3.positions[ vertex * 3 ] ).toBeCloseTo( 0, 6 );
+		expect( lod3Part!.impostorFade ).toBe( false );
+		expect( lod3Part!.upNormalCards ).toBe( true );
+		expect( lod3Part!.impostorViews ).toHaveLength( 2 );
+		expect( lod3Part!.impostorViews![ 0 ]!.direction ).toEqual( [ 0, 0, 1 ] );
+		expect( lod3Part!.impostorViews![ 1 ]!.direction[ 0 ] ).toBeCloseTo( 1, 6 );
+		expect( lod3Part!.impostorViews![ 1 ]!.direction[ 2 ] ).toBeCloseTo( 0, 6 );
+		expect( triangleCount( lod4 ) ).toBe( 4 );
+		expect( new Set( lod4.impostorCard ) ).toEqual( new Set( [ 0, 1 ] ) );
+		expect( lod4Part!.upNormalCards ).toBe( true );
+
+	} );
+
+	it( 'recolors bluebell petals, pedicels, stems, and their baked impostors', () => {
+
+		const defaults = generateFlowersData( { seed: 7, variety: 'bluebell' } );
+		const petal = generateFlowersData( { seed: 7, variety: 'bluebell', petalColor: 0xa98bd6 } );
+		const center = generateFlowersData( { seed: 7, variety: 'bluebell', centerColor: 0xff00ff } );
+		const stem = generateFlowersData( { seed: 7, variety: 'bluebell', stemColor: 0x81603d } );
+		const defaultPrepared = prepareVegetationAsset( defaults, {}, 128 );
+		for ( const recolored of [ petal, center, stem ] ) {
+			const prepared = prepareVegetationAsset( recolored, {}, 128 );
+			expect( areByteIdentical( prepared.impostorTextures[ 'impostor-lod3' ]!.data, defaultPrepared.impostorTextures[ 'impostor-lod3' ]!.data ) ).toBe( false );
+			expect( areByteIdentical( prepared.impostorTextures.impostor!.data, defaultPrepared.impostorTextures.impostor!.data ) ).toBe( false );
+		}
+		expect( areByteIdentical( petal.textures.petal!.data, defaults.textures.petal!.data ) ).toBe( false );
+		expect( areByteIdentical( center.textures.petal!.data, defaults.textures.petal!.data ) ).toBe( false );
+		expect( areByteIdentical( stem.textures.stem!.data, defaults.textures.stem!.data ) ).toBe( false );
+		expect( areByteIdentical( stem.textures.petal!.data, defaults.textures.petal!.data ) ).toBe( true );
+
+	} );
 
 	it( 'keeps new flower normals upward and wind weights between the ground and flower tips', () => {
 
@@ -953,7 +1139,7 @@ describe( 'flowers core generator', () => {
 
 		const cases = [
 			{ variety: 'poppy' as const, segments: 3 },
-			{ variety: 'bluebell' as const, segments: 3 },
+			{ variety: 'bluebell' as const, segments: 4 },
 			{ variety: 'calla' as const, segments: 1 },
 			{ variety: 'primrose' as const, segments: 1 },
 		];
@@ -1004,11 +1190,14 @@ describe( 'flowers core generator', () => {
 		const highestSpine = Math.max( ...Array.from( bluebell.indices.slice( bluebellStem.start, bluebellStem.start + bluebellStem.count ), ( vertex ) => bluebell.positions[ vertex * 3 + 1 ]! ) );
 		// 釣り鐘は茎から下へ垂れる。最後の釣り鐘は茎の先端に付く（茎だけで終わらない）。
 		expect( highestBell ).toBeLessThanOrEqual( highestSpine + 1e-6 );
-		const petalVertices = Array.from( new Set( Array.from( bluebell.indices.slice( bluebellPetal.start, bluebellPetal.start + bluebellPetal.count ) ) ) ).sort( ( a, b ) => a - b );
-		for ( let bell = 0; bell + 3 < petalVertices.length; bell += 4 ) {
-			const top = bluebell.positions[ petalVertices[ bell ]! * 3 + 1 ]!;
-			const bottom = bluebell.positions[ petalVertices[ bell + 2 ]! * 3 + 1 ]!;
-			expect( bottom ).toBeLessThan( top - 0.03 );
+		expect( bluebellPetal.count / 3 ).toBe( 5 * 7 * 3 );
+		const bluebellCupTriangles = Array.from( { length: 5 }, ( _, bell ) => bluebellPetal.start + ( bell * 7 + 1 ) * 3 );
+		for ( const triangleStart of bluebellCupTriangles ) {
+			const top = bluebell.positions[ bluebell.indices[ triangleStart ]! * 3 + 1 ]!;
+			const rimA = bluebell.positions[ bluebell.indices[ triangleStart + 1 ]! * 3 + 1 ]!;
+			const rimB = bluebell.positions[ bluebell.indices[ triangleStart + 2 ]! * 3 + 1 ]!;
+			// 釣り鐘は LOD1 と同じ高さ約 3.4 cm。口は頭より 2.5 cm 以上下にある。
+			expect( Math.min( rimA, rimB ) ).toBeLessThan( top - 0.025 );
 		}
 
 		const calla = generateFlowersData( { seed: 3, variety: 'calla', count: 1 } );

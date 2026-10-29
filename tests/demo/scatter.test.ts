@@ -79,8 +79,9 @@ describe( 'scatter preview', () => {
 			expect( ( mesh.material as Material ).side ).toBe( FrontSide );
 		}
 
-		for ( const lod of [ 3, 4 ] ) {
-			const partName = lod === 3 ? 'impostor-lod3' : 'impostor';
+		// bluebell の LOD3 は交差 2 枚で常時描画。切り替えが残るのは LOD4 だけ。
+		for ( const lod of [ 4 ] ) {
+			const partName = 'impostor';
 			const mesh = meshes.find( ( candidate ) => candidate.userData.lod === lod && candidate.userData.part === partName )!;
 			const material = mesh.material as Material;
 			expect( material.customProgramCacheKey() ).toContain( 'vegetation-impostor-view-fade-v1' );

@@ -208,7 +208,7 @@ function addBluebellLeaf( builder: MeshBuilder, plant: FlowerPlacement, angle: n
 
 }
 
-export function buildBluebellPart( lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
+function buildBluebellLegacyPart( lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
 
 	const builder = new MeshBuilder();
 	for ( const plant of plants ) {
@@ -233,5 +233,172 @@ export function buildBluebellPart( lod: number, plants: FlowerPlacement[], part:
 		}
 	}
 	return setPartIndex( builder.build(), part );
+
+}
+
+const BLUEBELL_LOD0_STEM_SEGMENTS = 4;
+const BLUEBELL_LOD2_STEM_SEGMENTS = 2;
+// 釣り鐘の高さと口の半径。LOD1（旧 LOD0）のカードに描いた釣り鐘（高さ約 3.4 cm・幅約 2.2 cm）に合わせる。
+const BLUEBELL_BELL_HEIGHT = 0.034;
+const BLUEBELL_BELL_RADIUS = 0.011;
+
+function bluebellLodRowProgress( row: number, segments: number ): number {
+
+	return 1 - ( 1 - row / segments ) ** 1.5;
+
+}
+
+function bluebellLodStemPoint( plant: FlowerPlacement, progress: number, segments: number ): [ number, number, number ] {
+
+	for ( let row = 0; row < segments; row ++ ) {
+		const start = bluebellLodRowProgress( row, segments );
+		const end = bluebellLodRowProgress( row + 1, segments );
+		if ( progress <= end || row === segments - 1 ) {
+			const amount = Math.max( 0, Math.min( 1, ( progress - start ) / ( end - start ) ) );
+			const a = bluebellSpine( plant, start );
+			const b = bluebellSpine( plant, end );
+			return [
+				a[ 0 ] + ( b[ 0 ] - a[ 0 ] ) * amount,
+				a[ 1 ] + ( b[ 1 ] - a[ 1 ] ) * amount,
+				a[ 2 ] + ( b[ 2 ] - a[ 2 ] ) * amount,
+			];
+		}
+	}
+	return bluebellSpine( plant, 1 );
+
+}
+
+function addBluebellLodStemCard( builder: MeshBuilder, plant: FlowerPlacement, yaw: number, segments: number ): void {
+
+	const cosine = Math.cos( yaw );
+	const sine = Math.sin( yaw );
+	const rows: number[][] = [];
+	for ( let row = 0; row <= segments; row ++ ) {
+		const progress = bluebellLodRowProgress( row, segments );
+		const [ x, y, z ] = bluebellSpine( plant, progress );
+		const halfWidth = 0.0045 * ( 1 - progress * 0.18 );
+		rows.push( [
+			builder.addVertex( [ x - cosine * halfWidth, y, z + sine * halfWidth ], [ 0, 1, 0 ], [ 0.08, progress ], [ 1, 1, 1 ], progress ),
+			builder.addVertex( [ x + cosine * halfWidth, y, z - sine * halfWidth ], [ 0, 1, 0 ], [ 0.15, progress ], [ 1, 1, 1 ], progress ),
+		] );
+	}
+	for ( let row = 0; row < segments; row ++ ) {
+		const a = rows[ row ]![ 0 ]!;
+		const b = rows[ row ]![ 1 ]!;
+		const c = rows[ row + 1 ]![ 1 ]!;
+		const d = rows[ row + 1 ]![ 0 ]!;
+		builder.addTriangle( a, b, c );
+		builder.addTriangle( a, c, d );
+	}
+
+}
+
+function addBluebellPedicel( builder: MeshBuilder, start: [ number, number, number ], end: [ number, number, number ], yaw: number ): void {
+
+	const tangentX = - Math.sin( yaw ) * 0.0025;
+	const tangentZ = Math.cos( yaw ) * 0.0025;
+	const uv: [ number, number ] = [ 0.555, 0.76 ];
+	const left = builder.addVertex( [ start[ 0 ] - tangentX, start[ 1 ], start[ 2 ] - tangentZ ], [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 );
+	const right = builder.addVertex( [ start[ 0 ] + tangentX, start[ 1 ], start[ 2 ] + tangentZ ], [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 );
+	const tip = builder.addVertex( end, [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 );
+	builder.addTriangle( left, right, tip );
+
+}
+
+function addBluebellCup( builder: MeshBuilder, top: [ number, number, number ], yaw: number, sides: number, topV: number, topU = 0.5 ): void {
+
+	const topVertex = builder.addVertex( top, [ 0, 1, 0 ], [ topU, topV ], [ 1, 1, 1 ], 1 );
+	const rim: number[] = [];
+	for ( let side = 0; side < sides; side ++ ) {
+		const angle = yaw + side / sides * Math.PI * 2;
+		const wave = Math.cos( angle * 3 );
+		const radius = BLUEBELL_BELL_RADIUS * ( 1 + wave * 0.08 );
+		const x = top[ 0 ] + Math.cos( angle ) * radius;
+		const z = top[ 2 ] + Math.sin( angle ) * radius;
+		const y = top[ 1 ] - BLUEBELL_BELL_HEIGHT + wave * 0.004;
+		const uv = [ 0.5 + Math.sin( angle ) * 0.11, 0.125 + wave * 0.008 ] as [ number, number ];
+		rim.push( builder.addVertex( [ x, y, z ], [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 ) );
+	}
+	for ( let side = 0; side < sides; side ++ ) builder.addTriangle( topVertex, rim[ side ]!, rim[ ( side + 1 ) % sides ]! );
+
+}
+
+function addBluebellFoldedLeaf( builder: MeshBuilder, plant: FlowerPlacement, angle: number, length: number, slot: number ): void {
+
+	const radialX = Math.cos( angle );
+	const radialZ = Math.sin( angle );
+	const tangentX = - radialZ;
+	const tangentZ = radialX;
+	const halfWidth = 0.011;
+	const rowY = LEAF_ROWS[ slot % LEAF_ROWS.length ]!;
+	const u = ( pixels: number ) => ( LEAF_CENTER_X + pixels ) / STEM_WIDTH;
+	const v = ( ratio: number ) => ( rowY + LEAF_ROW_HEIGHT * ratio ) / STEM_HEIGHT;
+	const root = builder.addVertex( [ plant.x, 0.006, plant.z ], [ 0, 1, 0 ], [ u( 0 ), v( 0 ) ], [ 1, 1, 1 ], 0.02 );
+	const middleX = plant.x + radialX * length * LEAF_WIDEST;
+	const middleZ = plant.z + radialZ * length * LEAF_WIDEST;
+	// 立ち上がりは LOD1（旧 LOD0）の葉と同じ高さにそろえる（低いと正面から細く見える）。
+	const middleY = length * 0.3;
+	const middleLeft = builder.addVertex( [ middleX - tangentX * halfWidth * 2, middleY, middleZ - tangentZ * halfWidth * 2 ], [ 0, 1, 0 ], [ u( - LEAF_HALF_WIDTH * 2 ), v( LEAF_WIDEST ) ], [ 1, 1, 1 ], 0.28 );
+	const midrib = builder.addVertex( [ middleX, middleY + 0.004, middleZ ], [ 0, 1, 0 ], [ u( 0 ), v( LEAF_WIDEST ) ], [ 1, 1, 1 ], 0.3 );
+	const middleRight = builder.addVertex( [ middleX + tangentX * halfWidth * 2, middleY, middleZ + tangentZ * halfWidth * 2 ], [ 0, 1, 0 ], [ u( LEAF_HALF_WIDTH * 2 ), v( LEAF_WIDEST ) ], [ 1, 1, 1 ], 0.28 );
+	const tip = builder.addVertex( [ plant.x + radialX * length, length * 0.34, plant.z + radialZ * length ], [ 0, 1, 0 ], [ u( 0 ), v( 1 ) ], [ 1, 1, 1 ], 0.48 );
+	builder.addTriangle( root, middleLeft, midrib );
+	builder.addTriangle( root, midrib, middleRight );
+	builder.addTriangle( middleLeft, tip, middleRight );
+
+}
+
+function buildBluebellLod0Part( plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
+
+	const builder = new MeshBuilder();
+	for ( const plant of plants ) {
+		if ( part === 'petal' ) {
+			for ( let bell = 0; bell < BELL_PROGRESS.length; bell ++ ) {
+				const yaw = plant.yaw + bell * 0.31;
+				const [ x, y, z ] = bluebellLodStemPoint( plant, BELL_PROGRESS[ bell ]!, BLUEBELL_LOD0_STEM_SEGMENTS );
+				const radialX = Math.cos( yaw );
+				const radialZ = Math.sin( yaw );
+				const top: [ number, number, number ] = [ x + radialX * 0.012, y - 0.008, z + radialZ * 0.012 ];
+				addBluebellPedicel( builder, [ x, y, z ], top, yaw );
+				addBluebellCup( builder, top, yaw, 6, 0.56 );
+			}
+		} else {
+			addBluebellLodStemCard( builder, plant, plant.yaw, BLUEBELL_LOD0_STEM_SEGMENTS );
+			addBluebellLodStemCard( builder, plant, plant.yaw + plant.crossAngle, BLUEBELL_LOD0_STEM_SEGMENTS );
+			for ( let leaf = 0; leaf < 3; leaf ++ ) {
+				addBluebellFoldedLeaf( builder, plant, plant.yaw + leaf * Math.PI * 2 / 3, plant.height * ( 0.58 + ( leaf % 2 ) * 0.04 ), leaf );
+			}
+		}
+	}
+	return setPartIndex( builder.build(), part );
+
+}
+
+function buildBluebellLod2Part( plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
+
+	const builder = new MeshBuilder();
+	for ( const plant of plants ) {
+		if ( part === 'petal' ) {
+			for ( let bell = 0; bell < BELL_PROGRESS.length; bell ++ ) {
+				const yaw = plant.yaw + bell * 0.31;
+				const [ x, y, z ] = bluebellLodStemPoint( plant, BELL_PROGRESS[ bell ]!, BLUEBELL_LOD2_STEM_SEGMENTS );
+				const top: [ number, number, number ] = [ x + Math.cos( yaw ) * 0.012, y - 0.008, z + Math.sin( yaw ) * 0.012 ];
+				addBluebellCup( builder, top, yaw, 3, 0.7, 0.555 );
+			}
+		} else {
+			addBluebellLodStemCard( builder, plant, plant.yaw, BLUEBELL_LOD2_STEM_SEGMENTS );
+			addBluebellLodStemCard( builder, plant, plant.yaw + plant.crossAngle, BLUEBELL_LOD2_STEM_SEGMENTS );
+			for ( let leaf = 0; leaf < 2; leaf ++ ) addBluebellLeaf( builder, plant, plant.yaw + leaf * Math.PI * 2 / 3, plant.height * ( 0.58 + ( leaf % 2 ) * 0.04 ), leaf );
+		}
+	}
+	return setPartIndex( builder.build(), part );
+
+}
+
+export function buildBluebellPart( lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
+
+	if ( lod === 1 ) return buildBluebellLegacyPart( 0, plants, part );
+	if ( lod === 2 ) return buildBluebellLod2Part( plants, part );
+	return buildBluebellLod0Part( plants, part );
 
 }

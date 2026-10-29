@@ -455,6 +455,44 @@ function buildAlliumPlantCardPart( plants: FlowerPlacement[], partIndex: number,
 
 }
 
+function buildBluebellLod3Part( height: number, radius: number, partIndex: number ): MeshData {
+
+	const builder = new MeshBuilder();
+	const color: [ number, number, number ] = [ 1, 1, 1 ];
+	const segments = 2;
+	const planeRadius = radius * 0.995;
+	const tileCount = BLUEBELL_LOD3_YAW_ANGLES.length;
+	builder.beginGroup( partIndex );
+
+	for ( let view = 0; view < BLUEBELL_LOD3_YAW_ANGLES.length; view ++ ) {
+		const yaw = BLUEBELL_LOD3_YAW_ANGLES[ view ]!;
+		const rightX = Math.cos( yaw );
+		const rightZ = - Math.sin( yaw );
+		const tileStart = view / tileCount;
+		const tileEnd = ( view + 1 ) / tileCount;
+		const rows: [ number, number ][] = [];
+		for ( let row = 0; row <= segments; row ++ ) {
+			const progress = row / segments;
+			const y = height * progress;
+			rows.push( [
+				builder.addVertex( [ - rightX * planeRadius, y, - rightZ * planeRadius ], [ 0, 1, 0 ], [ tileStart, progress ], color, progress, 0 ),
+				builder.addVertex( [ rightX * planeRadius, y, rightZ * planeRadius ], [ 0, 1, 0 ], [ tileEnd, progress ], color, progress, 0 ),
+			] );
+		}
+		for ( let row = 0; row < segments; row ++ ) {
+			const a = rows[ row ]![ 0 ];
+			const b = rows[ row ]![ 1 ];
+			const c = rows[ row + 1 ]![ 1 ];
+			const d = rows[ row + 1 ]![ 0 ];
+			builder.addTriangle( a, b, c );
+			builder.addTriangle( a, c, d );
+		}
+	}
+
+	return builder.build();
+
+}
+
 function buildTulipPlantCardPart( plants: FlowerPlacement[], partIndex: number, segments: number ): MeshData {
 
 	const maxCardHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
@@ -473,6 +511,8 @@ function buildTulipPlantCardPart( plants: FlowerPlacement[], partIndex: number, 
 const ALLIUM_LOD3_YAW_ANGLES = [ 0, Math.PI / 2 ] as const;
 const ALLIUM_LOD3_IMPOSTOR_VIEWS = ALLIUM_LOD3_YAW_ANGLES.map( yawImpostorView );
 const ALLIUM_LOD4_IMPOSTOR_VIEWS = [ yawImpostorView( 0 ) ];
+const BLUEBELL_LOD3_YAW_ANGLES = [ 0, Math.PI / 2 ] as const;
+const BLUEBELL_LOD3_IMPOSTOR_VIEWS = BLUEBELL_LOD3_YAW_ANGLES.map( yawImpostorView );
 const DAISY_LOD3_IMPOSTOR_VIEWS = [ ...ALLIUM_LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS[ 1 ] ] as const;
 const PRIMROSE_LOD3_IMPOSTOR_VIEWS = [ LOD4_IMPOSTOR_VIEWS[ 1 ] ] as const;
 // poppy の葉は縦カードの下部にだけ焼き、花の高さに置く上面カードには入れない。
@@ -633,7 +673,9 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 					: variety === 'calla'
 						? { yawAngles: ALLIUM_LOD3_YAW_ANGLES, includeTopCard: false }
 						: {};
-	const lod3 = variety === 'primrose'
+	const lod3 = variety === 'bluebell'
+		? buildBluebellLod3Part( bounds.height, bounds.radius, lod3Index )
+		: variety === 'primrose'
 		? buildPrimroseDomePart( 3, lod3Index, primroseDomeFootprint!, bounds.height, lod1.indices.length / 3 )
 		: buildSixPlaneImpostor(
 			bounds.height,
@@ -692,6 +734,8 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const lod3Part = variety === 'primrose'
 		// お椀は外側だけ描く。両面だと透けた隙間から奥の内側が外向き法線のまま見えて黒くなる。
 		? { ...impostorLod3Part( PRIMROSE_LOD3_IMPOSTOR_VIEWS, false ), doubleSided: false }
+		: variety === 'bluebell'
+			? { ...impostorLod3Part( BLUEBELL_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 		: variety === 'daisy' || variety === 'poppy'
 			? { ...impostorLod3Part( variety === 'poppy' ? POPPY_LOD3_IMPOSTOR_VIEWS : DAISY_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 			: variety === 'allium' || variety === 'tulip' || variety === 'calla'

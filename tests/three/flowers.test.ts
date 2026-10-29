@@ -130,21 +130,22 @@ describe( 'flowers three.js API', () => {
 
 	} );
 
-	it( 'preserves impostor fade hooks when split flower cards use front-side materials', () => {
+	it( 'builds bluebell LOD3 from crossed vertical cards without fade', () => {
 
 		const mesh = new FlowersMesh( { seed: 5, variety: 'bluebell', lod: 3 } );
 		const [ vertical ] = mesh.parts;
-		const shader = {
-			vertexShader: '#include <common>\n#include <begin_vertex>\n#include <project_vertex>',
-			fragmentShader: '#include <common>\n#include <alphatest_fragment>',
-			uniforms: {},
-		};
+		const definition = mesh.asset.data.parts[ 2]!;
+		const source = mesh.asset.geometries[ 3 ]!.getIndex()!;
 
-		expect( mesh.parts ).toHaveLength( 2 );
+		expect( mesh.parts ).toHaveLength( 1 );
 		expect( vertical!.material.side ).toBe( FrontSide );
-		expect( vertical!.material.customProgramCacheKey() ).toContain( 'vegetation-impostor-view-fade-v1' );
-		vertical!.material.onBeforeCompile( shader as never, undefined as never );
-		expect( shader.fragmentShader ).toContain( 'impostorDither' );
+		expect( vertical!.material.customProgramCacheKey() ).not.toContain( 'vegetation-impostor-view-fade-v1' );
+		expect( definition.impostorFade ).toBe( false );
+		expect( definition.upNormalCards ).toBe( true );
+		expect( definition.impostorViews ).toHaveLength( 2 );
+		expect( vertical!.geometry.getIndex()!.count ).toBe( source.count * 2 );
+		expect( new Set( vertical!.geometry.getAttribute( 'impostorCard' ).array ) ).toEqual( new Set( [ 0 ] ) );
+		expect( vertical!.material.map!.image as { width: number; height: number } ).toMatchObject( { width: 256, height: 128 } );
 		mesh.dispose();
 
 	} );
