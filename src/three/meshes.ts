@@ -68,7 +68,6 @@ function normalizeTreeOptions( options: TreeMeshOptions ): ReturnType<typeof nor
 	return normalizeTreeGenerationOptions( {
 		seed: options.seed,
 		height: options.height,
-		rootDepth: options.rootDepth,
 		crownSize: options.crownSize,
 		branchCount: options.branchCount,
 		leafColor,
