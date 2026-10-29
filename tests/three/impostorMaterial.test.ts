@@ -1,6 +1,6 @@
 import { MeshStandardMaterial } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { generateTreeData } from '../../src/core';
+import { generateRockData, generateTreeData } from '../../src/core';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { registerImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
 import { VegetationMesh } from '../../src/three/VegetationMesh';
@@ -9,8 +9,8 @@ describe( 'impostor materials', () => {
 
 	it( 'adds the view-angle fade to LOD4 WebGL shader and its cache key', () => {
 
-		const asset = new VegetationAsset( generateTreeData( { seed: 1 } ) );
-		const material = asset.materials[ 3 ]!;
+		const asset = new VegetationAsset( generateRockData( { seed: 1 } ) );
+		const material = asset.materials[ asset.data.parts.findIndex( ( part ) => part.name === 'impostor' ) ]!;
 		const shader = {
 			vertexShader: '#include <common>\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n}',
 			fragmentShader: '#include <common>\nvoid main() {\n#include <alphatest_fragment>\n}',
@@ -23,6 +23,22 @@ describe( 'impostor materials', () => {
 		expect( shader.vertexShader ).toContain( 'instanceMatrix' );
 		expect( shader.fragmentShader ).toContain( 'gl_FragCoord.xy' );
 		expect( shader.fragmentShader ).toContain( 'diffuseColor.a *= impostorWeight' );
+
+		asset.dispose();
+
+	} );
+
+	it( 'draws every tree impostor card without the view-angle fade', () => {
+
+		const asset = new VegetationAsset( generateTreeData( { seed: 1 } ) );
+
+		for ( const name of [ 'impostor-lod3', 'impostor' ] ) {
+
+			const material = asset.materials[ asset.data.parts.findIndex( ( part ) => part.name === name ) ]!;
+
+			expect( material.customProgramCacheKey() ).not.toContain( 'vegetation-impostor-view-fade-v1' );
+
+		}
 
 		asset.dispose();
 
@@ -56,13 +72,15 @@ describe( 'impostor materials', () => {
 
 		try {
 
-			const asset = new VegetationAsset( generateTreeData( { seed: 2 } ) );
+			const asset = new VegetationAsset( generateRockData( { seed: 2 } ) );
 
 			try {
 
-				expect( factory ).toHaveBeenCalledTimes( 2 );
+				const impostorParts = asset.data.parts.filter( ( part ) => part.impostorViews !== undefined || part.impostorYawAngles !== undefined );
+
+				expect( impostorParts.length ).toBeGreaterThan( 0 );
+				expect( factory ).toHaveBeenCalledTimes( impostorParts.length );
 				expect( asset.materials[ 0 ] ).toBeInstanceOf( MeshStandardMaterial );
-				expect( asset.materials[ 2 ] ).toBeInstanceOf( MeshStandardMaterial );
 
 			} finally {
 

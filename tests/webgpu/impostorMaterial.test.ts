@@ -1,7 +1,7 @@
 import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import '../../src/webgpu';
-import { generateTreeData } from '../../src/core';
+import { generateRockData } from '../../src/core';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { getImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
 
@@ -11,8 +11,9 @@ describe( 'WebGPU impostor material entry', () => {
 
 		expect( getImpostorMaterialFactory() ).not.toBeNull();
 
-		const asset = new VegetationAsset( generateTreeData( { seed: 4 } ) );
-		const material = asset.materials[ 3 ]! as unknown as MeshStandardNodeMaterial;
+		const data = generateRockData( { seed: 4 } );
+		const asset = new VegetationAsset( data );
+		const material = asset.materials[ data.parts.findIndex( ( part ) => part.name === 'impostor' ) ]! as unknown as MeshStandardNodeMaterial;
 
 		expect( material ).toBeInstanceOf( MeshStandardNodeMaterial );
 		expect( material.opacityNode ).not.toBeNull();
@@ -26,12 +27,13 @@ describe( 'WebGPU impostor material entry', () => {
 
 	it( 'preserves physical impostor material parameters', () => {
 
-		const data = generateTreeData( { seed: 5 } );
-		data.parts[ 3 ]!.specularIntensity = 0.25;
-		data.parts[ 3 ]!.ior = 1.3;
+		const data = generateRockData( { seed: 5 } );
+		const impostorIndex = data.parts.findIndex( ( part ) => part.name === 'impostor' );
+		data.parts[ impostorIndex ]!.specularIntensity = 0.25;
+		data.parts[ impostorIndex ]!.ior = 1.3;
 
 		const asset = new VegetationAsset( data );
-		const material = asset.materials[ 3 ]! as unknown as MeshPhysicalNodeMaterial;
+		const material = asset.materials[ impostorIndex ]! as unknown as MeshPhysicalNodeMaterial;
 
 		expect( material ).toBeInstanceOf( MeshPhysicalNodeMaterial );
 		expect( material.specularIntensity ).toBe( 0.25 );

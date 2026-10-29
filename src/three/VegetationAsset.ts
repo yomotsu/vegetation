@@ -162,7 +162,8 @@ export class VegetationAsset {
 				roughness: part.roughness ?? 1,
 				metalness: 0,
 			};
-			const impostorFactory = isImpostor ? getImpostorMaterialFactory() : null;
+			const fadesImpostor = isImpostor && part.impostorFade !== false;
+			const impostorFactory = fadesImpostor ? getImpostorMaterialFactory() : null;
 			const material = impostorFactory !== null
 				? impostorFactory( {
 					...materialParameters,
@@ -177,7 +178,7 @@ export class VegetationAsset {
 				} )
 				: new MeshStandardMaterial( materialParameters );
 
-			if ( isImpostor && impostorFactory === null ) {
+			if ( fadesImpostor && impostorFactory === null ) {
 
 				addImpostorFade( material );
 
