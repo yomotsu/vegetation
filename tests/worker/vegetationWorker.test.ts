@@ -104,4 +104,40 @@ describe( 'vegetation worker handler', () => {
 
 	}, 30000 );
 
+	it( 'returns lupine, yarrow, and tulip geometry, colors, and impostors byte-identical to sync generation', () => {
+
+		for ( const variety of [ 'lupine', 'yarrow', 'tulip' ] as const ) {
+			const options = {
+				seed: 13,
+				variety,
+				count: variety === 'lupine' ? 5 : variety === 'tulip' ? 4 : 6,
+				spread: 0.3,
+				height: variety === 'lupine' ? 0.52 : variety === 'yarrow' ? 0.42 : 0.36,
+				petalColor: variety === 'lupine' ? 0x4f6fd8 : variety === 'yarrow' ? 0xd0508f : 0xd8322a,
+				centerColor: 0xf4d6a0,
+				stemColor: 0x81603d,
+			};
+			const result = handleVegetationWorkerMessage( {
+				id: 27,
+				kind: 'flowers',
+				options,
+				colors: { petal: options.petalColor, stem: options.stemColor },
+				impostorSize: 128,
+			} );
+			const sync = generateFlowers( options );
+			expect( result ).toHaveProperty( 'prepared' );
+			if ( ! ( 'prepared' in result ) ) throw new Error( 'Expected prepared payload' );
+			expect( areStructurallyByteIdentical( result.prepared.data, sync.data ) ).toBe( true );
+			for ( const [ name, texture ] of Object.entries( result.prepared.impostorTextures ) ) {
+				const partIndex = sync.data.parts.findIndex( ( part ) => part.texture === name && part.impostorViews !== undefined );
+				const image = sync.materials[ partIndex ]!.map!.image as { data: Uint8Array; width: number; height: number };
+				expect( areByteIdentical( texture.data, image.data ) ).toBe( true );
+				expect( texture.width ).toBe( image.width );
+				expect( texture.height ).toBe( image.height );
+			}
+			sync.dispose();
+		}
+
+	}, 30000 );
+
 } );

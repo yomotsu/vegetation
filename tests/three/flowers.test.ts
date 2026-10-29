@@ -47,12 +47,14 @@ describe( 'flowers three.js API', () => {
 		const originalWorker = globalThis.Worker;
 		Object.defineProperty( globalThis, 'Worker', { configurable: true, value: undefined } );
 		try {
-			const synchronous = generateFlowers( { seed: 11, variety: 'allium', petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
-			const asynchronous = await generateFlowersAsync( { seed: 11, variety: 'allium', petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
-			expect( areStructurallyByteIdentical( asynchronous.data, synchronous.data ) ).toBe( true );
-			expect( areStructurallyByteIdentical( asynchronous.materials[ 0 ]!.map!.image, synchronous.materials[ 0 ]!.map!.image ) ).toBe( true );
-			synchronous.dispose();
-			asynchronous.dispose();
+			for ( const variety of [ 'allium', 'daisy', 'lupine', 'yarrow', 'tulip' ] as const ) {
+				const synchronous = generateFlowers( { seed: 11, variety, petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
+				const asynchronous = await generateFlowersAsync( { seed: 11, variety, petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
+				expect( areStructurallyByteIdentical( asynchronous.data, synchronous.data ) ).toBe( true );
+				expect( areStructurallyByteIdentical( asynchronous.materials[ 0 ]!.map!.image, synchronous.materials[ 0 ]!.map!.image ) ).toBe( true );
+				synchronous.dispose();
+				asynchronous.dispose();
+			}
 		} finally {
 			Object.defineProperty( globalThis, 'Worker', { configurable: true, value: originalWorker } );
 		}
@@ -61,7 +63,7 @@ describe( 'flowers three.js API', () => {
 
 	it( 'keeps generation, texture creation, and impostor baking under 50 ms per variety', () => {
 
-		for ( const variety of [ 'allium', 'daisy' ] as const ) {
+		for ( const variety of [ 'allium', 'daisy', 'lupine', 'yarrow', 'tulip' ] as const ) {
 			const start = performance.now();
 			const asset = generateFlowers( { seed: 1, variety } );
 			const elapsed = performance.now() - start;
