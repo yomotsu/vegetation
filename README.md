@@ -72,8 +72,7 @@ All options are optional.
 | Option | Default | Description |
 | --- | --- | --- |
 | `seed` | `1` | Random seed. |
-| `height` | `7.5` | Tree height in metres. |
-| `rootDepth` | scales with height | Trunk length below `y = 0`, in metres. |
+| `height` | `7.5` | Tree height in metres. The trunk also extends below `y = 0` by a length that scales with the height. |
 | `crownSize` | `1` | Crown width multiplier. |
 | `branchCount` | `10` | Number of branch tiers. |
 | `leafColor` | `0x2f7d1f` | Leaf color. |
