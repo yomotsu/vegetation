@@ -295,6 +295,7 @@ function updateGrassScene(): void {
 function setPartColor( part: string, color: string ): void {
 
 	scheduleColorUpdate( part, color );
+	if ( part === 'leaf' ) scheduleColorUpdate( 'leafRing', color );
 	if ( part === 'blade' ) updateGrassScene();
 
 }
