@@ -1,5 +1,5 @@
-import { generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
-import type { GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
+import { generateFlowers, generateFlowersAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
+import type { FlowersMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
 
 export interface VegetationKind {
 	name: string;
@@ -9,7 +9,7 @@ export interface VegetationKind {
 	colorOptions: Record<string, string>;
 	defaultColors: Record<string, string>;
 	textureColors?: Record<string, string>;
-	options: Record<string, number | boolean>;
+	options: Record<string, number | boolean | string>;
 }
 
 export const leafColorPresets = {
@@ -23,6 +23,15 @@ export const grassColorPresets = {
 	green: '#4b942b',
 	'dry yellow': '#b8a64a',
 	autumn: '#a86a2c',
+};
+
+export const flowerPetalColorPresets = {
+	white: '#f1efe8',
+	lavender: '#a98bd6',
+	pink: '#e889b5',
+	orange: '#e07a1f',
+	yellow: '#f2c230',
+	red: '#c8352a',
 };
 
 export const kinds: VegetationKind[] = [
@@ -87,6 +96,22 @@ export const kinds: VegetationKind[] = [
 		options: {
 			seed: 1,
 			height: 0.45,
+		},
+	},
+	{
+		name: 'Flowers',
+		create: ( opts ) => generateFlowers( opts as FlowersMeshOptions ),
+		createAsync: ( opts ) => generateFlowersAsync( opts as FlowersMeshOptions ),
+		colorParts: [ 'petal', 'stem' ],
+		colorOptions: { petal: 'petalColor', stem: 'stemColor' },
+		defaultColors: { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#b9cf6a' },
+		textureColors: { centerColor: '#b9cf6a' },
+		options: {
+			seed: 1,
+			variety: 'allium',
+			count: 6,
+			spread: 0.29,
+			height: 0.43,
 		},
 	},
 ];

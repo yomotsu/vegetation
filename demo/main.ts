@@ -15,7 +15,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { disposeVegetationWorkers, VegetationMesh } from 'vegetation';
 import type { VegetationAsset } from 'vegetation';
-import { grassColorPresets, kinds, leafColorPresets } from './registry';
+import { flowerPetalColorPresets, grassColorPresets, kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
 import { createColorUpdateScheduler } from './colorUpdateScheduler';
 import { createColliderMaterialController } from './colliderVisualization';
@@ -42,7 +42,8 @@ interface DemoState {
 	seedVariants: number;
 	leafPreset: string;
 	grassPreset: string;
-	options: Record<string, number | boolean>;
+	flowerPetalPreset: string;
+	options: Record<string, number | boolean | string>;
 	colors: Record<string, string>;
 }
 
@@ -81,6 +82,7 @@ const state: DemoState = {
 	seedVariants: 4,
 	leafPreset: 'green',
 	grassPreset: 'green',
+	flowerPetalPreset: 'white',
 	options: { ...kinds[ 0 ]!.options },
 	colors: { ...kinds[ 0 ]!.defaultColors },
 };
@@ -129,6 +131,15 @@ function getLeafPreset( color: string ): string {
 function getGrassPreset( color: string ): string {
 
 	for ( const [ preset, presetColor ] of Object.entries( grassColorPresets ) ) {
+		if ( presetColor.toLowerCase() === color.toLowerCase() ) return preset;
+	}
+	return 'custom';
+
+}
+
+function getFlowerPetalPreset( color: string ): string {
+
+	for ( const [ preset, presetColor ] of Object.entries( flowerPetalColorPresets ) ) {
 		if ( presetColor.toLowerCase() === color.toLowerCase() ) return preset;
 	}
 	return 'custom';
@@ -194,6 +205,9 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 	if ( activeKind.name === 'Grass' && name === 'height' ) {
 		return [ 0.3, 0.6, 0.01 ];
 	}
+	if ( activeKind.name === 'Flowers' && name === 'count' ) return [ 1, 6, 1 ];
+	if ( activeKind.name === 'Flowers' && name === 'spread' ) return [ 0.1, 0.8, 0.01 ];
+	if ( activeKind.name === 'Flowers' && name === 'height' ) return [ 0.15, 0.6, 0.01 ];
 	if ( name === 'height' ) {
 
 		return [ 2, 14, 0.1 ];
@@ -240,7 +254,7 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 
 }
 
-function makeAsset( kind: VegetationKind, options: Record<string, number | boolean>, colors: Record<string, string> ): Promise<VegetationAsset> {
+function makeAsset( kind: VegetationKind, options: Record<string, number | boolean | string>, colors: Record<string, string> ): Promise<VegetationAsset> {
 
 	const textureColors = Object.fromEntries( Object.keys( kind.textureColors ?? {} ).flatMap( ( key ) => colors[ key ] === undefined ? [] : [ [ key, colors[ key ]! ] ] ) );
 	const colorOptions = Object.fromEntries( Object.entries( kind.colorOptions ).flatMap( ( [ part, option ] ) => colors[ part ] === undefined ? [] : [ [ option, colors[ part ]! ] ] ) );
@@ -434,7 +448,9 @@ function rebuildPreview(): void {
 		root.add( mesh );
 		addCollider( 0, state.collider );
 	} else if ( state.mode === 'compare' ) {
-		const spacing = Math.max( 4.5, Number( state.options.size ?? 0 ) * 1.25 );
+		const spacing = activeKind.name === 'Flowers'
+			? Math.max( 0.55, Number( state.options.spread ?? 0.3 ) * 2.2 )
+			: Math.max( 4.5, Number( state.options.size ?? 0 ) * 1.25 );
 
 		for ( let lod = 0; lod < 5; lod ++ ) {
 
@@ -547,12 +563,25 @@ function rebuildOptionFolders( gui: GUI ): void {
 	for ( const key of Object.keys( state.options ) ) {
 
 		const value = state.options[ key ];
-		const controller = typeof value === 'boolean'
-			? optionFolder.add( state.options, key )
-			: optionFolder.add( state.options, key, ...getOptionBounds( key ) );
-		controller
-			.name( key )
-			.onFinishChange( () => void rebuildAsset() );
+		if ( typeof value === 'string' ) {
+			const controller = optionFolder.add( state.options, key, key === 'variety' ? [ 'allium', 'daisy' ] : [ value ] ).name( key );
+			controller.onChange( ( next: string ) => {
+				if ( activeKind.name === 'Flowers' && key === 'variety' ) {
+					state.options.spread = next === 'daisy' ? 0.37 : 0.29;
+					state.options.height = next === 'daisy' ? 0.285 : 0.43;
+					state.colors.petal = next === 'daisy' ? '#e07a1f' : '#f1efe8';
+					state.colors.centerColor = next === 'daisy' ? '#5a4a1c' : '#b9cf6a';
+					state.flowerPetalPreset = getFlowerPetalPreset( state.colors.petal );
+					rebuildOptionFolders( gui );
+				}
+				void rebuildAsset();
+			} );
+		} else {
+			const controller = typeof value === 'boolean'
+				? optionFolder.add( state.options, key )
+				: optionFolder.add( state.options, key, ...getOptionBounds( key ) );
+			controller.name( key ).onFinishChange( () => void rebuildAsset() );
+		}
 
 	}
 
@@ -561,6 +590,8 @@ function rebuildOptionFolders( gui: GUI ): void {
 	let updateLeafPresetDisplay = () => {};
 	let updateGrassColorDisplay = () => {};
 	let updateGrassPresetDisplay = () => {};
+	let updateFlowerPetalColorDisplay = () => {};
+	let updateFlowerPetalPresetDisplay = () => {};
 
 	if ( activeKind.colorParts.includes( 'leaf' ) ) {
 
@@ -595,6 +626,18 @@ function rebuildOptionFolders( gui: GUI ): void {
 		} );
 	}
 
+	if ( activeKind.colorParts.includes( 'petal' ) ) {
+		const presetController = colorFolder.add( state, 'flowerPetalPreset', [ ...Object.keys( flowerPetalColorPresets ), 'custom' ] ).name( 'petal preset' );
+		updateFlowerPetalPresetDisplay = () => presetController.updateDisplay();
+		presetController.onChange( ( preset: string ) => {
+			const color = flowerPetalColorPresets[ preset as keyof typeof flowerPetalColorPresets ];
+			if ( color === undefined ) return;
+			state.colors.petal = color;
+			updateFlowerPetalColorDisplay();
+			setPartColor( 'petal', color );
+		} );
+	}
+
 	for ( const part of activeKind.colorParts ) {
 
 		const colorController = colorFolder.addColor( state.colors, part ).name( part );
@@ -617,6 +660,15 @@ function rebuildOptionFolders( gui: GUI ): void {
 				updateGrassPresetDisplay();
 				setPartColor( part, color );
 			} );
+		} else if ( part === 'petal' ) {
+
+			updateFlowerPetalColorDisplay = () => colorController.updateDisplay();
+			colorController.onChange( ( color: string ) => {
+				state.flowerPetalPreset = 'custom';
+				updateFlowerPetalPresetDisplay();
+				setPartColor( part, color );
+			} );
+
 		} else {
 
 			colorController.onChange( ( color: string ) => setPartColor( part, color ) );
@@ -650,6 +702,7 @@ function createGui(): void {
 		state.colors = { ...activeKind.defaultColors };
 		state.leafPreset = getLeafPreset( state.colors.leaf ?? '' );
 		state.grassPreset = getGrassPreset( state.colors.blade ?? '' );
+		state.flowerPetalPreset = getFlowerPetalPreset( state.colors.petal ?? '' );
 		rebuildOptionFolders( gui );
 		updateViewControls();
 		void rebuildAsset();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { grassColorPresets, kinds, leafColorPresets } from '../../demo/registry';
+import { flowerPetalColorPresets, grassColorPresets, kinds, leafColorPresets } from '../../demo/registry';
 
 describe( 'demo registry', () => {
 
@@ -14,9 +14,9 @@ describe( 'demo registry', () => {
 
 	} );
 
-	it( 'registers tree, rock, pebbles, and grass with their supported controls', () => {
+	it( 'registers tree, rock, pebbles, grass, and flowers with their supported controls', () => {
 
-		expect( kinds ).toHaveLength( 4 );
+		expect( kinds ).toHaveLength( 5 );
 		expect( kinds[ 0 ]!.name ).toBe( 'Tree' );
 		expect( kinds[ 0 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
 		expect( kinds[ 0 ]!.options ).toEqual( {
@@ -57,12 +57,31 @@ describe( 'demo registry', () => {
 		expect( kinds[ 3 ]!.defaultColors ).toEqual( { blade: '#4b942b' } );
 		expect( kinds[ 3 ]!.options ).toEqual( { seed: 1, height: 0.45 } );
 		expect( kinds[ 3 ]!.create( {} ).getColor( 'blade' ).getHex() ).toBe( 0x4b942b );
+		expect( kinds[ 4 ]!.name ).toBe( 'Flowers' );
+		expect( kinds[ 4 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
+		expect( kinds[ 4 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
+		expect( kinds[ 4 ]!.defaultColors ).toEqual( { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#b9cf6a' } );
+		expect( kinds[ 4 ]!.textureColors ).toEqual( { centerColor: '#b9cf6a' } );
+		expect( kinds[ 4 ]!.options ).toEqual( { seed: 1, variety: 'allium', count: 6, spread: 0.29, height: 0.43 } );
 
 	} );
 
 	it( 'provides the requested grass color presets', () => {
 
 		expect( grassColorPresets ).toEqual( { green: '#4b942b', 'dry yellow': '#b8a64a', autumn: '#a86a2c' } );
+
+	} );
+
+	it( 'provides the requested flower petal presets', () => {
+
+		expect( flowerPetalColorPresets ).toEqual( {
+			white: '#f1efe8',
+			lavender: '#a98bd6',
+			pink: '#e889b5',
+			orange: '#e07a1f',
+			yellow: '#f2c230',
+			red: '#c8352a',
+		} );
 
 	} );
 
