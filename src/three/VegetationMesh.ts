@@ -1,7 +1,7 @@
-import { BufferAttribute, BufferGeometry, FrontSide, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
 import type { Camera, Color, ColorRepresentation } from 'three';
 import type { LodLevel } from '../core/types';
-import { createBidirectionalCardGeometry } from './grassCardGeometry';
+import { createBidirectionalCardGeometry, createBidirectionalCardMaterial } from './grassCardGeometry';
 import { VegetationAsset } from './VegetationAsset';
 import type { VegetationMaterial } from './impostorMaterialFactory';
 
@@ -153,8 +153,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 		const rootGeometry = splitCards
 			? createEmptyGeometry( first.geometry )
 			: upNormalCards ? createBidirectionalCardGeometry( first.geometry ) : first.geometry;
-		const rootMaterial = upNormalCards ? first.material.clone() : first.material;
-		if ( upNormalCards ) rootMaterial.side = FrontSide;
+		const rootMaterial = upNormalCards ? createBidirectionalCardMaterial( first.material ) : first.material;
 		super( rootGeometry, rootMaterial );
 		this.asset = asset;
 		this.lod = level;
@@ -198,8 +197,9 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 		if ( splitCards ) {
 
 			const part = parts[ 0 ]!;
-			const billboardGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 0 ) : createImpostorCardGeometry( part.geometry, 0 );
-			const billboard = new Mesh( billboardGeometry, part.material );
+			const billboardSourceGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 0 ) : createImpostorCardGeometry( part.geometry, 0 );
+			const billboardGeometry = upNormalCards ? createBidirectionalCardGeometry( billboardSourceGeometry ) : billboardSourceGeometry;
+			const billboard = new Mesh( billboardGeometry, rootMaterial );
 			const cameraPosition = new Vector3();
 			billboard.name = part.part;
 			billboard.castShadow = this.shadowCast;
@@ -238,9 +238,11 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 			this.add( billboard );
 			this.partMeshes.push( billboard );
 			this.ownedGeometries.push( billboardGeometry );
+			if ( upNormalCards ) this.ownedGeometries.push( billboardSourceGeometry );
 			if ( first.geometry.getIndex()!.count >= 12 ) {
-				const topCardGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 1 ) : createImpostorCardGeometry( part.geometry, 1 );
-				const topCard = new Mesh( topCardGeometry, part.material );
+				const topCardSourceGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 1 ) : createImpostorCardGeometry( part.geometry, 1 );
+				const topCardGeometry = upNormalCards ? createBidirectionalCardGeometry( topCardSourceGeometry ) : topCardSourceGeometry;
+				const topCard = new Mesh( topCardGeometry, rootMaterial );
 				topCard.name = part.part;
 				topCard.userData.impostorCard = 1;
 				topCard.castShadow = false;
@@ -248,6 +250,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 				this.add( topCard );
 				this.partMeshes.push( topCard );
 				this.ownedGeometries.push( topCardGeometry );
+				if ( upNormalCards ) this.ownedGeometries.push( topCardSourceGeometry );
 			}
 
 		} else {
@@ -259,9 +262,8 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 				const partIndex = asset.data.parts.findIndex( ( definition ) => definition.name === part.part );
 				const definition = asset.data.parts[ partIndex ];
 				const geometry = definition?.upNormalCards === true ? createBidirectionalCardGeometry( part.geometry ) : part.geometry;
-				const material = definition?.upNormalCards === true ? part.material.clone() : part.material;
+				const material = definition?.upNormalCards === true ? createBidirectionalCardMaterial( part.material ) : part.material;
 				if ( definition?.upNormalCards === true ) {
-					material.side = FrontSide;
 					this.ownedGeometries.push( geometry );
 					this.ownedMaterials.push( material );
 				}

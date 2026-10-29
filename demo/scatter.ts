@@ -2,7 +2,6 @@ import {
 	Camera,
 	BufferGeometry,
 	DynamicDrawUsage,
-	FrontSide,
 	Group,
 	InstancedMesh,
 	Material,
@@ -15,7 +14,7 @@ import { createRandom, orientBillboardInstances } from '../src/index';
 import type { VegetationAsset } from '../src/index';
 import { setPreviewShadowFlags } from './rendering';
 import { createGrassScatter } from './grassScatter';
-import { createBidirectionalCardGeometry } from '../src/three/grassCardGeometry';
+import { createBidirectionalCardGeometry, createBidirectionalCardMaterial } from '../src/three/grassCardGeometry';
 
 const lodDistances = [ 12, 24, 42, 65 ];
 const up = new Vector3( 0, 1, 0 );
@@ -98,8 +97,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 				// VegetationMesh と同じく、両面描画の裏で法線が下を向いて黒くならないよう、カードを逆向きにも足して表面だけ描く。
 				if ( part !== undefined && definition.upNormalCards === true ) {
 					geometry = createBidirectionalCardGeometry( geometry );
-					material = material.clone();
-					material.side = FrontSide;
+					material = createBidirectionalCardMaterial( material );
 					ownedGeometries.push( geometry );
 					ownedMaterials.push( material );
 				}

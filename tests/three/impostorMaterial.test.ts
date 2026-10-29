@@ -9,7 +9,7 @@ describe( 'impostor materials', () => {
 
 	it( 'adds the view-angle fade to LOD4 WebGL shader and its cache key', () => {
 
-		const asset = new VegetationAsset( generateFlowersData( { seed: 1, variety: 'daisy' } ) );
+		const asset = new VegetationAsset( generateFlowersData( { seed: 1, variety: 'poppy' } ) );
 		const material = asset.materials[ asset.data.parts.findIndex( ( part ) => part.name === 'impostor' ) ]!;
 		const shader = {
 			vertexShader: '#include <common>\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n}',
@@ -77,7 +77,7 @@ describe( 'impostor materials', () => {
 
 		try {
 
-			const asset = new VegetationAsset( generateFlowersData( { seed: 2, variety: 'daisy' } ) );
+			const asset = new VegetationAsset( generateFlowersData( { seed: 2, variety: 'poppy' } ) );
 
 			try {
 

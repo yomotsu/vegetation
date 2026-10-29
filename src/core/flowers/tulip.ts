@@ -1,13 +1,16 @@
-import { createColorizedFlowerTexture } from '../flowersTexture';
+import { compositeFlowersTexture, createColorizedFlowerTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
 import { MeshBuilder } from '../meshBuilder';
 import type { MeshData, TextureData } from '../types';
 import type { FlowerPlacement } from './common';
 import { setPartIndex } from './common';
 
 const SIZE = 128;
+export const TULIP_BLOOM_HEIGHT = 0.06;
+export const TULIP_PLANT_CARD_WIDTH = 0.18;
+export const TULIP_PETAL_CARD_WIDTH = 0.052;
 
 // 花の高さ。参考の形: 付け根からすぐ丸く膨らみ、高さの約 40% で最も太く、口へ少しすぼめる卵形。
-const BLOOM_HEIGHT = 0.06;
+const BLOOM_HEIGHT = TULIP_BLOOM_HEIGHT;
 // 花びらの段: [ 高さの割合, 中心からの張り出し (m), 半幅 (m), v ]
 const PETAL_ROWS: [ number, number, number, number ][] = [
 	[ 0, 0.006, 0.013, 0 ],
@@ -189,6 +192,28 @@ export function createTulipStemTexture( color: number ): TextureData {
 		}
 	}
 	return createColorizedFlowerTexture( width, height, color, alpha, shade, fixed, color, fixedShade );
+
+}
+
+export function createTulipPlantCardTexture( _seed: number, maxCardHeight: number, petalColor: number, stemColor: number ): TextureData {
+
+	const width = FLOWERS_PETAL_TEXTURE_SIZE;
+	const stemHeightInMeters = Math.max( 0.001, maxCardHeight - TULIP_BLOOM_HEIGHT );
+	const pixelsPerMeter = FLOWERS_STEM_TEXTURE_HEIGHT / stemHeightInMeters;
+	const stemHeight = Math.round( stemHeightInMeters * pixelsPerMeter );
+	const height = Math.max( stemHeight + 1, Math.ceil( maxCardHeight * pixelsPerMeter ) );
+	const petalWidth = Math.max( 1, Math.round( TULIP_PETAL_CARD_WIDTH / TULIP_PLANT_CARD_WIDTH * width ) );
+	const petalHeight = height - stemHeight;
+	const data = new Uint8Array( width * height * 4 );
+	const petalTexture = createTulipPetalTexture( petalColor );
+	const stemTexture = createTulipStemTexture( stemColor );
+
+	// 茎テクスチャの左半分（茎と片側の葉）だけを写す。交差カード 2 枚で葉が 2 枚になり、LOD0 と同じ数になる。
+	const stemSourceWidth = 67;
+	compositeFlowersTexture( data, width, height, stemTexture, 0, stemSourceWidth, 0, 0, Math.round( width * stemSourceWidth / stemTexture.width ), stemHeight );
+	compositeFlowersTexture( data, width, height, petalTexture, 0, petalTexture.width, Math.floor( ( width - petalWidth ) * 0.5 ), stemHeight, petalWidth, petalHeight );
+
+	return { width, height, data, wrap: 'clamp' };
 
 }
 

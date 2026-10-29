@@ -1,7 +1,7 @@
 import { BufferGeometry, FrontSide, InstancedMesh, Matrix4, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import type { Material } from 'three';
 import { describe, expect, it } from 'vitest';
-import { generateGrass, generateTree } from '../../src/index';
+import { generateFlowers, generateGrass, generateTree } from '../../src/index';
 import { createScatter } from '../../demo/scatter';
 import { GRASS_BLUE_NOISE_RANKS } from '../../src/core/grassBlueNoise';
 import type { VegetationAsset } from '../../src/index';
@@ -59,6 +59,39 @@ describe( 'scatter preview', () => {
 		expect( meshes.every( ( mesh ) => asset.materials.includes( mesh.material as typeof asset.materials[number] ) ) ).toBe( true );
 		expect( meshes.filter( ( mesh ) => mesh.count === 0 ).every( ( mesh ) => mesh.visible === false ) ).toBe( true );
 
+
+		scatter.dispose();
+		asset.dispose();
+
+	} );
+
+	it( 'uses bidirectional front-side geometry for flower batches and retains impostor fade', () => {
+
+		const asset = generateFlowers( { seed: 7, variety: 'poppy' } );
+		const scatter = createScatter( asset, 1, 23 );
+		const meshes = scatter.group.children as InstancedMesh[];
+
+		for ( const mesh of meshes ) {
+			const lod = mesh.userData.lod as number;
+			const source = asset.getParts( lod as 0 | 1 | 2 | 3 | 4 ).find( ( part ) => part.part === mesh.userData.part );
+			if ( source === undefined ) continue;
+			expect( mesh.geometry.getIndex()!.count ).toBe( source.geometry.getIndex()!.count * 2 );
+			expect( ( mesh.material as Material ).side ).toBe( FrontSide );
+		}
+
+		for ( const lod of [ 3, 4 ] ) {
+			const partName = lod === 3 ? 'impostor-lod3' : 'impostor';
+			const mesh = meshes.find( ( candidate ) => candidate.userData.lod === lod && candidate.userData.part === partName )!;
+			const material = mesh.material as Material;
+			expect( material.customProgramCacheKey() ).toContain( 'vegetation-impostor-view-fade-v1' );
+			const shader = {
+				vertexShader: '#include <common>\n#include <begin_vertex>\n#include <project_vertex>',
+				fragmentShader: '#include <common>\n#include <alphatest_fragment>',
+				uniforms: {},
+			};
+			material.onBeforeCompile( shader as never, undefined as never );
+			expect( shader.fragmentShader ).toContain( 'impostorDither' );
+		}
 
 		scatter.dispose();
 		asset.dispose();

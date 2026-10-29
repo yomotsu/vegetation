@@ -13,7 +13,7 @@ describe( 'WebGPU impostor material entry', () => {
 
 		expect( getImpostorMaterialFactory() ).not.toBeNull();
 
-		const data = generateFlowersData( { seed: 4, variety: 'daisy' } );
+		const data = generateFlowersData( { seed: 4, variety: 'poppy' } );
 		const asset = new VegetationAsset( data );
 		const material = asset.materials[ data.parts.findIndex( ( part ) => part.name === 'impostor' ) ]! as unknown as MeshStandardNodeMaterial;
 
@@ -29,7 +29,7 @@ describe( 'WebGPU impostor material entry', () => {
 
 	it( 'preserves physical impostor material parameters', () => {
 
-		const data = generateFlowersData( { seed: 5, variety: 'daisy' } );
+		const data = generateFlowersData( { seed: 5, variety: 'poppy' } );
 		const impostorIndex = data.parts.findIndex( ( part ) => part.name === 'impostor' );
 		data.parts[ impostorIndex ]!.specularIntensity = 0.25;
 		data.parts[ impostorIndex ]!.ior = 1.3;
@@ -57,7 +57,7 @@ describe( 'WebGPU impostor material entry', () => {
 		expect( data.parts[ index ]!.impostorFade ).toBe( false );
 		expect( asset.materials[ index ] ).toBeInstanceOf( MeshStandardMaterial );
 		expect( mesh.parts ).toHaveLength( 1 );
-		expect( mesh.parts[ 0 ]!.geometry.getIndex()!.count ).toBe( 6 );
+		expect( mesh.parts[ 0 ]!.geometry.getIndex()!.count ).toBe( 12 );
 		expect( ( asset.materials[ index ]!.map!.image as { width: number } ).width ).toBe( 128 );
 
 		mesh.dispose();

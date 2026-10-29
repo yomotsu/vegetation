@@ -1,11 +1,11 @@
-import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart, yawImpostorView } from '../impostor';
+import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart, LOD4_IMPOSTOR_VIEWS, yawImpostorView } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { weldIdenticalVertices } from '../rockGeometry';
 import { registerTextureRegenerator, regenerateTexture } from '../textureRegenerator';
 import { ALLIUM_HEAD_RISE, ALLIUM_HEAD_SIZE, ALLIUM_PLANT_CARD_TEXTURE_WIDTH, composeFlowersColor, createFlowersAlliumPlantCardTexture, createFlowersPetalTexture, createFlowersStemTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
 import { createRandom } from '../random';
 import type { MeshData, PartDef, TextureData, TextureGeneratorDef, VegetationData } from '../types';
-import { buildTulipPart, createTulipPetalTexture, createTulipStemTexture } from '../flowers/tulip';
+import { buildTulipPart, createTulipPetalTexture, createTulipPlantCardTexture, createTulipStemTexture, TULIP_BLOOM_HEIGHT, TULIP_PLANT_CARD_WIDTH } from '../flowers/tulip';
 import { buildPoppyPart, createPoppyPetalTexture, createPoppyStemTexture } from '../flowers/poppy';
 import { buildBluebellPart, createBluebellPetalTexture, createBluebellStemTexture } from '../flowers/bluebell';
 import { buildCallaPart, createCallaPetalTexture, createCallaStemTexture } from '../flowers/calla';
@@ -341,18 +341,28 @@ function buildFlowersPart( variety: FlowersVariety, lod: number, plants: FlowerP
 
 }
 
-function buildAlliumPlantCardPart( plants: FlowerPlacement[], partIndex: number, segments: number ): MeshData {
+interface BentPlantCardOptions {
+	width: number;
+	maxCardHeight: number;
+	top: ( placement: FlowerPlacement ) => number;
+	stemHeight: ( placement: FlowerPlacement ) => number;
+	headBottom: ( placement: FlowerPlacement, top: number ) => number;
+	headAnchor: ( placement: FlowerPlacement, top: number, headBottom: number ) => number;
+	splitSingleSegment?: boolean;
+}
+
+function buildBentPlantCardPart( plants: FlowerPlacement[], partIndex: number, segments: number, options: BentPlantCardOptions ): MeshData {
 
 	const builder = new MeshBuilder();
-	const maxCardHeight = Math.max( ALLIUM_HEAD_SIZE, ...plants.map( ( plant ) => plant.height + ALLIUM_HEAD_RISE + ALLIUM_HEAD_SIZE * 0.5 ) );
-	const uvSpanPerMeter = 1 / maxCardHeight;
-	const halfWidth = ALLIUM_HEAD_SIZE * 0.5;
+	const uvSpanPerMeter = 1 / options.maxCardHeight;
+	const halfWidth = options.width * 0.5;
 
 	builder.beginGroup( partIndex );
 	for ( const placement of plants ) {
-		const top = placement.height + ALLIUM_HEAD_RISE + halfWidth;
-		const headBottom = top - ALLIUM_HEAD_SIZE;
-		const headCenter = headBottom + halfWidth;
+		const top = options.top( placement );
+		const stemHeight = options.stemHeight( placement );
+		const headBottom = options.headBottom( placement, top );
+		const headAnchor = options.headAnchor( placement, top, headBottom );
 		const tipX = placement.x + placement.leanX;
 		const tipZ = placement.z + placement.leanZ;
 		for ( const yaw of [ placement.yaw, placement.yaw + placement.crossAngle ] ) {
@@ -368,20 +378,20 @@ function buildAlliumPlantCardPart( plants: FlowerPlacement[], partIndex: number,
 				if ( row === segments ) {
 					y = top;
 					const previous = rows[ rows.length - 1 ]!;
-					const headProgress = ( headCenter - previous.y ) / ( top - previous.y );
+					const headProgress = ( headAnchor - previous.y ) / ( top - previous.y );
 					centerX = previous.centerX + ( tipX - previous.centerX ) / headProgress;
 					centerZ = previous.centerZ + ( tipZ - previous.centerZ ) / headProgress;
 				}
 				else if ( row === segments - 1 && row > 0 ) {
 					y = headBottom;
-					const progress = Math.max( 0, Math.min( 1, y / placement.height ) );
+					const progress = Math.max( 0, Math.min( 1, y / stemHeight ) );
 					const bend = progress ** STEM_BEND_EXPONENT;
 					centerX = placement.x + placement.leanX * bend;
 					centerZ = placement.z + placement.leanZ * bend;
 				}
 				else {
 					const progress = row === 0 ? 0 : 1 - ( 1 - row / segments ) ** STEM_ROW_BIAS;
-					y = placement.height * progress;
+					y = stemHeight * progress;
 					const bend = progress ** STEM_BEND_EXPONENT;
 					centerX = placement.x + placement.leanX * bend;
 					centerZ = placement.z + placement.leanZ * bend;
@@ -403,8 +413,26 @@ function buildAlliumPlantCardPart( plants: FlowerPlacement[], partIndex: number,
 				const b = vertexRows[ row ]![ 1 ]!;
 				const c = vertexRows[ row + 1 ]![ 1 ]!;
 				const d = vertexRows[ row + 1 ]![ 0 ]!;
-				builder.addTriangle( a, b, c );
-				builder.addTriangle( a, c, d );
+				if ( options.splitSingleSegment === true && segments === 1 ) {
+					const lower = rows[ row ]!;
+					const upper = rows[ row + 1 ]!;
+					const lowerV = 1 - ( top - lower.y ) * uvSpanPerMeter;
+					const upperV = 1 - ( top - upper.y ) * uvSpanPerMeter;
+					const midpoint = builder.addVertex(
+						[ ( lower.centerX + upper.centerX ) * 0.5 + shiftX, ( lower.y + upper.y ) * 0.5, ( lower.centerZ + upper.centerZ ) * 0.5 + shiftZ ],
+						[ 0, 1, 0 ],
+						[ 1, ( lowerV + upperV ) * 0.5 ],
+						[ 1, 1, 1 ],
+						( lower.wind + upper.wind ) * 0.5,
+					);
+					builder.addTriangle( a, b, midpoint );
+					builder.addTriangle( a, midpoint, c );
+					builder.addTriangle( a, c, d );
+				}
+				else {
+					builder.addTriangle( a, b, c );
+					builder.addTriangle( a, c, d );
+				}
 			}
 		}
 	}
@@ -412,9 +440,40 @@ function buildAlliumPlantCardPart( plants: FlowerPlacement[], partIndex: number,
 
 }
 
+function buildAlliumPlantCardPart( plants: FlowerPlacement[], partIndex: number, segments: number ): MeshData {
+
+	const halfWidth = ALLIUM_HEAD_SIZE * 0.5;
+	const maxCardHeight = Math.max( ALLIUM_HEAD_SIZE, ...plants.map( ( plant ) => plant.height + ALLIUM_HEAD_RISE + halfWidth ) );
+	return buildBentPlantCardPart( plants, partIndex, segments, {
+		width: ALLIUM_HEAD_SIZE,
+		maxCardHeight,
+		top: ( plant ) => plant.height + ALLIUM_HEAD_RISE + halfWidth,
+		stemHeight: ( plant ) => plant.height,
+		headBottom: ( _plant, top ) => top - ALLIUM_HEAD_SIZE,
+		headAnchor: ( _plant, _top, headBottom ) => headBottom + halfWidth,
+	} );
+
+}
+
+function buildTulipPlantCardPart( plants: FlowerPlacement[], partIndex: number, segments: number ): MeshData {
+
+	const maxCardHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
+	return buildBentPlantCardPart( plants, partIndex, segments, {
+		width: TULIP_PLANT_CARD_WIDTH,
+		maxCardHeight,
+		top: ( plant ) => plant.height,
+		stemHeight: ( plant ) => plant.height - TULIP_BLOOM_HEIGHT,
+		headBottom: ( _plant, top ) => top - TULIP_BLOOM_HEIGHT,
+		headAnchor: ( _plant, top ) => top,
+		splitSingleSegment: segments === 1,
+	} );
+
+}
+
 const ALLIUM_LOD3_YAW_ANGLES = [ 0, Math.PI / 2 ] as const;
 const ALLIUM_LOD3_IMPOSTOR_VIEWS = ALLIUM_LOD3_YAW_ANGLES.map( yawImpostorView );
 const ALLIUM_LOD4_IMPOSTOR_VIEWS = [ yawImpostorView( 0 ) ];
+const DAISY_LOD3_IMPOSTOR_VIEWS = [ ...ALLIUM_LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS[ 1 ] ] as const;
 
 function combineParts( petal: MeshData, stem: MeshData ): MeshData {
 
@@ -487,9 +546,13 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 		: combineParts( buildFlowersPart( variety, 0, plants, 'petal' ), buildFlowersPart( variety, 0, plants, 'stem' ) );
 	const lod1 = variety === 'allium'
 		? buildAlliumPlantCardPart( plants, 2, 2 )
+		: variety === 'tulip'
+			? buildTulipPlantCardPart( plants, 2, 2 )
 		: combineParts( buildFlowersPart( variety, 1, plants, 'petal' ), buildFlowersPart( variety, 1, plants, 'stem' ) );
 	const lod2 = variety === 'allium'
 		? buildAlliumPlantCardPart( plants, 2, 1 )
+		: variety === 'tulip'
+			? buildTulipPlantCardPart( plants, 2, 1 )
 		: combineParts( buildFlowersPart( variety, 2, plants, 'petal' ), buildFlowersPart( variety, 2, plants, 'stem' ) );
 	// 位置と属性がまったく同じ頂点は 1 つにまとめる（同じ絵を使う葉の付け根など）。
 	for ( const mesh of [ lod0, lod1, lod2 ] ) weldIdenticalVertices( mesh );
@@ -505,17 +568,28 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	}
 	const boundsHeight = Number.isFinite( maximumGeometryHeight ) ? maximumGeometryHeight : maximumPlantHeight + headRise;
 	const bounds = { radius: spread, height: boundsHeight };
-	const lod3Index = variety === 'allium' ? 3 : 2;
-	const lod4Index = variety === 'allium' ? 4 : 3;
+	const hasPlantCard = variety === 'allium' || variety === 'tulip';
+	const lod3Index = hasPlantCard ? 3 : 2;
+	const lod4Index = hasPlantCard ? 4 : 3;
+	const daisyHeadHeight = variety === 'daisy' ? plants.reduce( ( sum, plant ) => sum + plant.height, 0 ) / plants.length : bounds.height * 0.25;
+	const lod3Options = variety === 'allium'
+		? { yawAngles: ALLIUM_LOD3_YAW_ANGLES, includeTopCard: false }
+		: variety === 'daisy'
+			? { yawAngles: ALLIUM_LOD3_YAW_ANGLES, includeTopCard: true }
+			: variety === 'tulip'
+				? { yawAngles: ALLIUM_LOD3_YAW_ANGLES, includeTopCard: false }
+				: {};
 	const lod3 = buildSixPlaneImpostor(
 		bounds.height,
 		bounds.radius,
 		lod3Index,
 		lod0,
-		bounds.height * 0.25,
-		variety === 'allium' ? { yawAngles: ALLIUM_LOD3_YAW_ANGLES, includeTopCard: false } : {},
+		variety === 'daisy' ? daisyHeadHeight : bounds.height * 0.25,
+		lod3Options,
 	);
-	const lod4 = buildBillboard( bounds, lod4Index, lod0, bounds.height * 0.75, variety !== 'allium' );
+	const lod4TopHeight = variety === 'daisy' ? daisyHeadHeight : bounds.height * 0.75;
+	const includeLod4TopCard = variety !== 'allium' && variety !== 'tulip';
+	const lod4 = buildBillboard( bounds, lod4Index, lod0, lod4TopHeight, includeLod4TopCard );
 	setUpNormals( lod3 );
 	setUpNormals( lod4 );
 	// allium は petal / stem の色キーを残し、描画テクスチャを plantCard にまとめます。
@@ -558,9 +632,17 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 		flatShading: false,
 	};
 	// 交差カードは裏からも見えるので、両向きに足して上向き法線のまま照らす。
-	const lod3Part = variety === 'allium' ? { ...impostorLod3Part( ALLIUM_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true } : impostorLod3Part();
-	const lod4Part = variety === 'allium' ? impostorPart( ALLIUM_LOD4_IMPOSTOR_VIEWS, false ) : impostorPart();
-	const parts = variety === 'allium' ? [ petalPart, stemPart, plantCardPart, lod3Part, lod4Part ] : [ petalPart, stemPart, lod3Part, lod4Part ];
+	const lod3Part = variety === 'daisy'
+		? { ...impostorLod3Part( DAISY_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
+		: variety === 'allium' || variety === 'tulip'
+			? { ...impostorLod3Part( ALLIUM_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
+			: { ...impostorLod3Part(), upNormalCards: true };
+	const lod4Part = variety === 'allium' || variety === 'tulip'
+		? { ...impostorPart( ALLIUM_LOD4_IMPOSTOR_VIEWS, false ), upNormalCards: true }
+		: variety === 'daisy'
+			? { ...impostorPart( LOD4_IMPOSTOR_VIEWS, false ), upNormalCards: true }
+			: { ...impostorPart(), upNormalCards: true };
+	const parts = hasPlantCard ? [ petalPart, stemPart, plantCardPart, lod3Part, lod4Part ] : [ petalPart, stemPart, lod3Part, lod4Part ];
 	const textures: Record<string, TextureData> = variety === 'allium'
 		? {
 			plantCard: createFlowersAlliumPlantCardTexture(
@@ -577,7 +659,11 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 				stem: createFlowersStemTexture( seed, variety, stemColor ),
 			}
 			: variety === 'tulip'
-			? { petal: createTulipPetalTexture( petalColor ), stem: createTulipStemTexture( stemColor ) }
+			? {
+				petal: createTulipPetalTexture( petalColor ),
+				stem: createTulipStemTexture( stemColor ),
+				plantCard: createTulipPlantCardTexture( seed, Math.max( ...plants.map( ( plant ) => plant.height ) ), petalColor, stemColor ),
+			}
 			: variety === 'poppy'
 				? { petal: createPoppyPetalTexture( seed, petalColor, centerColor ), stem: createPoppyStemTexture( stemColor ) }
 				: variety === 'bluebell'
@@ -614,6 +700,16 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 					petalColor,
 					stemColor,
 				},
+			} : variety === 'tulip' ? {
+				plantCard: {
+					type: 'flowers-tulip-plant-card',
+					seed,
+					size: FLOWERS_PETAL_TEXTURE_SIZE,
+					height: Math.max( ...plants.map( ( plant ) => plant.height ) ),
+					variety: 'tulip' as const,
+					petalColor,
+					stemColor,
+				},
 			} : {} ),
 		},
 		bounds,
@@ -639,10 +735,28 @@ function regenerateAlliumPlantCardTexture( _existing: TextureData, generator: Te
 
 }
 
+function regenerateTulipPlantCardTexture( _existing: TextureData, generator: TextureGeneratorDef ): TextureData {
+
+	if ( generator.type !== 'flowers-tulip-plant-card' || generator.height === undefined || generator.petalColor === undefined || generator.stemColor === undefined ) {
+		throw new Error( 'Tulip plant-card texture cannot be regenerated' );
+	}
+	return createTulipPlantCardTexture( generator.seed, generator.height, generator.petalColor, generator.stemColor );
+
+}
+
 function regenerateAlliumPlantCardColor( data: VegetationData, channel: 'petalColor' | 'stemColor', color: number ): void {
 
 	const generator = data.textureGenerators?.plantCard;
 	if ( generator?.type !== 'flowers-allium-plant-card' || data.textures.plantCard === undefined ) return;
+	generator[ channel ] = color;
+	data.textures.plantCard = regenerateTexture( data, 'plantCard', color );
+
+}
+
+function regenerateTulipPlantCardColor( data: VegetationData, channel: 'petalColor' | 'stemColor', color: number ): void {
+
+	const generator = data.textureGenerators?.plantCard;
+	if ( generator?.type !== 'flowers-tulip-plant-card' || data.textures.plantCard === undefined ) return;
 	generator[ channel ] = color;
 	data.textures.plantCard = regenerateTexture( data, 'plantCard', color );
 
@@ -656,6 +770,7 @@ export function regenerateFlowersPetalTexture( data: VegetationData, color: numb
 	}
 	if ( data.textureGenerators?.petal?.type !== 'flowers-petal' || data.textures.petal === undefined ) throw new Error( 'Flowers petal texture cannot be regenerated' );
 	data.textures.petal = regenerateTexture( data, 'petal', color );
+	if ( data.textureGenerators?.plantCard?.type === 'flowers-tulip-plant-card' ) regenerateTulipPlantCardColor( data, 'petalColor', color );
 
 }
 
@@ -667,9 +782,11 @@ export function regenerateFlowersStemTexture( data: VegetationData, color: numbe
 	}
 	if ( data.textureGenerators?.stem?.type !== 'flowers-stem' || data.textures.stem === undefined ) throw new Error( 'Flowers stem texture cannot be regenerated' );
 	data.textures.stem = regenerateTexture( data, 'stem', color );
+	if ( data.textureGenerators?.plantCard?.type === 'flowers-tulip-plant-card' ) regenerateTulipPlantCardColor( data, 'stemColor', color );
 
 }
 
 registerTextureRegenerator( 'flowers-petal', regenerateFlowersTextureData );
 registerTextureRegenerator( 'flowers-stem', regenerateFlowersTextureData );
 registerTextureRegenerator( 'flowers-allium-plant-card', regenerateAlliumPlantCardTexture );
+registerTextureRegenerator( 'flowers-tulip-plant-card', regenerateTulipPlantCardTexture );

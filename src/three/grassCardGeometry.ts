@@ -1,4 +1,5 @@
-import { BufferAttribute, BufferGeometry } from 'three';
+import { BufferAttribute, BufferGeometry, FrontSide } from 'three';
+import type { Material } from 'three';
 
 export function createBidirectionalCardGeometry( source: BufferGeometry ): BufferGeometry {
 
@@ -28,5 +29,16 @@ export function createBidirectionalCardGeometry( source: BufferGeometry ): Buffe
 	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
 
 	return geometry;
+
+}
+
+export function createBidirectionalCardMaterial<T extends Material>( source: T ): T {
+
+	const material = source.clone() as T;
+	material.side = FrontSide;
+	// Material.clone() は impostor fade などのシェーダーコールバックをコピーしない。
+	material.onBeforeCompile = source.onBeforeCompile;
+	material.customProgramCacheKey = source.customProgramCacheKey;
+	return material;
 
 }

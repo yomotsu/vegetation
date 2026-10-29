@@ -406,6 +406,23 @@ function compositeResampledTexture(
 
 }
 
+export function compositeFlowersTexture(
+	target: Uint8Array,
+	targetWidth: number,
+	targetHeight: number,
+	source: TextureData,
+	sourceX: number,
+	sourceWidth: number,
+	destinationX: number,
+	destinationY: number,
+	destinationWidth: number,
+	destinationHeight: number,
+): void {
+
+	compositeResampledTexture( target, targetWidth, targetHeight, source, sourceX, sourceWidth, destinationX, destinationY, destinationWidth, destinationHeight );
+
+}
+
 /** allium の頭と茎を、頭の 0.24 m を保つ縦カード用テクスチャにまとめます。 */
 export function createFlowersAlliumPlantCardTexture( seed: number, maxCardHeight: number, petalColor: number, centerColor: number, stemColor: number ): TextureData {
 

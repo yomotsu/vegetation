@@ -75,6 +75,39 @@ function cardCenterAtY( mesh: MeshData, firstVertex: number, rows: number, targe
 
 }
 
+function footprintAtHeight( mesh: MeshData, minimumHeight: number ): { minX: number; maxX: number; minZ: number; maxZ: number } {
+
+	const bounds = { minX: Infinity, maxX: - Infinity, minZ: Infinity, maxZ: - Infinity };
+	const include = ( x: number, z: number ): void => {
+		bounds.minX = Math.min( bounds.minX, x );
+		bounds.maxX = Math.max( bounds.maxX, x );
+		bounds.minZ = Math.min( bounds.minZ, z );
+		bounds.maxZ = Math.max( bounds.maxZ, z );
+	};
+
+	for ( let triangle = 0; triangle < mesh.indices.length; triangle += 3 ) {
+		const vertices = [ mesh.indices[ triangle ]!, mesh.indices[ triangle + 1 ]!, mesh.indices[ triangle + 2 ]! ];
+		for ( let edge = 0; edge < 3; edge ++ ) {
+			const first = vertices[ edge ]!;
+			const second = vertices[ ( edge + 1 ) % 3 ]!;
+			const firstOffset = first * 3;
+			const secondOffset = second * 3;
+			const firstY = mesh.positions[ firstOffset + 1 ]!;
+			const secondY = mesh.positions[ secondOffset + 1 ]!;
+			if ( firstY >= minimumHeight ) include( mesh.positions[ firstOffset ]!, mesh.positions[ firstOffset + 2 ]! );
+			if ( ( firstY < minimumHeight && secondY > minimumHeight ) || ( firstY > minimumHeight && secondY < minimumHeight ) ) {
+				const amount = ( minimumHeight - firstY ) / ( secondY - firstY );
+				include(
+					mesh.positions[ firstOffset ]! + ( mesh.positions[ secondOffset ]! - mesh.positions[ firstOffset ]! ) * amount,
+					mesh.positions[ firstOffset + 2 ]! + ( mesh.positions[ secondOffset + 2 ]! - mesh.positions[ firstOffset + 2 ]! ) * amount,
+				);
+			}
+		}
+	}
+	return bounds;
+
+}
+
 describe( 'flowers core generator', () => {
 
 	for ( const variety of [ 'allium', 'daisy' ] as const ) {
@@ -337,6 +370,101 @@ describe( 'flowers core generator', () => {
 
 	} );
 
+	it( 'uses curved crossed plant cards for tulip LOD1/2 and keeps the flower size and color layers', () => {
+
+		const options = { seed: 5, variety: 'tulip' as const };
+		const data = generateFlowersData( options );
+		const lod0 = data.lods[ 0 ]!;
+		const lod1 = data.lods[ 1 ]!;
+		const lod2 = data.lods[ 2 ]!;
+		const lod3 = data.lods[ 3 ]!;
+		const lod4 = data.lods[ 4 ]!;
+		const texture = data.textures.plantCard!;
+
+		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'petal', 'stem', 'plantCard', 'impostor-lod3', 'impostor' ] );
+		expect( [ lod0, lod1, lod2, lod3, lod4 ].map( triangleCount ) ).toEqual( [ 88, 32, 24, 4, 2 ] );
+		expect( [ lod1, lod2 ].every( ( mesh ) => mesh.groups.every( ( group ) => group.partIndex === 2 ) ) ).toBe( true );
+		expect( texture.width ).toBe( FLOWERS_PETAL_TEXTURE_SIZE );
+		expect( texture.height ).toBeLessThan( 512 );
+
+		for ( const [ mesh, segments ] of [ [ lod1, 2 ], [ lod2, 1 ] ] as const ) {
+			const verticesPerCard = ( segments + 1 ) * 2;
+			const firstCardWidth = Math.hypot(
+				mesh.positions[ 0 ]! - mesh.positions[ 3 ]!,
+				mesh.positions[ 2 ]! - mesh.positions[ 5 ]!,
+			);
+			const secondCard = verticesPerCard + ( segments === 1 ? 1 : 0 );
+			const secondCardWidth = Math.hypot(
+				mesh.positions[ secondCard * 3 ]! - mesh.positions[ ( secondCard + 1 ) * 3 ]!,
+				mesh.positions[ secondCard * 3 + 2 ]! - mesh.positions[ ( secondCard + 1 ) * 3 + 2 ]!,
+			);
+			expect( firstCardWidth ).toBeCloseTo( 0.18, 6 );
+			expect( secondCardWidth ).toBeCloseTo( 0.18, 6 );
+
+			const firstCardVertex = 0;
+			const top = cardRowCenter( mesh, firstCardVertex, segments );
+			const bloomBottom = cardRowCenter( mesh, firstCardVertex, segments === 2 ? 1 : 0 );
+			const stemTip = cardRowCenter( lod0, 18 * 4, 2 );
+			const petalTopCenters = [ 0, 1, 2 ].map( ( petal ) => {
+				const first = petal * 6 + 4;
+				return [
+					( lod0.positions[ first * 3 ]! + lod0.positions[ ( first + 1 ) * 3 ]! ) * 0.5,
+					( lod0.positions[ first * 3 + 1 ]! + lod0.positions[ ( first + 1 ) * 3 + 1 ]! ) * 0.5,
+					( lod0.positions[ first * 3 + 2 ]! + lod0.positions[ ( first + 1 ) * 3 + 2 ]! ) * 0.5,
+				];
+			} );
+			const flowerCenter = [ 0, 1, 2 ].map( ( axis ) => petalTopCenters.reduce( ( sum, center ) => sum + center[ axis ]!, 0 ) / petalTopCenters.length );
+
+			expect( top[ 0 ] ).toBeCloseTo( flowerCenter[ 0 ]!, 6 );
+			expect( top[ 1 ] ).toBeCloseTo( flowerCenter[ 1 ]!, 6 );
+			expect( top[ 2 ] ).toBeCloseTo( flowerCenter[ 2 ]!, 6 );
+			if ( segments === 2 ) {
+				expect( bloomBottom[ 0 ] ).toBeCloseTo( stemTip[ 0 ], 6 );
+				expect( bloomBottom[ 1 ] ).toBeCloseTo( stemTip[ 1 ], 6 );
+				expect( bloomBottom[ 2 ] ).toBeCloseTo( stemTip[ 2 ], 6 );
+			}
+		}
+
+		let minPetalX = texture.width;
+		let maxPetalX = - 1;
+		let minPetalY = texture.height;
+		let maxPetalY = - 1;
+		for ( let y = FLOWERS_STEM_TEXTURE_HEIGHT; y < texture.height; y ++ ) {
+			for ( let x = 0; x < texture.width; x ++ ) {
+				if ( texture.data[ ( y * texture.width + x ) * 4 + 3 ] === 0 ) continue;
+				minPetalX = Math.min( minPetalX, x );
+				maxPetalX = Math.max( maxPetalX, x );
+				minPetalY = Math.min( minPetalY, y );
+				maxPetalY = Math.max( maxPetalY, y );
+			}
+		}
+		expect( ( maxPetalX - minPetalX + 1 ) / texture.width * 0.18 ).toBeCloseTo( 0.052, 1 );
+		expect( ( maxPetalY - minPetalY + 1 ) / texture.height * data.bounds.height ).toBeCloseTo( 0.06, 1 );
+
+		const originalCard = texture.data.slice();
+		const petalColor = 0xa98bd6;
+		const stemColor = 0x81603d;
+		regenerateFlowersPetalTexture( data, petalColor );
+		expect( areByteIdentical( data.textures.plantCard!.data, originalCard ) ).toBe( false );
+		regenerateFlowersStemTexture( data, stemColor );
+		const recolored = generateFlowersData( { ...options, petalColor, stemColor } );
+		expect( areByteIdentical( data.textures.plantCard!.data, recolored.textures.plantCard!.data ) ).toBe( true );
+		expect( areByteIdentical( data.textures.petal!.data, recolored.textures.petal!.data ) ).toBe( true );
+		expect( areByteIdentical( data.textures.stem!.data, recolored.textures.stem!.data ) ).toBe( true );
+
+		expect( data.parts[ 3 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 3 ]!.upNormalCards ).toBe( true );
+		expect( data.parts[ 3 ]!.impostorViews ).toHaveLength( 2 );
+		expect( data.parts[ 4 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 4 ]!.upNormalCards ).toBe( true );
+		expect( data.parts[ 4 ]!.impostorViews ).toHaveLength( 1 );
+		expect( [ lod0, lod1, lod2, lod3, lod4 ].slice( 1 ).every( ( mesh, index ) => triangleCount( mesh ) < triangleCount( [ lod0, lod1, lod2, lod3, lod4 ][ index ]! ) ) ).toBe( true );
+		const singlePlant = generateFlowersData( { ...options, count: 1 } ).lods;
+		expect( singlePlant.map( triangleCount ) ).toEqual( [ 22, 8, 6, 4, 2 ] );
+		expect( singlePlant.slice( 1 ).every( ( mesh, index ) => triangleCount( mesh ) < triangleCount( singlePlant[ index ]! ) ) ).toBe( true );
+
+	} );
+
 	it( 'keeps both crossed tulip stem cards on one curve', () => {
 
 		// 段数や形の違う茎を重ねると、茎が 2 本に見える。
@@ -441,7 +569,10 @@ describe( 'flowers core generator', () => {
 
 		for ( const variety of [ 'allium', 'daisy', 'tulip', ...newVarieties ] as const ) {
 
-			const lods = generateFlowersData( { seed: 7, variety } ).lods;
+			const data = generateFlowersData( { seed: 7, variety } );
+			const lods = data.lods;
+			expect( data.parts.every( ( part ) => part.upNormalCards === true ) ).toBe( true );
+			for ( const mesh of lods ) for ( const group of mesh.groups ) expect( data.parts[ group.partIndex ]!.upNormalCards ).toBe( true );
 			for ( const mesh of lods ) expect( [ ...mesh.normals ].every( ( value, index ) => index % 3 === 1 ? value === 1 : value === 0 ) ).toBe( true );
 			const mesh = lods[ 0 ]!;
 
@@ -569,6 +700,47 @@ describe( 'flowers core generator', () => {
 				expect( upper ).toBeGreaterThan( 0 );
 			}
 		}
+
+	} );
+
+	it( 'keeps the daisy top cards at mean head height and draws all impostor planes', () => {
+
+		const data = generateFlowersData( { seed: 5, variety: 'daisy' } );
+		const lod0 = data.lods[ 0 ]!;
+		const lod3 = data.lods[ 3 ]!;
+		const lod4 = data.lods[ 4 ]!;
+		const headHeight = Array.from( { length: 6 }, ( _, plant ) => lod0.positions[ plant * 5 * 3 + 1 ]! ).reduce( ( sum, height ) => sum + height, 0 ) / 6;
+		const horizontalVertices = ( mesh: MeshData ) => Array.from( { length: mesh.impostorCard.length }, ( _, vertex ) => vertex ).filter( ( vertex ) => mesh.impostorCard[ vertex ] === 1 );
+		const lod3Top = horizontalVertices( lod3 );
+		const lod4Top = horizontalVertices( lod4 );
+
+		expect( triangleCount( lod3 ) ).toBe( 6 );
+		expect( lod3.impostorCard.filter( ( card ) => card === 0 ) ).toHaveLength( 8 );
+		expect( lod3Top ).toHaveLength( 4 );
+		expect( triangleCount( lod4 ) ).toBe( 4 );
+		expect( lod4.impostorCard.filter( ( card ) => card === 0 ) ).toHaveLength( 4 );
+		expect( lod4Top ).toHaveLength( 4 );
+		for ( const vertex of lod3Top ) expect( lod3.positions[ vertex * 3 + 1 ] ).toBeCloseTo( headHeight, 6 );
+		for ( const vertex of lod4Top ) expect( lod4.positions[ vertex * 3 + 1 ] ).toBeCloseTo( headHeight, 6 );
+
+		const expectedFootprint = footprintAtHeight( lod0, headHeight );
+		for ( const [ mesh, vertices ] of [ [ lod3, lod3Top ], [ lod4, lod4Top ] ] as const ) {
+			const actual = {
+				minX: Math.min( ...vertices.map( ( vertex ) => mesh.positions[ vertex * 3 ]! ) ),
+				maxX: Math.max( ...vertices.map( ( vertex ) => mesh.positions[ vertex * 3 ]! ) ),
+				minZ: Math.min( ...vertices.map( ( vertex ) => mesh.positions[ vertex * 3 + 2 ]! ) ),
+				maxZ: Math.max( ...vertices.map( ( vertex ) => mesh.positions[ vertex * 3 + 2 ]! ) ),
+			};
+			expect( actual.minX ).toBeCloseTo( expectedFootprint.minX, 6 );
+			expect( actual.maxX ).toBeCloseTo( expectedFootprint.maxX, 6 );
+			expect( actual.minZ ).toBeCloseTo( expectedFootprint.minZ, 6 );
+			expect( actual.maxZ ).toBeCloseTo( expectedFootprint.maxZ, 6 );
+		}
+
+		expect( data.parts[ 2 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 2 ]!.impostorViews ).toHaveLength( 3 );
+		expect( data.parts[ 3 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 3 ]!.impostorViews ).toHaveLength( 2 );
 
 	} );
 

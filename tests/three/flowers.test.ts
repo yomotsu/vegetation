@@ -59,10 +59,12 @@ describe( 'flowers three.js API', () => {
 		const mesh = new FlowersMesh( { seed: 3, variety: 'allium', lod: 4 } );
 		const [ billboard ] = mesh.parts;
 		expect( mesh.parts ).toHaveLength( 1 );
-		expect( billboard!.geometry.getIndex()!.count ).toBe( 6 );
+		expect( billboard!.geometry.getIndex()!.count ).toBe( 12 );
 		expect( billboard!.geometry.getAttribute( 'impostorCard' ).array ).toEqual( new Float32Array( [ 0, 0, 0, 0 ] ) );
 		expect( [ ...billboard!.geometry.getAttribute( 'uv' ).array ] ).toEqual( [ 0, 0, 1, 0, 1, 1, 0, 1 ] );
+		expect( billboard!.material.side ).toBe( FrontSide );
 		expect( mesh.asset.data.parts[ 3 ]!.impostorFade ).toBe( false );
+		expect( mesh.asset.data.parts[ 4 ]!.upNormalCards ).toBe( true );
 		expect( ( mesh.asset.materials[ 3 ]!.map!.image as { width: number } ).width ).toBe( 256 );
 		expect( ( mesh.asset.materials[ 4 ]!.map!.image as { width: number } ).width ).toBe( 128 );
 
@@ -83,6 +85,67 @@ describe( 'flowers three.js API', () => {
 		billboard!.onBeforeShadow( null as never, null as never, shadowCamera, shadowCamera, billboard!.geometry, null as never, null as never );
 		expect( billboard!.rotation.y ).toBeCloseTo( Math.PI / 2, 6 );
 		instances.dispose();
+		mesh.dispose();
+
+	} );
+
+	it( 'duplicates split daisy impostor cards in both LOD3 and camera-facing LOD4', () => {
+
+		for ( const lod of [ 3, 4 ] as const ) {
+			const mesh = new FlowersMesh( { seed: 5, variety: 'daisy', lod } );
+			const source = mesh.asset.getParts( lod )[ 0 ]!;
+			const vertical = mesh.parts[ 0 ]!;
+			const horizontal = mesh.parts[ 1 ]!;
+			const indexedCardIds = ( part: Mesh ) => new Set( Array.from( part.geometry.getIndex()!.array, ( vertex ) => part.geometry.getAttribute( 'impostorCard' ).getX( vertex ) ) );
+
+			expect( mesh.parts ).toHaveLength( 2 );
+			expect( indexedCardIds( vertical ) ).toEqual( new Set( [ 0 ] ) );
+			expect( indexedCardIds( horizontal ) ).toEqual( new Set( [ 1 ] ) );
+			expect( vertical.geometry.getIndex()!.count ).toBe( lod === 3 ? 24 : 12 );
+			expect( horizontal.geometry.getIndex()!.count ).toBe( 12 );
+			expect( vertical.material ).toBe( horizontal.material );
+			expect( vertical.material.side ).toBe( FrontSide );
+			expect( vertical.material.customProgramCacheKey() ).not.toContain( 'vegetation-impostor-view-fade-v1' );
+			expect( vertical.geometry.getIndex()!.count + horizontal.geometry.getIndex()!.count ).toBe( source.geometry.getIndex()!.count * 2 );
+			mesh.dispose();
+		}
+
+	} );
+
+	it( 'preserves impostor fade hooks when split flower cards use front-side materials', () => {
+
+		const mesh = new FlowersMesh( { seed: 5, variety: 'poppy', lod: 3 } );
+		const [ vertical ] = mesh.parts;
+		const shader = {
+			vertexShader: '#include <common>\n#include <begin_vertex>\n#include <project_vertex>',
+			fragmentShader: '#include <common>\n#include <alphatest_fragment>',
+			uniforms: {},
+		};
+
+		expect( mesh.parts ).toHaveLength( 2 );
+		expect( vertical!.material.side ).toBe( FrontSide );
+		expect( vertical!.material.customProgramCacheKey() ).toContain( 'vegetation-impostor-view-fade-v1' );
+		vertical!.material.onBeforeCompile( shader as never, undefined as never );
+		expect( shader.fragmentShader ).toContain( 'impostorDither' );
+		mesh.dispose();
+
+	} );
+
+	it( 'updates tulip plant-card texture when petal or stem colors change', () => {
+
+		const mesh = new FlowersMesh( { seed: 6, variety: 'tulip', lod: 1 } );
+		const plantCard = mesh.asset.materials[ 2 ]!.map!;
+		const original = ( plantCard.image as { data: Uint8Array } ).data.slice();
+		mesh.setColor( 'petal', '#a98bd6' );
+		const petalChanged = ( plantCard.image as { data: Uint8Array } ).data.slice();
+		mesh.setColor( 'stem', '#81603d' );
+		const fresh = new FlowersMesh( { seed: 6, variety: 'tulip', petalColor: '#a98bd6', stemColor: '#81603d', lod: 1 } );
+
+		expect( areByteIdentical( petalChanged, original ) ).toBe( false );
+		expect( areByteIdentical( ( plantCard.image as { data: Uint8Array } ).data, ( fresh.asset.materials[ 2 ]!.map!.image as { data: Uint8Array } ).data ) ).toBe( true );
+		expect( mesh.parts ).toHaveLength( 1 );
+		expect( mesh.parts[ 0 ]!.material.side ).toBe( FrontSide );
+		fresh.dispose();
 		mesh.dispose();
 
 	} );
