@@ -5,6 +5,7 @@ export interface VegetationKind {
 	name: string;
 	create: ( opts: Record<string, unknown> ) => VegetationAsset;
 	colorParts: string[];
+	textureColors?: Record<string, string>;
 	options: Record<string, number | boolean>;
 }
 
@@ -32,6 +33,7 @@ export const kinds: VegetationKind[] = [
 		name: 'Rock',
 		create: ( opts ) => generateRock( opts as RockMeshOptions ),
 		colorParts: [ 'rock' ],
+		textureColors: { mossColor: '#7cb83a' },
 		options: {
 			seed: 1,
 			size: 6.4,
@@ -39,12 +41,14 @@ export const kinds: VegetationKind[] = [
 			flatness: 0.04,
 			weathering: 0.35,
 			closeBottom: false,
+			moss: 0,
 		},
 	},
 	{
 		name: 'Pebbles',
 		create: ( opts ) => generatePebbles( { ...opts as PebblesMeshOptions, stoneColor: '#ffffff' } ),
 		colorParts: [ 'stone' ],
+		textureColors: { mossColor: '#7cb83a' },
 		options: {
 			seed: 1,
 			count: 16,
@@ -52,6 +56,7 @@ export const kinds: VegetationKind[] = [
 			size: 0.32,
 			sizeVariation: 0.48,
 			burial: 0.4,
+			moss: 0,
 		},
 	},
 ];

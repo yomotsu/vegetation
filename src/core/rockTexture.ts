@@ -1,6 +1,7 @@
 import type { MeshData, TextureData, Vec3 } from './types';
 import { createRockFacetNormals, isRockScoopInterior } from './rockGeometry';
 import type { RockHullShape, RockRidgeUvSegment } from './rockGeometry';
+import { createGradientNoise3D, createNoise3D } from './noise';
 
 type NoiseSampler = ( u: number, v: number ) => number;
 
@@ -21,6 +22,102 @@ interface RockTexturePair {
 	albedo: TextureData;
 	normal: TextureData;
 }
+
+export interface RockMossTextureOptions {
+	amount: number;
+	color: number;
+	minimumNormalY?: number;
+	minimumPositionY?: number;
+}
+
+export interface RockMossSurfaceSamples {
+	positions: Float32Array;
+	normals: Float32Array;
+	upFacing: Float32Array;
+	valid: Uint8Array;
+	coverage: Float32Array;
+	clumps: Float32Array;
+	activePixels: Uint32Array;
+	edgeHighlights: Float32Array;
+	diameter: number;
+}
+
+export const DEFAULT_MOSS_COLOR = 0x7cb83a;
+
+function createRockScoopTester( scoopShape?: { shape: RockHullShape; verticalOffset: number } ): ( x: number, y: number, z: number ) => boolean {
+
+	if ( scoopShape === undefined || scoopShape.shape.scoops.length === 0 ) return () => false;
+	const shape = scoopShape.shape;
+	const cosineY = Math.cos( shape.rotationY );
+	const sineY = Math.sin( shape.rotationY );
+	const cosineZ = Math.cos( shape.tiltZ );
+	const sineZ = Math.sin( shape.tiltZ );
+	const cosineX = Math.cos( shape.tiltX );
+	const sineX = Math.sin( shape.tiltX );
+	const translationX = shape.translation[ 0 ];
+	const translationY = shape.translation[ 1 ];
+	const translationZ = shape.translation[ 2 ];
+	const radiusX = shape.radii[ 0 ];
+	const radiusY = shape.radii[ 1 ];
+	const radiusZ = shape.radii[ 2 ];
+	const scoops = shape.scoops.map( ( scoop ) => ( {
+		x: scoop.direction[ 0 ],
+		y: scoop.direction[ 1 ],
+		z: scoop.direction[ 2 ],
+		cosine: Math.cos( scoop.angularRadius * 0.98 )
+	} ) );
+	const verticalOffset = scoopShape.verticalOffset;
+
+	return ( x, y, z ) => {
+
+		const translatedX = x - translationX;
+		const translatedY = y - verticalOffset - translationY;
+		const translatedZ = z - translationZ;
+		const yawX = translatedX * cosineY - translatedZ * sineY;
+		const yawZ = translatedX * sineY + translatedZ * cosineY;
+		const tiltZY = - yawX * sineZ + translatedY * cosineZ;
+		const scaledX = ( yawX * cosineZ + translatedY * sineZ ) / radiusX;
+		const scaledY = ( tiltZY * cosineX + yawZ * sineX ) / radiusY;
+		const scaledZ = ( - tiltZY * sineX + yawZ * cosineX ) / radiusZ;
+		const inverseLength = 1 / ( Math.hypot( scaledX, scaledY, scaledZ ) || 1 );
+
+		for ( let index = 0; index < scoops.length; index ++ ) {
+
+			const scoop = scoops[ index ]!;
+			if ( ( scaledX * scoop.x + scaledY * scoop.y + scaledZ * scoop.z ) * inverseLength > scoop.cosine ) return true;
+
+		}
+
+		return false;
+
+	};
+
+}
+
+// 苔の範囲と色の調整値（リファレンスに合わせてブラウザで調整した値）。
+const MOSS_COVERAGE = {
+	upMin: 0.25,
+	upMax: 0.9,
+	bandHeight: 0.14,
+	bandVariation: 1,
+	bandWeight: 0.9,
+	concaveWeight: 0.8,
+	placeWeight: 0.85,
+	fbmWeight: 0.65,
+	mottleEdge: 0.16,
+	edge: 0.03,
+	dotMin: 0.22,
+	dotReach: 0.2,
+	dotStrength: 0.9,
+	lightMin: - 0.35,
+	lightMax: 0.7,
+	lightInset: 0.2,
+	thresholdTop: 1,
+	thresholdSlope: 0.95,
+	clumpScale: 16,
+	dotScale: 32,
+};
+const MOSS_TONE = { base: 0.72, baseGrey: 0.25, light: 1, lightBlue: 0.85 };
 
 const pixelAxisCache = new Map<string, PixelAxisSamples>();
 const textureCache = new Map<string, RockTexturePair>();
@@ -227,7 +324,317 @@ function rasterizeRockSurfaceNormals( mesh: MeshData, size: number, normals: Flo
 
 }
 
-function createRockEdgeHighlightMap( segments: RockRidgeUvSegment[], size: number, rockSize: number ): Float32Array {
+function createSmoothedRockMossVertexNormals( mesh: MeshData, diameter: number ): Float32Array {
+
+	const radius = Math.max( diameter * 0.04, 1e-6 );
+	const radiusSquared = radius * radius;
+	const buckets = new Map<string, number[]>();
+	const bucketKey = ( x: number, y: number, z: number ): string => `${ x },${ y },${ z }`;
+	const count = mesh.positions.length / 3;
+	const minimum = [ Infinity, Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity, - Infinity ];
+	for ( let vertex = 0; vertex < count; vertex ++ ) {
+
+		const offset = vertex * 3;
+		for ( let axis = 0; axis < 3; axis ++ ) {
+			minimum[ axis ] = Math.min( minimum[ axis ]!, mesh.positions[ offset + axis ]! );
+			maximum[ axis ] = Math.max( maximum[ axis ]!, mesh.positions[ offset + axis ]! );
+		}
+		const key = bucketKey( Math.floor( mesh.positions[ offset ]! / radius ), Math.floor( mesh.positions[ offset + 1 ]! / radius ), Math.floor( mesh.positions[ offset + 2 ]! / radius ) );
+		const bucket = buckets.get( key ) ?? [];
+		bucket.push( vertex );
+		buckets.set( key, bucket );
+
+	}
+	const smoothed = new Float32Array( mesh.normals.length );
+	for ( let vertex = 0; vertex < count; vertex ++ ) {
+
+		const offset = vertex * 3;
+		const x = mesh.positions[ offset ]!;
+		const y = mesh.positions[ offset + 1 ]!;
+		const z = mesh.positions[ offset + 2 ]!;
+		const radialX = x - ( minimum[ 0 ]! + maximum[ 0 ]! ) * 0.5;
+		const radialY = y - ( minimum[ 1 ]! + maximum[ 1 ]! ) * 0.5;
+		const radialZ = z - ( minimum[ 2 ]! + maximum[ 2 ]! ) * 0.5;
+		const radialLength = Math.hypot( radialX, radialY, radialZ ) || 1;
+		const cellX = Math.floor( x / radius );
+		const cellY = Math.floor( y / radius );
+		const cellZ = Math.floor( z / radius );
+		let normalX = 0;
+		let normalY = 0;
+		let normalZ = 0;
+		let totalWeight = 0;
+		for ( let dz = - 1; dz <= 1; dz ++ ) for ( let dy = - 1; dy <= 1; dy ++ ) for ( let dx = - 1; dx <= 1; dx ++ ) {
+
+			const candidates = buckets.get( bucketKey( cellX + dx, cellY + dy, cellZ + dz ) );
+			if ( candidates === undefined ) continue;
+			for ( const candidate of candidates ) {
+
+				const candidateOffset = candidate * 3;
+				const deltaX = mesh.positions[ candidateOffset ]! - x;
+				const deltaY = mesh.positions[ candidateOffset + 1 ]! - y;
+				const deltaZ = mesh.positions[ candidateOffset + 2 ]! - z;
+				const distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
+				if ( distanceSquared > radiusSquared ) continue;
+				const weight = 1 - Math.sqrt( distanceSquared ) / radius;
+				normalX += mesh.normals[ candidateOffset ]! * weight;
+				normalY += mesh.normals[ candidateOffset + 1 ]! * weight;
+				normalZ += mesh.normals[ candidateOffset + 2 ]! * weight;
+				totalWeight += weight;
+
+			}
+
+		}
+		if ( totalWeight === 0 ) {
+			normalX = mesh.normals[ offset ]!;
+			normalY = mesh.normals[ offset + 1 ]!;
+			normalZ = mesh.normals[ offset + 2 ]!;
+		}
+		normalX = normalX * 0.25 + radialX / radialLength * 0.75;
+		normalY = normalY * 0.25 + radialY / radialLength * 0.75;
+		normalZ = normalZ * 0.25 + radialZ / radialLength * 0.75;
+		const length = Math.hypot( normalX, normalY, normalZ ) || 1;
+		smoothed[ offset ] = normalX / length;
+		smoothed[ offset + 1 ] = normalY / length;
+		smoothed[ offset + 2 ] = normalZ / length;
+
+	}
+
+	return smoothed;
+
+}
+
+function rasterizeRockMossSurface( mesh: MeshData, size: number, positions: Float32Array, normals: Float32Array, upFacing: Float32Array, smoothNormals: Float32Array, valid: Uint8Array ): void {
+
+	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
+
+		const vertices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
+		const uvs = vertices.map( ( vertex ) => [ mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! ] as [ number, number ] );
+		const minimumU = Math.min( ...uvs.map( ( uv ) => uv[ 0 ] ) );
+		const maximumU = Math.max( ...uvs.map( ( uv ) => uv[ 0 ] ) );
+
+		if ( maximumU - minimumU > 0.5 ) {
+			for ( const uv of uvs ) if ( uv[ 0 ] <= 0.5 ) uv[ 0 ] += 1;
+		}
+
+		const first = uvs[ 0 ]!;
+		const second = uvs[ 1 ]!;
+		const third = uvs[ 2 ]!;
+		const determinant = ( second[ 1 ] - third[ 1 ] ) * ( first[ 0 ] - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( first[ 1 ] - third[ 1 ] );
+		if ( Math.abs( determinant ) < 1e-10 ) continue;
+
+		const minimumX = Math.floor( Math.min( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
+		const maximumX = Math.ceil( Math.max( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
+		const minimumV = Math.max( 0, Math.floor( Math.min( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
+		const maximumV = Math.min( size - 1, Math.ceil( Math.max( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
+
+		for ( let y = minimumV; y <= maximumV; y ++ ) {
+
+			const v = ( y + 0.5 ) / size;
+			for ( let x = minimumX; x <= maximumX; x ++ ) {
+
+				const u = ( x + 0.5 ) / size;
+				const firstWeight = ( ( second[ 1 ] - third[ 1 ] ) * ( u - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
+				const secondWeight = ( ( third[ 1 ] - first[ 1 ] ) * ( u - third[ 0 ] ) + ( first[ 0 ] - third[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
+				const thirdWeight = 1 - firstWeight - secondWeight;
+				if ( firstWeight < - 0.001 || secondWeight < - 0.001 || thirdWeight < - 0.001 ) continue;
+
+				const pixel = y * size + ( ( x % size ) + size ) % size;
+				if ( valid[ pixel ] !== 0 ) continue;
+
+				const positionOffset = pixel * 3;
+				let positionX = 0;
+				let positionY = 0;
+				let positionZ = 0;
+				let normalX = 0;
+				let normalY = 0;
+				let normalZ = 0;
+				let facingX = 0;
+				let facingY = 0;
+				let facingZ = 0;
+				for ( let corner = 0; corner < 3; corner ++ ) {
+
+					const vertex = vertices[ corner ]!;
+					const weight = corner === 0 ? firstWeight : corner === 1 ? secondWeight : thirdWeight;
+					const vertexOffset = vertex * 3;
+					positionX += mesh.positions[ vertexOffset ]! * weight;
+					positionY += mesh.positions[ vertexOffset + 1 ]! * weight;
+					positionZ += mesh.positions[ vertexOffset + 2 ]! * weight;
+					normalX += mesh.normals[ vertexOffset ]! * weight;
+					normalY += mesh.normals[ vertexOffset + 1 ]! * weight;
+					normalZ += mesh.normals[ vertexOffset + 2 ]! * weight;
+					facingX += smoothNormals[ vertexOffset ]! * weight;
+					facingY += smoothNormals[ vertexOffset + 1 ]! * weight;
+					facingZ += smoothNormals[ vertexOffset + 2 ]! * weight;
+
+				}
+
+				const normalLength = Math.hypot( normalX, normalY, normalZ ) || 1;
+				const facingLength = Math.hypot( facingX, facingY, facingZ ) || 1;
+				positions[ positionOffset ] = positionX;
+				positions[ positionOffset + 1 ] = positionY;
+				positions[ positionOffset + 2 ] = positionZ;
+				normals[ positionOffset ] = normalX / normalLength;
+				normals[ positionOffset + 1 ] = normalY / normalLength;
+				normals[ positionOffset + 2 ] = normalZ / normalLength;
+				upFacing[ pixel ] = facingY / facingLength;
+				valid[ pixel ] = 1;
+
+			}
+
+		}
+
+	}
+
+}
+
+function getMeshDiameter( mesh: MeshData ): number {
+
+	const minimum = [ Infinity, Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity, - Infinity ];
+	for ( let offset = 0; offset < mesh.positions.length; offset += 3 ) {
+		for ( let axis = 0; axis < 3; axis ++ ) {
+			minimum[ axis ] = Math.min( minimum[ axis ]!, mesh.positions[ offset + axis ]! );
+			maximum[ axis ] = Math.max( maximum[ axis ]!, mesh.positions[ offset + axis ]! );
+		}
+	}
+
+	return Math.max( maximum[ 0 ]! - minimum[ 0 ]!, maximum[ 1 ]! - minimum[ 1 ]!, maximum[ 2 ]! - minimum[ 2 ]!, 1e-6 );
+
+}
+
+export function createRockMossSurfaceSamples( seed: number, size: number, amount: number, mesh?: MeshData, minimumPositionY = 0, minimumNormalY = - 0.15, scoopShape?: { shape: RockHullShape; verticalOffset: number }, ridgeUvSegments: RockRidgeUvSegment[] = [], edgeHighlights?: Float32Array ): RockMossSurfaceSamples {
+
+	const positions = new Float32Array( size * size * 3 );
+	const normals = new Float32Array( size * size * 3 );
+	const valid = new Uint8Array( size * size );
+	const diameter = mesh === undefined ? 2 : getMeshDiameter( mesh );
+	const radius = diameter * 0.5;
+
+	for ( let y = 0; y < size; y ++ ) {
+		const latitude = ( y / size - 0.5 ) * Math.PI;
+		const latitudeCos = Math.cos( latitude );
+		const latitudeSin = Math.sin( latitude );
+		for ( let x = 0; x < size; x ++ ) {
+			const longitude = ( x / size - 0.5 ) * Math.PI * 2;
+			const offset = ( y * size + x ) * 3;
+			const normalX = latitudeCos * Math.cos( longitude );
+			const normalY = latitudeSin;
+			const normalZ = latitudeCos * Math.sin( longitude );
+			positions[ offset ] = normalX * radius;
+			positions[ offset + 1 ] = normalY * radius;
+			positions[ offset + 2 ] = normalZ * radius;
+			normals[ offset ] = normalX;
+			normals[ offset + 1 ] = normalY;
+			normals[ offset + 2 ] = normalZ;
+			if ( mesh === undefined ) valid[ y * size + x ] = 1;
+		}
+	}
+
+	const upFacing = new Float32Array( size * size );
+	if ( mesh !== undefined ) {
+		const smoothNormals = createSmoothedRockMossVertexNormals( mesh, diameter );
+		rasterizeRockMossSurface( mesh, size, positions, normals, upFacing, smoothNormals, valid );
+	} else {
+		for ( let pixel = 0; pixel < size * size; pixel ++ ) upFacing[ pixel ] = normals[ pixel * 3 + 1 ]!;
+	}
+	const surfaceEdges = edgeHighlights ?? createRockEdgeHighlightMap( ridgeUvSegments, size, diameter );
+	const coverageData = createMossCoverageMap( seed, size, amount, positions, normals, upFacing, valid, diameter, minimumPositionY, minimumNormalY, scoopShape, surfaceEdges );
+
+	return { positions, normals, upFacing, valid, coverage: coverageData.coverage, clumps: coverageData.clumps, activePixels: coverageData.activePixels, edgeHighlights: surfaceEdges, diameter };
+
+}
+
+function createMossCoverageMap( seed: number, size: number, amount: number, positions: Float32Array, normals: Float32Array, upFacing: Float32Array, valid: Uint8Array, diameter: number, minimumPositionY: number, minimumNormalY: number, scoopShape: { shape: RockHullShape; verticalOffset: number } | undefined, edgeHighlights: Float32Array ): { coverage: Float32Array; clumps: Float32Array; activePixels: Uint32Array } {
+
+	const coverage = new Float32Array( size * size );
+	const clumps = new Float32Array( size * size );
+	if ( amount === 0 ) return { coverage, clumps, activePixels: new Uint32Array( 0 ) };
+	const activePixels = new Uint32Array( size * size );
+	let activePixelCount = 0;
+
+	const MOSS = MOSS_COVERAGE;
+	const threshold = MOSS.thresholdTop - amount * MOSS.thresholdSlope;
+	const broadScale = 3.2 / diameter;
+	const octaveScale = 6.4 / diameter;
+	const clumpScale = MOSS.clumpScale / diameter;
+	const fineClumpScale = MOSS.dotScale / diameter;
+	let maximumY = minimumPositionY;
+	const minimum = [ Infinity, Infinity, Infinity ];
+	const maximum = [ - Infinity, - Infinity, - Infinity ];
+	for ( let pixel = 0; pixel < valid.length; pixel ++ ) {
+		if ( valid[ pixel ] !== 0 ) {
+
+			const offset = pixel * 3;
+			maximumY = Math.max( maximumY, positions[ offset + 1 ]! );
+			for ( let axis = 0; axis < 3; axis ++ ) {
+
+				minimum[ axis ] = Math.min( minimum[ axis ]!, positions[ offset + axis ]! );
+				maximum[ axis ] = Math.max( maximum[ axis ]!, positions[ offset + axis ]! );
+
+			}
+
+		}
+	}
+	const noiseBounds = ( scale: number ) => ( {
+		minimum: [ Math.floor( minimum[ 0 ]! * scale ) - 1, Math.floor( minimum[ 1 ]! * scale ) - 1, Math.floor( minimum[ 2 ]! * scale ) - 1 ] as [ number, number, number ],
+		maximum: [ Math.ceil( maximum[ 0 ]! * scale ) + 1, Math.ceil( maximum[ 1 ]! * scale ) + 1, Math.ceil( maximum[ 2 ]! * scale ) + 1 ] as [ number, number, number ]
+	} );
+	const broadNoise = createNoise3D( seed + 241, noiseBounds( broadScale ) );
+	const octaveNoise = createNoise3D( seed + 257, noiseBounds( octaveScale ) );
+	const clumpNoise = createGradientNoise3D( seed + 271, noiseBounds( clumpScale ) );
+	const fineClumpNoise = createGradientNoise3D( seed + 293, noiseBounds( fineClumpScale ) );
+	const isConcave = createRockScoopTester( scoopShape );
+	const aboveGroundHeight = Math.max( maximumY - minimumPositionY, diameter * 0.1 );
+
+	for ( let y = 0; y < size; y ++ ) {
+		for ( let x = 0; x < size; x ++ ) {
+
+			const pixel = y * size + x;
+			if ( valid[ pixel ] === 0 ) continue;
+			const offset = pixel * 3;
+			const positionX = positions[ offset ]!;
+			const positionY = positions[ offset + 1 ]!;
+			const positionZ = positions[ offset + 2 ]!;
+			const normalY = normals[ offset + 1 ]!;
+			const smoothNormalY = upFacing[ pixel ]!;
+			if ( positionY <= minimumPositionY + 1e-6 ) continue;
+
+			const up = smoothstep( MOSS.upMin, MOSS.upMax, smoothNormalY );
+			const normalizedHeight = ( positionY - minimumPositionY ) / aboveGroundHeight;
+			const concave = normalY < 0.3 && isConcave( positionX, positionY, positionZ );
+
+			const broad = broadNoise( positionX * broadScale, positionY * broadScale, positionZ * broadScale );
+			const octave = octaveNoise( positionX * octaveScale, positionY * octaveScale, positionZ * octaveScale );
+			const fbm = broad * 0.62 + octave * 0.38;
+			const mottle = clumpNoise( positionX * clumpScale, positionY * clumpScale, positionZ * clumpScale );
+			const bandHeight = MOSS.bandHeight * ( 1 + clamp( fbm * 1.7, - 1, 1 ) * MOSS.bandVariation );
+			const bandFacing = smoothstep( - 0.35, 0.05, normalY );
+			const baseBand = ( 1 - smoothstep( bandHeight * 0.45, bandHeight, normalizedHeight ) ) * bandFacing;
+			const dotsNoise = fineClumpNoise( positionX * fineClumpScale, positionY * fineClumpScale, positionZ * fineClumpScale );
+			const place = Math.max( up, baseBand * MOSS.bandWeight, concave ? MOSS.concaveWeight : 0 );
+			const signal = place * MOSS.placeWeight + fbm * MOSS.fbmWeight + mottle * MOSS.mottleEdge;
+			const ridge = smoothstep( 0.035, 0.18, edgeHighlights[ pixel ]! );
+			const ridgeSuppression = 1 - ridge * 0.98;
+			const facing = concave ? 1 : smoothstep( minimumNormalY, minimumNormalY + 0.13, normalY );
+			const burialFade = smoothstep( minimumPositionY, minimumPositionY + diameter * 0.004, positionY );
+			const mask = facing * burialFade * ridgeSuppression;
+			const solid = smoothstep( threshold - MOSS.edge, threshold + MOSS.edge, signal );
+			const dots = smoothstep( MOSS.dotMin, MOSS.dotMin + 0.06, dotsNoise ) * smoothstep( threshold - MOSS.dotReach, threshold, signal );
+			const patch = Math.max( solid, dots * MOSS.dotStrength ) * mask;
+			const clumpCoverage = smoothstep( MOSS.lightMin, MOSS.lightMax, mottle ) * smoothstep( threshold, threshold + MOSS.lightInset, signal ) * patch;
+			coverage[ pixel ] = patch;
+			clumps[ pixel ] = clumpCoverage;
+			if ( patch > 0 || clumpCoverage > 0 ) activePixels[ activePixelCount ++ ] = pixel;
+
+		}
+	}
+
+	return { coverage, clumps, activePixels: activePixels.subarray( 0, activePixelCount ) };
+
+}
+
+export function createRockEdgeHighlightMap( segments: RockRidgeUvSegment[], size: number, rockSize: number ): Float32Array {
 
 	const highlights = new Float32Array( size * size );
 	const drawSegment = ( segment: RockRidgeUvSegment ): void => {
@@ -703,14 +1110,23 @@ function getTextureFacetNormals( seed: number, mesh?: MeshData, scoopShape?: Roc
 
 }
 
-export function createRockTextures( seed: number, size = 1024, shapeSeed = seed, shapeMesh?: MeshData, shapeVariant?: string, scoopShape?: { shape: RockHullShape; verticalOffset: number }, ridgeUvSegments: RockRidgeUvSegment[] = [] ): { albedo: TextureData; normal: TextureData } {
+export function createRockTextures( seed: number, size = 1024, shapeSeed = seed, shapeMesh?: MeshData, shapeVariant?: string, scoopShape?: { shape: RockHullShape; verticalOffset: number }, ridgeUvSegments: RockRidgeUvSegment[] = [], mossOptions?: RockMossTextureOptions ): { albedo: TextureData; normal: TextureData } {
 
 	const seedKey = Math.floor( Math.abs( seed ) * 1000 );
 	const shapeKey = Math.floor( Math.abs( shapeSeed ) * 1000 );
+	const mossAmount = mossOptions?.amount ?? 0;
+	const mossColor = mossOptions?.color ?? DEFAULT_MOSS_COLOR;
+	const mossMinimumNormalY = mossOptions?.minimumNormalY ?? - 0.15;
+	const mossMinimumPositionY = mossOptions?.minimumPositionY ?? 0;
+	if ( ! Number.isFinite( mossAmount ) || mossAmount < 0 || mossAmount > 1 ) throw new RangeError( 'Moss amount must be a finite value from 0 to 1' );
+	if ( ! Number.isInteger( mossColor ) || mossColor < 0 || mossColor > 0xffffff ) throw new RangeError( 'Moss color must be a 24-bit integer' );
+	if ( ! Number.isFinite( mossMinimumNormalY ) ) throw new RangeError( 'Moss surface normal threshold must be finite' );
+	if ( ! Number.isFinite( mossMinimumPositionY ) ) throw new RangeError( 'Moss position threshold must be finite' );
 	const meshKey = shapeVariant ?? ( shapeMesh === undefined ? 'analytic' : getMeshTextureKey( shapeMesh ) );
 	let ridgeHash = 2166136261;
 	for ( const segment of ridgeUvSegments ) for ( const point of segment ) for ( const value of point ) ridgeHash = Math.imul( ridgeHash ^ Math.round( value * 100000 ), 16777619 );
-	const textureKey = `${ seedKey }:${ shapeKey }:${ size }:${ meshKey }:${ ridgeHash >>> 0 }`;
+	const mossKey = mossAmount === 0 ? '' : `:moss:${ mossAmount.toFixed( 6 )}:${ mossColor}:${ mossMinimumNormalY.toFixed( 4 )}:${ mossMinimumPositionY.toFixed( 4 ) }`;
+	const textureKey = `${ seedKey }:${ shapeKey }:${ size }:${ meshKey }:${ ridgeHash >>> 0 }${ mossKey }`;
 	const cachedTextures = textureCache.get( textureKey );
 
 	if ( cachedTextures !== undefined ) {
@@ -791,9 +1207,21 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 		}
 	}
 
-	if ( shapeMesh !== undefined ) rasterizeRockSurfaceNormals( shapeMesh, size, surfaceNormals );
-
 	const edgeHighlightMap = createRockEdgeHighlightMap( ridgeUvSegments, size, scoopShape?.shape.size ?? 6.4 );
+	let mossSurfaceSamples: RockMossSurfaceSamples | undefined;
+	if ( mossAmount > 0 ) {
+		mossSurfaceSamples = createRockMossSurfaceSamples( seedOffset, size, mossAmount, shapeMesh, mossMinimumPositionY, mossMinimumNormalY, scoopShape, ridgeUvSegments, edgeHighlightMap );
+		surfaceNormals.set( mossSurfaceSamples.normals );
+	} else if ( shapeMesh !== undefined ) {
+		rasterizeRockSurfaceNormals( shapeMesh, size, surfaceNormals );
+	}
+	const mossCoverage = mossSurfaceSamples?.coverage;
+	const mossClumps = mossSurfaceSamples?.clumps;
+	const mossColorChannels = [ ( mossColor >>> 16 ) & 0xff, ( mossColor >>> 8 ) & 0xff, mossColor & 0xff ];
+	const mossLuminance = mossColorChannels[ 0 ]! * 0.2126 + mossColorChannels[ 1 ]! * 0.7152 + mossColorChannels[ 2 ]! * 0.0722;
+	const TONE = MOSS_TONE;
+	const mossBaseChannels = mossColorChannels.map( ( channel ) => channel * TONE.base * ( 1 - TONE.baseGrey ) + mossLuminance * TONE.base * TONE.baseGrey );
+	const mossClumpChannels = [ mossColorChannels[ 0 ]! * TONE.light, mossColorChannels[ 1 ]! * TONE.light, mossColorChannels[ 2 ]! * TONE.lightBlue ];
 
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
@@ -901,6 +1329,22 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	}
 
 	matchAlbedoMean( albedoData, size * size );
+	if ( mossCoverage !== undefined && mossClumps !== undefined ) {
+		const activePixels = mossSurfaceSamples!.activePixels;
+		for ( let active = 0; active < activePixels.length; active ++ ) {
+
+			const pixel = activePixels[ active ]!;
+			const coverage = mossCoverage[ pixel ]!;
+			const clump = mossClumps[ pixel ]!;
+			const offset = pixel * 4;
+			for ( let channel = 0; channel < 3; channel ++ ) {
+				const baseTone = albedoData[ offset + channel ]! * ( 1 - coverage ) + mossBaseChannels[ channel ]! * coverage;
+				albedoData[ offset + channel ] = Math.round( baseTone * ( 1 - clump ) + mossClumpChannels[ channel ]! * clump );
+			}
+			heightMap[ pixel ] = heightMap[ pixel ]! + ( coverage * 0.00025 + clump * 0.0005 ) * mossSurfaceSamples!.diameter;
+
+		}
+	}
 
 	for ( let y = 0; y < size; y ++ ) {
 
@@ -931,6 +1375,16 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			normalData[ index * 4 + 1 ] = Math.round( ( normalY * inverseLength * 0.5 + 0.5 ) * 255 );
 			normalData[ index * 4 + 2 ] = Math.round( ( inverseLength * 0.5 + 0.5 ) * 255 );
 			normalData[ index * 4 + 3 ] = 255;
+			if ( mossCoverage !== undefined && mossCoverage[ index ]! > 0 ) {
+				const flattening = mossCoverage[ index ]! * 0.16;
+				const flattenedX = normalX * inverseLength * ( 1 - flattening );
+				const flattenedY = normalY * inverseLength * ( 1 - flattening );
+				const flattenedZ = inverseLength + ( 1 - inverseLength ) * ( 1 - flattening );
+				const flattenedLength = Math.hypot( flattenedX, flattenedY, flattenedZ ) || 1;
+				normalData[ index * 4 ] = Math.round( ( flattenedX / flattenedLength * 0.5 + 0.5 ) * 255 );
+				normalData[ index * 4 + 1 ] = Math.round( ( flattenedY / flattenedLength * 0.5 + 0.5 ) * 255 );
+				normalData[ index * 4 + 2 ] = Math.round( ( flattenedZ / flattenedLength * 0.5 + 0.5 ) * 255 );
+			}
 
 		}
 

@@ -2,7 +2,8 @@ import { buildBillboard, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { createNoise3D } from '../noise';
 import { applyRockSurfaceShading, buildConvexRockMesh, buildRockMeshFromFaces, buildRockShell, createRockRadiusFunction, createRockRandom, getBounds, getProjectedMeshOutline, liftMesh, limitRockPeakSharpness, recomputeSmoothNormals, sinkMesh } from '../rockGeometry';
-import { createRockTextures } from '../rockTexture';
+import { hexToLinear } from '../color';
+import { createRockTextures, DEFAULT_MOSS_COLOR } from '../rockTexture';
 import type { Color3, MeshData, PartDef, Vec3, VegetationData } from '../types';
 
 const DEFAULT_COUNT = 16;
@@ -10,6 +11,86 @@ const MAX_COUNT = 30;
 const MAX_LOD0_VERTICES = 240;
 const FAR_PEBBLE_COLOR_FACTOR = 0.78;
 const PEBBLES_SEED_SALT = 173;
+
+function smoothstep( minimum: number, maximum: number, value: number ): number {
+
+	const t = Math.max( 0, Math.min( 1, ( value - minimum ) / ( maximum - minimum ) ) );
+
+	return t * t * ( 3 - 2 * t );
+
+}
+
+function applyPebbleMossTint( mesh: MeshData, seed: number, size: number, amount: number, color: number, placements: PebblePlacement[] ): void {
+
+	if ( amount === 0 ) return;
+
+	const broadNoise = createNoise3D( seed + 241 );
+	const octaveNoise = createNoise3D( seed + 257 );
+	const clumpNoise = createNoise3D( seed + 271 );
+	const fineClumpNoise = createNoise3D( seed + 293 );
+	const mossColor = hexToLinear( color );
+	const mossLuminance = mossColor[ 0 ]! * 0.2126 + mossColor[ 1 ]! * 0.7152 + mossColor[ 2 ]! * 0.0722;
+	const mossBaseColor = mossColor.map( ( channel ) => channel * 0.65 * 0.9 + mossLuminance * 0.65 * 0.1 );
+	const mossClumpColor = [ Math.min( 1, mossColor[ 0 ]! * 1.15 ), Math.min( 1, mossColor[ 1 ]! * 1.15 ), mossColor[ 2 ]! * 0.82 ];
+	const broadScale = 1.2 / size;
+	const octaveScale = 2.4 / size;
+	const clumpScale = 3.2 / size;
+	const fineClumpScale = 6.4 / size;
+	const threshold = 0.82 - amount * 0.64;
+	const subtlety = 0.35 + smoothstep( 0.2, 0.7, amount ) * 0.65;
+	const pebbleFactors = placements.map( ( placement ) => {
+
+		const random = createRockRandom( placement.seed + 821 )();
+		const threshold = random * 0.86;
+		return smoothstep( threshold, threshold + 0.28, amount );
+
+	} );
+
+	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
+
+		const offset = vertex * 3;
+		const positionX = mesh.positions[ offset ]!;
+		const positionY = mesh.positions[ offset + 1 ]!;
+		const positionZ = mesh.positions[ offset + 2 ]!;
+		const normalY = mesh.normals[ offset + 1 ]!;
+		if ( positionY <= 0 || normalY < 0.05 ) continue;
+		let closestPebble = - 1;
+		let closestDistance = Infinity;
+		for ( let pebble = 0; pebble < placements.length; pebble ++ ) {
+
+			const placement = placements[ pebble ]!;
+			const dx = positionX - placement.x;
+			const dz = positionZ - placement.z;
+			const distance = dx * dx + dz * dz;
+			if ( distance < closestDistance ) {
+				closestDistance = distance;
+				closestPebble = pebble;
+			}
+
+		}
+		if ( closestPebble < 0 ) continue;
+		const pebbleFactor = pebbleFactors[ closestPebble ]!;
+		if ( pebbleFactor <= 0 ) continue;
+
+		const up = smoothstep( 0.2, 0.88, normalY );
+		const broad = broadNoise( positionX * broadScale, positionY * broadScale, positionZ * broadScale );
+		const octave = octaveNoise( positionX * octaveScale, positionY * octaveScale, positionZ * octaveScale );
+		const clump = clumpNoise( positionX * clumpScale, positionY * clumpScale, positionZ * clumpScale );
+		const fineClump = fineClumpNoise( positionX * fineClumpScale, positionY * fineClumpScale, positionZ * fineClumpScale );
+		const fbm = broad * 0.68 + octave * 0.32;
+		const signal = up * 0.65 + fbm * 0.32;
+		const coverage = smoothstep( threshold - 0.055, threshold + 0.055, signal + clump * 0.025 ) * pebbleFactor * subtlety;
+		if ( coverage <= 0 ) continue;
+
+		const clumpAmount = smoothstep( - 0.08, 0.12, clump * 0.72 + fineClump * 0.28 ) * coverage;
+		for ( let channel = 0; channel < 3; channel ++ ) {
+			const baseTone = mesh.colors[ offset + channel ]! * ( 1 - coverage ) + mossBaseColor[ channel ]! * coverage;
+			mesh.colors[ offset + channel ] = baseTone * ( 1 - clumpAmount ) + mossClumpColor[ channel ]! * clumpAmount;
+		}
+
+	}
+
+}
 
 export interface PebblesOptions {
 	seed?: number;
@@ -20,6 +101,10 @@ export interface PebblesOptions {
 	/** 地中に沈める全体高の割合（0〜1）。 */
 	burial?: number;
 	stoneColor?: number;
+	/** 苔のおおわれ率（0〜1）。既定値は0。 */
+	moss?: number;
+	/** 苔の色。既定値は0x7cb83a。 */
+	mossColor?: number;
 }
 
 interface MeshBounds {
@@ -353,6 +438,8 @@ export function generatePebblesData( options: PebblesOptions = {} ): VegetationD
 	const sizeVariation = options.sizeVariation ?? 0.8;
 	const burial = options.burial ?? 0.4;
 	const stoneColor = options.stoneColor ?? 0xffffff;
+	const moss = options.moss ?? 0;
+	const mossColor = options.mossColor ?? DEFAULT_MOSS_COLOR;
 
 	if ( ! Number.isFinite( seed ) ) {
 		throw new RangeError( 'Pebbles seed must be finite' );
@@ -382,14 +469,23 @@ export function generatePebblesData( options: PebblesOptions = {} ): VegetationD
 		throw new RangeError( 'Pebbles stone color must be a 24-bit integer' );
 	}
 
+	if ( ! Number.isFinite( moss ) || moss < 0 || moss > 1 ) {
+		throw new RangeError( 'Pebbles moss must be a finite value from 0 to 1' );
+	}
+
+	if ( ! Number.isInteger( mossColor ) || mossColor < 0 || mossColor > 0xffffff ) {
+		throw new RangeError( 'Pebbles moss color must be a 24-bit integer' );
+	}
+
 	const placements = createPlacements( seed, count, spread, size, sizeVariation );
 	const lod0 = buildStoneLod( placements, burial, 0 );
 	const lod1 = buildStoneLod( placements, burial, 1 );
 	const lod2 = buildStoneLod( placements, burial, 2 );
 	const lod3 = buildFarStoneLod( placements, burial, size );
 	const bounds = getBounds( lod0 );
-	const lod4 = buildBillboard( bounds, 1, lod0, bounds.height * 0.25 );
 	lod3.colors.fill( lod0.colors[ 0 ]! * FAR_PEBBLE_COLOR_FACTOR );
+	for ( const mesh of [ lod0, lod1, lod2, lod3 ] ) applyPebbleMossTint( mesh, seed, size, moss, mossColor, placements );
+	const lod4 = buildBillboard( bounds, 1, lod0, bounds.height * 0.25 );
 	const parts: PartDef[] = [
 		{
 			name: 'stone',

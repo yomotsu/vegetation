@@ -53,6 +53,7 @@ const compareLabels = document.querySelector<HTMLDivElement>( '#compare-labels' 
 const { scene, ground, sunlight } = createPreviewScene();
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
+const mossReviewCamera = new URLSearchParams( window.location.search ).get( 'mossReview' ) === '1';
 let controls: OrbitControls;
 
 const root = new Group();
@@ -136,6 +137,11 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 		return [ 0, 1, 1 ];
 
 	}
+	if ( name === 'moss' ) {
+
+		return [ 0, 1, 0.01 ];
+
+	}
 	if ( activeKind.name === 'Pebbles' && name === 'count' ) {
 
 		return [ 4, 30, 1 ];
@@ -209,7 +215,8 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 
 function makeAsset( kind: VegetationKind, options: Record<string, number | boolean>, colors: Record<string, string> ): VegetationAsset {
 
-	const next = kind.create( { ...options, ...( colors.leaf !== undefined ? { leafColor: colors.leaf } : {} ) } );
+	const textureColors = Object.fromEntries( Object.keys( kind.textureColors ?? {} ).flatMap( ( key ) => colors[ key ] === undefined ? [] : [ [ key, colors[ key ]! ] ] ) );
+	const next = kind.create( { ...options, ...textureColors, ...( colors.leaf !== undefined ? { leafColor: colors.leaf } : {} ) } );
 
 	for ( const part of kind.colorParts ) {
 
@@ -319,6 +326,26 @@ function frameView(): void {
 
 	const height = Number( state.options.height ?? state.options.size ?? 7.5 );
 	controls.target.set( 0, state.mode === 'scatter' ? 0 : height * 0.5, 0 );
+	if ( mossReviewCamera && state.mode === 'single' ) {
+
+		controls.target.set( 0, height * 0.5, 0 );
+		if ( activeKind.name === 'Pebbles' ) {
+
+			camera.position.set( height * 8, height * 12, height * 16 );
+			controls.minDistance = height * 1.5;
+			controls.maxDistance = height * 32;
+
+		} else {
+
+			camera.position.set( 0, height * 2, height * 0.5 );
+			controls.minDistance = height * 0.9;
+			controls.maxDistance = height * 8;
+
+		}
+		controls.update();
+		return;
+
+	}
 
 	if ( state.mode === 'single' ) {
 		camera.position.set( height * 1.5, height * 1.15, height * 2.25 );
@@ -416,7 +443,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 	}
 
-	colorFolder = gui.addFolder( 'Part colors' );
+	colorFolder = gui.addFolder( 'Colors' );
 	let updateLeafColorDisplay = () => {};
 	let updateLeafPresetDisplay = () => {};
 
@@ -464,6 +491,10 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 	}
 
+	for ( const key of Object.keys( activeKind.textureColors ?? {} ) ) {
+		colorFolder.addColor( state.colors, key ).name( key ).onFinishChange( rebuildAsset );
+	}
+
 }
 
 function createGui(): void {
@@ -475,7 +506,10 @@ function createGui(): void {
 		activeKind = kinds.find( ( kind ) => kind.name === name )!;
 		state.options = { ...activeKind.options };
 		const next = activeKind.create( { ...state.options } );
-		state.colors = Object.fromEntries( activeKind.colorParts.map( ( part ) => [ part, `#${ next.getColor( part ).getHexString() }` ] ) );
+		state.colors = {
+			...activeKind.textureColors,
+			...Object.fromEntries( activeKind.colorParts.map( ( part ) => [ part, `#${ next.getColor( part ).getHexString() }` ] ) ),
+		};
 		state.leafPreset = getLeafPreset( state.colors.leaf ?? '' );
 		asset = next;
 		rebuildOptionFolders( gui );

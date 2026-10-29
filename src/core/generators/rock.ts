@@ -1,4 +1,4 @@
-import { createRockTextures } from '../rockTexture';
+import { createRockTextures, DEFAULT_MOSS_COLOR } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
 import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getIdenticalVertexWeld, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, recomputeChamferedRockHullNormals, removeRockBottomCap, recomputeCreasedNormals, sinkMesh, splitChamferedRockHullVerticesAtCreases, weldIdenticalVertices } from '../rockGeometry';
 import type { RockHullShape, RockUvFrame } from '../rockGeometry';
@@ -18,6 +18,10 @@ export interface RockOptions {
 	/** 底面も簡略化せず閉じた形状にする。既定値はfalse（地中の底面を省く）。 */
 	closeBottom?: boolean;
 	rockColor?: number;
+	/** 苔のおおわれ率（0〜1）。既定値は0。 */
+	moss?: number;
+	/** 苔の色。既定値は0x7cb83a。 */
+	mossColor?: number;
 }
 
 function getDefaultBurial( seed: number ): number {
@@ -634,6 +638,8 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	const burial = options.burial ?? getDefaultBurial( internalSeed );
 	const closeBottom = options.closeBottom ?? false;
 	const rockColor = options.rockColor ?? 0xffffff;
+	const moss = options.moss ?? 0;
+	const mossColor = options.mossColor ?? DEFAULT_MOSS_COLOR;
 
 	if ( ! Number.isFinite( seed ) ) throw new RangeError( 'Rock seed must be finite' );
 	if ( ! Number.isFinite( size ) || size <= 0 ) throw new RangeError( 'Rock size must be a positive finite number' );
@@ -643,6 +649,8 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	if ( ! Number.isFinite( burial ) || burial < 0 || burial > 1 ) throw new RangeError( 'Rock burial must be a finite value from 0 to 1' );
 	if ( options.closeBottom !== undefined && typeof options.closeBottom !== 'boolean' ) throw new RangeError( 'Rock closeBottom must be a boolean' );
 	if ( ! Number.isInteger( rockColor ) || rockColor < 0 || rockColor > 0xffffff ) throw new RangeError( 'Rock color must be a 24-bit integer' );
+	if ( ! Number.isFinite( moss ) || moss < 0 || moss > 1 ) throw new RangeError( 'Rock moss must be a finite value from 0 to 1' );
+	if ( ! Number.isInteger( mossColor ) || mossColor < 0 || mossColor > 0xffffff ) throw new RangeError( 'Rock moss color must be a 24-bit integer' );
 
 	const roughness = clamp( roughnessInput, 0, 1.5 );
 	const flatness = clamp( flatnessInput, 0, 1 );
@@ -744,8 +752,10 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 		},
 		impostorPart(),
 	];
-	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }:${ closeBottom ? 1 : 0 }`;
-	const textures = createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments );
+	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }:${ closeBottom ? 1 : 0 }${ moss > 0 ? `:burial:${ burial.toFixed( 4 ) }` : '' }`;
+	const textures = moss > 0
+		? createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments, { amount: moss, color: mossColor } )
+		: createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments );
 	for ( const mesh of [ lod0, lod1, lod2, lod3, lod4 ] ) {
 
 		padRockImpostorCard( mesh );

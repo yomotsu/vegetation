@@ -28,15 +28,19 @@ describe( 'demo registry', () => {
 		} );
 		expect( kinds[ 1 ]!.name ).toBe( 'Rock' );
 		expect( kinds[ 1 ]!.colorParts ).toEqual( [ 'rock' ] );
+		expect( kinds[ 1 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
 		expect( kinds[ 1 ]!.options ).toEqual( {
 			seed: 1,
 			size: 6.4,
 			roughness: 1.2,
 			flatness: 0.04,
 			weathering: 0.35,
+			closeBottom: false,
+			moss: 0,
 		} );
 		expect( kinds[ 2 ]!.name ).toBe( 'Pebbles' );
 		expect( kinds[ 2 ]!.colorParts ).toEqual( [ 'stone' ] );
+		expect( kinds[ 2 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
 		expect( kinds[ 2 ]!.options ).toEqual( {
 			seed: 1,
 			count: 16,
@@ -44,6 +48,7 @@ describe( 'demo registry', () => {
 			size: 0.32,
 			sizeVariation: 0.48,
 			burial: 0.4,
+			moss: 0,
 		} );
 		expect( kinds[ 2 ]!.create( {} ).getColor( 'stone' ).getHex() ).toBe( 0xffffff );
 

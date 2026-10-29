@@ -9,6 +9,7 @@ import { generateRockData } from '../core/generators/rock';
 import type { PebblesOptions } from '../core/generators/pebbles';
 import { generatePebblesData } from '../core/generators/pebbles';
 import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
+import { DEFAULT_MOSS_COLOR } from '../core/rockTexture';
 import type { LodLevel } from '../core/types';
 
 export type TreeMeshOptions = Omit<TreeOptions, 'leafColor'> & {
@@ -17,14 +18,16 @@ export type TreeMeshOptions = Omit<TreeOptions, 'leafColor'> & {
 	barkColor?: ColorRepresentation;
 };
 
-export type RockMeshOptions = Omit<RockOptions, 'rockColor'> & {
+export type RockMeshOptions = Omit<RockOptions, 'rockColor' | 'mossColor'> & {
 	lod?: number;
 	rockColor?: ColorRepresentation;
+	mossColor?: ColorRepresentation;
 };
 
-export type PebblesMeshOptions = Omit<PebblesOptions, 'stoneColor'> & {
+export type PebblesMeshOptions = Omit<PebblesOptions, 'stoneColor' | 'mossColor'> & {
 	lod?: number;
 	stoneColor?: ColorRepresentation;
+	mossColor?: ColorRepresentation;
 };
 
 function colorsFromOptions(
@@ -79,7 +82,8 @@ export function generateRock( options: RockMeshOptions = {} ): VegetationAsset {
 
 	const rockColor = options.rockColor ?? 0xffffff;
 	const color = new Color( rockColor );
-	const data = generateRockData( { ...options, rockColor: color.getHex() } );
+	const mossColor = new Color( options.mossColor ?? DEFAULT_MOSS_COLOR );
+	const data = generateRockData( { ...options, rockColor: color.getHex(), mossColor: mossColor.getHex() } );
 
 	return new VegetationAsset( data, { rock: color } );
 
@@ -108,7 +112,8 @@ export function generatePebbles( options: PebblesMeshOptions = {} ): VegetationA
 
 	const stoneColor = options.stoneColor ?? 0xffffff;
 	const color = new Color( stoneColor );
-	const data = generatePebblesData( { ...options, stoneColor: color.getHex() } );
+	const mossColor = new Color( options.mossColor ?? DEFAULT_MOSS_COLOR );
+	const data = generatePebblesData( { ...options, stoneColor: color.getHex(), mossColor: mossColor.getHex() } );
 
 	return new VegetationAsset( data, { stone: color } );
 
