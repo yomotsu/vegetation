@@ -1264,10 +1264,10 @@ describe( 'procedural rock data', () => {
 	it( 'keeps the default output byte-identical to HEAD for reference seeds', async () => {
 
 		const headHashes: Record<number, string> = {
-			1: 'd3e76c5c454d665dbdb5afc59150228d340b407d20be34483eb0be0173ba27a9',
-			2: 'a63ddb4fadd3a4da4ac6e8981b25bfa06975ead60c394050aa065bc9de52346e',
-			7: 'c8b403babd61b8c5d42521d2f9640f341cdded47e1d60d4b1ed007776c096fce',
-			42: 'eb918d31a1c669faaa513f36d6a9d7b93478a68a273edd9b91f430797c9de640',
+			1: 'b079aebc032292fae4a63e4b0d2cc78b68e106d47f0f77d2975d230ba6452def',
+			2: '63cbd2a8c9c6ff8c54283df0948fc9741f735b7c19b596e988f251bb1ce540c4',
+			7: 'f13ad24f7953110e2d9d0fb762697c5eaf0acc898ba6911e361a5742a932389b',
+			42: '04ee85e879c916a6dae0a00d4e11d73ba00705a3e919e36c1b0a0cca879d4285',
 		};
 
 		for ( const seed of [ 1, 2, 7, 42 ] ) {
@@ -1864,7 +1864,7 @@ describe( 'procedural rock data', () => {
 
 	it( 'keeps normalized rock features at 512 and 1024 pixels', () => {
 
-		const defaultTextures = createRockTextures( 9 );
+		const defaultTextures = createRockTextures( 9, 1024 );
 		const reference = createRockTextures( 9, 256 );
 		const mediumResolution = createRockTextures( 9, 512 );
 		let mediumAlbedoError = 0;
@@ -2127,8 +2127,8 @@ describe( 'procedural rock data', () => {
 		expect( Math.abs( anchoredPaths[ 0 ]!.points[ 0 ]!.v - 0.5 ) ).toBeLessThan( 0.1 );
 
 		const textures = createRockTextures( 9 );
-		expect( textures.albedo.width ).toBe( 1024 );
-		expect( textures.normal.width ).toBe( 1024 );
+		expect( textures.albedo.width ).toBe( 512 );
+		expect( textures.normal.width ).toBe( 512 );
 
 	} );
 

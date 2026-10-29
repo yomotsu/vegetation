@@ -55,8 +55,8 @@ describe( 'rock texture output goldens', () => {
 
 		const expected = {
   "rock-1-default": {
-    "albedo": "da24a9d4b56c368b0fed634655eb5516fe09fec23e1e5f077fcf050b4522c149",
-    "normal": "384a01df93b36f85d27560ef3e5d18a561484e3f1bf3103319eb51abac749f73",
+    "albedo": "85d5ca46b16f0d1a235754ec5ceb8f0985b99ae6ac17ac137a1d039b5e0d2c57",
+    "normal": "f70a3d177a9209e14114f3050647eb428bbfe8f41c0a58fc8e9e14ab5576cf58",
     "lods": [
       "73fdf80ae87d33cc482a8bb3bc63a06ac1829fa510462cf0b0c598e4623557cb",
       "1f7e5bdc54324fd7dbe956d20250d3958d233d63ac9a651c4b21b247aa3c3477",
@@ -64,11 +64,11 @@ describe( 'rock texture output goldens', () => {
       "a2a2f5127f61f47c5bb08151519824de40f1496e56f654b1ad9fe65554e3316b",
       "59756fa4af71fd9c755a4f203fc6c7797e7477d3c0355b3b9efa4ce9cb2e00ab"
     ],
-    "impostor": "8cbe82123e9e5d95606599d8cafdcb8cca1971f8356584ba336233a0e2ae1121"
+    "impostor": "32a61d119891743ae97abe173538d96952964d5222965d78ba91dfe14eb8e9b2"
   },
   "rock-1-closed": {
-    "albedo": "aa95bcfaf6a6d8c7afa484e4093a0ebec75bb4d6d49dbb598a6f4c8a116741e3",
-    "normal": "aa14f8b6f6b7f001bb8ab07e9d45fb536fe4244e9823060113e0693d748c84c3",
+    "albedo": "cdfcbf3686fabda29d0a1c7fd8d9d01d889ce123b451a6c845512907f28a6ed6",
+    "normal": "f560b5d6222d0381e0059a5de2feb5ae61c4839a720f93a8f4f82734036025d6",
     "lods": [
       "570b71c3febc6c717d79509b673e8542278c18f03ad235de653bf84605bacba1",
       "58de894a9b92ed79c262b4442f869ef341ed4adb7b6b71d022aed3ebcd9c11b9",
@@ -76,11 +76,11 @@ describe( 'rock texture output goldens', () => {
       "945435cc199b73ab7aabc87148f71a0c36489e3b565dc94cbf2faa855c27ccce",
       "d22a440d9a5cedd8a38f1992e958b6ac10a6cb87f70c93d1afc251b4f32cf29c"
     ],
-    "impostor": "3c3e41c872bdeba50e934c2f43658ab784ad919a3ffc1b9a477e7b1c9fec158a"
+    "impostor": "53d8445ec8787ddd5f262f037f259f1ac5788ea0dc0bc3d879cdbd33c89e9155"
   },
   "rock-1-moss": {
-    "albedo": "69f904992438071c6f233b83ad124fd632e436991f3b24c5643f4fdc736c3cee",
-    "normal": "38a8dd1a71ba688730bf106e873e99db140f9363a81e7f0d092787016e03a032",
+    "albedo": "8015cb3f8e63045e11eb8261bac8da8a81979d7b747c9fca0555d8fa404c948b",
+    "normal": "f902e008079d3bb5c5ed508535b14c6926882772ce1d591732985892db5a1e72",
     "lods": [
       "73fdf80ae87d33cc482a8bb3bc63a06ac1829fa510462cf0b0c598e4623557cb",
       "1f7e5bdc54324fd7dbe956d20250d3958d233d63ac9a651c4b21b247aa3c3477",
@@ -88,11 +88,11 @@ describe( 'rock texture output goldens', () => {
       "a2a2f5127f61f47c5bb08151519824de40f1496e56f654b1ad9fe65554e3316b",
       "59756fa4af71fd9c755a4f203fc6c7797e7477d3c0355b3b9efa4ce9cb2e00ab"
     ],
-    "impostor": "74021b65d65eb630e12ff174e2fbfcb18386c78f3b46d4dd1afa55f28facfe38"
+    "impostor": "ca19320793b652932fb0be5d9f4e337aa2d01c405e5bf70d4982d0e3a2bfd4f2"
   },
   "rock-7-default": {
-    "albedo": "3b4cc926d6efb3025ba7f7dd277c59e93a11c87023770a00007be6a88561756f",
-    "normal": "9dcbad9a1dc100075fb6067b3bbb0c45a156f1a337a3af1e3acd7651bf79d360",
+    "albedo": "44b2e264d8e7ad8f18c5b5787a6edf753db1632d79e2880e62048c8b6ae1fc5a",
+    "normal": "adbc99741c546656cab8fc2c36accf5a869a9f33882cfdd89ac26247adcec708",
     "lods": [
       "d2fbd5dd5e73c13696233eaa907def304a2b097157d239628d94761781080ed6",
       "c9fa0b62e8227742dbf20306e45ffaecdfec6af7a8fb81e9d16c3e02b87e1add",
@@ -100,11 +100,11 @@ describe( 'rock texture output goldens', () => {
       "ec9e00cb5403be7ccdd8d4cd8063ad0bb9b6dc6398513d88ff862cab776dc423",
       "6e13ce358f7105db6f0a0e703bbbdf96d159d5483335973bd0b20c52a8f70bf7"
     ],
-    "impostor": "969160b97fd3f6af6069ce8b27f689b2cce01c73570ca273a83163678c2598b7"
+    "impostor": "4a3c169a213a7d0df7542ccab84f8252bc4306340d98f353fc797d5b290ee552"
   },
   "rock-7-closed": {
-    "albedo": "0cfa9ce2677f024001969a21e0b8ab766ea9a290d36bb42dc993570575260189",
-    "normal": "5496c2c52f93208be0eef0529c83f20ceab150f98ee52ac399c390b716b87654",
+    "albedo": "ce73e4d695dd5910e08236574f44b018ebfbc846bdacbf697e2c4189a81089d3",
+    "normal": "9008dfaedab03d9bb0f4c5b4c88b5fb1a1b0f7344806eaaa92151656f69fab7e",
     "lods": [
       "42f91dc039cd06bfc7f245f5baf30722be17633657f6bdb1117863ead3ea3796",
       "99f12fc661fa3b07d11f72e5e11d9c910ba47e13a21b4f647e1ea6e5a56384f5",
@@ -112,11 +112,11 @@ describe( 'rock texture output goldens', () => {
       "380ba03b92de7fa78fcecb20b525f64bca252ff4b01137255ee0015f14b33499",
       "5c22a227b29a5995b357e5e59c80537fca1159102a7e327c55b77ff9025310c5"
     ],
-    "impostor": "3158561e76eb5f0c3a20fe7638eb271a68789c4acc84f833bcdb5bb04d50a1bd"
+    "impostor": "f9ffcf64ca6f136a38edfeb0d4e58ebbba6a4223b9a17cc999960fd4a9c7f70f"
   },
   "rock-7-moss": {
-    "albedo": "8c7ffadf8ed87bb3b7baea2ea4c3a35ab2edfe8bf0e8fb4eed0eccbc65ed24f2",
-    "normal": "9f1b94694606bfa5fb8fc469af32174b36aed0486aca646e6fe60785786808af",
+    "albedo": "32eddb2b5740054266476aee220663cf66f46c3e45394df5c2ff9bf747c85df4",
+    "normal": "ad25903c408a3eed9f1ab5715d271e7aa74ebeaeea4a4f43791e7e7477b4163d",
     "lods": [
       "d2fbd5dd5e73c13696233eaa907def304a2b097157d239628d94761781080ed6",
       "c9fa0b62e8227742dbf20306e45ffaecdfec6af7a8fb81e9d16c3e02b87e1add",
@@ -124,11 +124,11 @@ describe( 'rock texture output goldens', () => {
       "ec9e00cb5403be7ccdd8d4cd8063ad0bb9b6dc6398513d88ff862cab776dc423",
       "6e13ce358f7105db6f0a0e703bbbdf96d159d5483335973bd0b20c52a8f70bf7"
     ],
-    "impostor": "13a04229c25182b18b3fff79fc0a0dc3b713dbb2fb6e01e7adfc0e40b09b2604"
+    "impostor": "9f2a1088022ecac7844536bd3e123341d9c75409e8378e42880d684c3bf87920"
   },
   "rock-21-default": {
-    "albedo": "87294fcf22d30c4c773e6131cc0b4f3212fac9d918eb940d9118d62307a00843",
-    "normal": "c23491128a735447e68f42eeb43d4b7409e9704b95ffa15f1a73c459292bfa69",
+    "albedo": "a54f922cdbea95297fe32331e41b9739c16fdaa187b0ffb08994d043a361ba37",
+    "normal": "4ea1b71b0d50565f972ea2234de4ae51450cb8ac8ac24e8f55fc1c8a2d9a1e0a",
     "lods": [
       "0f6b2e741adaef8f89222991913fb1e68faf0afaecf8e9b89bcfbc22b145f9d1",
       "e801a80d1cc7fafadc47e11ee7a77cbe151f6219df4e5c83d1d429c5c9056871",
@@ -136,11 +136,11 @@ describe( 'rock texture output goldens', () => {
       "7a8061adb287b1c54d3fd1717250c6c968becf09aa47218dbe94d8cbb369ef43",
       "2b11e62a7d582b962d3e6b1f719b453d1a1160531fd9d70d4ab5d5a78be7f9c5"
     ],
-    "impostor": "a3eaea3b846234b0c598ad7adc27082c803e9251437c771d107f69cb5b1f1a4a"
+    "impostor": "260c4e319476eb049d8729995d9b2cc05c43aaa8e7213bc4211e029b7c2eeea9"
   },
   "rock-21-closed": {
-    "albedo": "ab9cd1201de7a399c3d88e8baaad4b0a5ae8d835f8878adfb9bda729fcfdfcbd",
-    "normal": "224ab0d32ce3258f3868d6b409ecc1084b90041c0cb81c11d60b29a942451024",
+    "albedo": "3c9a49bab61b856e2317c57f2040b2561720aeb15e423b4c7275b7263b7dd09b",
+    "normal": "525a09e805af12ee21f9878a4d46cedd3fafe3d3f996bb274652cf29a0622741",
     "lods": [
       "1c2b6ba96c0ad72003541c3da51cd9e31cc0a4a83bd32f2a36e16fd7bc5e7e36",
       "0de3402671b5ab837bb1273201798c6f1d04edf5ed92421c1434d01168bc66d5",
@@ -148,11 +148,11 @@ describe( 'rock texture output goldens', () => {
       "7b44fff7c6ba6b6cfe5fe7290dbcb45f246fdd699dcbe804b9c351363fb83bad",
       "3ae57ec27bef2f3cbb02ec05f01bf346908d2671c645224fd4a1b70dd37978ba"
     ],
-    "impostor": "515852a1b45bca00858a8c7cdb8cfbecdccc9ef63b07b786c4539e2b48fd4e2f"
+    "impostor": "cf6ea03c5ab5ac5c983bcfe318b1565c383d3eea11f71bd6f82969c6f57aeee8"
   },
   "rock-21-moss": {
-    "albedo": "8c8bfb8824461d21126d6518fb31d038913d30c1055da3bb658c4e9e52126035",
-    "normal": "69ac091fa5567c9c59ac18098ad16a28e4404ea7924f85d30b8e6f3eb81cd315",
+    "albedo": "f1213b7d5ad757597c77e4e5cdd020084b585bc8f837c697a9c8710f7636c35c",
+    "normal": "cb2b4b944dd87b0f16e369f9705ee8c47873a299b81a9f5168915a943782344d",
     "lods": [
       "0f6b2e741adaef8f89222991913fb1e68faf0afaecf8e9b89bcfbc22b145f9d1",
       "e801a80d1cc7fafadc47e11ee7a77cbe151f6219df4e5c83d1d429c5c9056871",
@@ -160,11 +160,11 @@ describe( 'rock texture output goldens', () => {
       "7a8061adb287b1c54d3fd1717250c6c968becf09aa47218dbe94d8cbb369ef43",
       "2b11e62a7d582b962d3e6b1f719b453d1a1160531fd9d70d4ab5d5a78be7f9c5"
     ],
-    "impostor": "417ee8e5bae53d3601286600e919b64feeee86fe91e9f77d3db43024cd3cf367"
+    "impostor": "ad7448f6dd7d527d84f9c6f553c4d1c5e62e6c257186eaff621b3dc20d573f26"
   },
   "rock-42-default": {
-    "albedo": "73a9d0d1e069821e43c472fec5275e21982ad91b000cd7c7da3750fef0376811",
-    "normal": "063da1e20a4cdc58ba8f9bc9924a43a4b5066ad5470aed5c21283a96a7d1d639",
+    "albedo": "72e885a67ed08f69556b2d95303afd74cfaf58cc6d6d420be197df274066e997",
+    "normal": "a7885fba147a7c0089df9698644388ca8601af7248c38b416281efc7be4bf522",
     "lods": [
       "60f0e2b8e38db2bc3da72ec09dd4bcf971e90dc75de634a5c66b03fa5637a82a",
       "86b09822f30319850d9aedaf23191952efb44f82a91533bcfadd37cf35625881",
@@ -172,11 +172,11 @@ describe( 'rock texture output goldens', () => {
       "19cb19126401b278eceb218047fedea4b612aea1d84ba99976c395e019c3ad6b",
       "92a840db4151c37e2e8a70acddc4360ea0dd87374d5ee1d18d42371b5e781bf9"
     ],
-    "impostor": "1075e7c4b7b3f53c129303cd74ee329340249041a8917f7dd6e840c19b635b62"
+    "impostor": "b54c69b5dc78548bfa7f63be4608b6cf444f7853f1654273bdaa5d69f7f0956a"
   },
   "rock-42-closed": {
-    "albedo": "21622b6b1cd679a4158a88442fbc048d83ed31c0ab1a393440272a436133d2bc",
-    "normal": "41c2bd91c783950162ea689cdea3f5df55229349dadd2a2183d6e8717937ad7a",
+    "albedo": "da11f691fdb4bebfe02d7b2c73d0ea15c6dbef80379e7822b8d01d1d2dcf240d",
+    "normal": "0e85dceca7e760dbfe994ae9e185c0906a82ac09bcb6f41208eb31e16463fb1c",
     "lods": [
       "f624adf65198366f84c1b0de537d8153660dc46469b2ac06ca2b0ace6e164e63",
       "611c5bae066a0d8ffb9025034f57e98ceb077489ddbf87456557786b14080282",
@@ -184,11 +184,11 @@ describe( 'rock texture output goldens', () => {
       "6f089759b819e3c664cd2268050da8664bcd84775ad6ff7207f3b32624493b8a",
       "a6d301832807cc8d547bb6f5ec420e141e4b43d2c2db277757da2226e4c66e43"
     ],
-    "impostor": "8a84ea7b5f6f69be14da466913e2731da9175fa2cc344003ac26c79328e46b1d"
+    "impostor": "7069553fe6cdfd291d893193fc48afc70bedcf0257b2513a7e9a0056d48b9fcf"
   },
   "rock-42-moss": {
-    "albedo": "517897ee8ea1d751f665f9b605fee2c9e2baeab032599a8f35c18f87401e8248",
-    "normal": "5512d95025c7d0aeb41039695c6f2b1decd92fc49e96bf6a5ac8a7d90ffaad9b",
+    "albedo": "40b8510409d2382072c4aaed0669d8944aeacc090d8c4ebdfab79129ca87e7f2",
+    "normal": "2b65c9a337135d658e7460547d4df677599aaf532c3168437626c0f56db7ca29",
     "lods": [
       "60f0e2b8e38db2bc3da72ec09dd4bcf971e90dc75de634a5c66b03fa5637a82a",
       "86b09822f30319850d9aedaf23191952efb44f82a91533bcfadd37cf35625881",
@@ -196,11 +196,11 @@ describe( 'rock texture output goldens', () => {
       "19cb19126401b278eceb218047fedea4b612aea1d84ba99976c395e019c3ad6b",
       "92a840db4151c37e2e8a70acddc4360ea0dd87374d5ee1d18d42371b5e781bf9"
     ],
-    "impostor": "8c829ebedeb45c0acee95fae1eae18bbb734a70cde9cf31b50d6ba712611e68f"
+    "impostor": "68d6c26eeea00be7298073815222fff0122b85fda87b986da9cb2153212c8da1"
   },
   "pebbles-1-default": {
-    "albedo": "509f86fbd8c58a28bc070a62b1343b3800bf7453e4950de562fc55b2a88a22f8",
-    "normal": "3000b68dbc64d6d5a33053ff1cf9e4e2f06d14e0a00609a21a15d225b538938d",
+    "albedo": "80883d5a31b68957ea8a17853ca025ff7591949e92253d2d77b58a3d35cbef1d",
+    "normal": "1dd9bb08c056f10dabd998f2815a54233a6957080c2d5830abca95777f28aa3e",
     "lods": [
       "e7f47e7a7b062d8a4c50bc4a0a9d5b35929ad5206a1edcb72de6c50356ea2a3f",
       "6a7199ae15cf9c01131efcc48afc706f39217ea01b13e0cb587f1227c6112f27",
@@ -208,7 +208,7 @@ describe( 'rock texture output goldens', () => {
       "23faab8b39c108e10cdedd2f9d74ddf47b7b3384c59bfb10f88b2c31f0ccfeb6",
       "c19beaba7b8301f06d78917b2eefa8211cfbce08bf838e2fbbcbfac24439ebc2"
     ],
-    "impostor": "ba12059a20fb291bc558b4a192013681e464dd7475c1959ecd94275d1aae6a3b"
+    "impostor": "10cf76cfe983f4af7442a1b5298fa9979ec926afa84c29e909adb4b2b2b37c05"
   }
 };
 		const actual: Record<string, unknown> = {};

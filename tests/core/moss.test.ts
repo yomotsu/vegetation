@@ -281,12 +281,12 @@ function legacyMossMask( seed: number, amount: number, samples: ReturnType<typeo
 }
 
 const LEGACY_HASHES: Record<string, number[]> = {
-	'rock-1-false': [ 2947095016, 902703993, 574403876, 3551582965, 2567358744, 4031996057, 4152750107, 1253275383 ],
-	'rock-1-true': [ 1164806856, 2272477206, 1662950396, 2400116814, 624741428, 378107146, 3861561435, 3727479295 ],
-	'pebbles-1': [ 2884446334, 3769415892, 4209299559, 649758491, 3747391364, 1066383599, 2760055396, 1447801153 ],
-	'rock-7-false': [ 3660015649, 915934756, 4291103540, 4014911667, 2734196444, 3556486320, 720126648, 4202908968 ],
-	'rock-7-true': [ 457172542, 934053832, 3542311523, 755101775, 1412895948, 782868935, 1810882878, 2529114653 ],
-	'pebbles-7': [ 2031530908, 2057917093, 1885556615, 1708705815, 2266779516, 2271095016, 691380086, 1887968553 ],
+	'rock-1-false': [ 2947095016, 902703993, 574403876, 3551582965, 2567358744, 3975804106, 4023291666, 1152133044 ],
+	'rock-1-true': [ 1164806856, 2272477206, 1662950396, 2400116814, 624741428, 2074755419, 898080749, 1835169023 ],
+	'pebbles-1': [ 2884446334, 3769415892, 4209299559, 649758491, 3747391364, 2801471422, 2353991785, 53576644 ],
+	'rock-7-false': [ 3660015649, 915934756, 4291103540, 4014911667, 2734196444, 3492498670, 653495726, 2360895221 ],
+	'rock-7-true': [ 457172542, 934053832, 3542311523, 755101775, 1412895948, 2639464921, 1192386286, 1262057435 ],
+	'pebbles-7': [ 2031530908, 2057917093, 1885556615, 1708705815, 2266779516, 3707617242, 2531436213, 1408517578 ],
 };
 
 describe( 'moss texture option', () => {
@@ -385,10 +385,11 @@ describe( 'moss texture option', () => {
 
 		const baseline = generateRockData( { seed: 1, closeBottom: true, burial: 0.4 } );
 		const context = getRockSurfaceContext( 1, 0.4, true );
-		const ridgeMap = createRockEdgeHighlightMap( context.ridgeUvSegments, 1024, 6.4 );
-		const samples = createRockMossSurfaceSamples( 1419, 1024, 0.5, baseline.lods[ 0 ]!, 0, - 0.15, context, context.ridgeUvSegments, ridgeMap );
 		const mossed = generateRockData( { seed: 1, closeBottom: true, burial: 0.4, moss: 0.5 } );
 		const texture = mossed.textures.albedo!;
+		const size = texture.width;
+		const ridgeMap = createRockEdgeHighlightMap( context.ridgeUvSegments, size, 6.4 );
+		const samples = createRockMossSurfaceSamples( 1419, size, 0.5, baseline.lods[ 0 ]!, 0, - 0.15, context, context.ridgeUvSegments, ridgeMap );
 		const sums = [ 0, 0, 0 ];
 		const baseSums = [ 0, 0, 0 ];
 		const clumpSums = [ 0, 0, 0 ];

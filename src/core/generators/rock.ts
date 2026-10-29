@@ -1,4 +1,4 @@
-import { createRockTextures, DEFAULT_MOSS_COLOR } from '../rockTexture';
+import { createRockTextures, DEFAULT_MOSS_COLOR, ROCK_TEXTURE_SIZE } from '../rockTexture';
 import { buildBillboard, impostorPart } from '../impostor';
 import { applyRockWeathering, buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, clamp, createRockHullShape, getBounds, getIdenticalVertexWeld, getMinimumY, isRockScoopInterior, liftMesh, limitRockPeakSharpness, recomputeChamferedRockHullNormals, removeRockBottomCap, recomputeCreasedNormals, sinkMesh, splitChamferedRockHullVerticesAtCreases, weldIdenticalVertices } from '../rockGeometry';
 import type { RockHullShape, RockUvFrame } from '../rockGeometry';
@@ -754,8 +754,8 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 	];
 	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }:${ closeBottom ? 1 : 0 }${ moss > 0 ? `:burial:${ burial.toFixed( 4 ) }` : '' }`;
 	const textures = moss > 0
-		? createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments, { amount: moss, color: mossColor } )
-		: createRockTextures( seed, 1024, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments );
+		? createRockTextures( seed, ROCK_TEXTURE_SIZE, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments, { amount: moss, color: mossColor } )
+		: createRockTextures( seed, ROCK_TEXTURE_SIZE, internalSeed, lod0, textureShapeKey, { shape, verticalOffset: groundOffset - burialHeight }, chamferedLod0.ridgeUvSegments );
 	for ( const mesh of [ lod0, lod1, lod2, lod3, lod4 ] ) {
 
 		padRockImpostorCard( mesh );

@@ -243,10 +243,10 @@ describe( 'rock identical-vertex welding', () => {
 
 		const beforeCounts: Record<number, number> = { 1: 143, 2: 149, 3: 122, 7: 155, 42: 141 };
 		const expectedTextureHashes: Record<number, { albedo: string; normal: string }> = {
-			1: { albedo: 'da24a9d4b56c368b0fed634655eb5516fe09fec23e1e5f077fcf050b4522c149', normal: '384a01df93b36f85d27560ef3e5d18a561484e3f1bf3103319eb51abac749f73' },
-			7: { albedo: '3b4cc926d6efb3025ba7f7dd277c59e93a11c87023770a00007be6a88561756f', normal: '9dcbad9a1dc100075fb6067b3bbb0c45a156f1a337a3af1e3acd7651bf79d360' },
+			1: { albedo: '85d5ca46b16f0d1a235754ec5ceb8f0985b99ae6ac17ac137a1d039b5e0d2c57', normal: 'f70a3d177a9209e14114f3050647eb428bbfe8f41c0a58fc8e9e14ab5576cf58' },
+			7: { albedo: '44b2e264d8e7ad8f18c5b5787a6edf753db1632d79e2880e62048c8b6ae1fc5a', normal: 'adbc99741c546656cab8fc2c36accf5a869a9f33882cfdd89ac26247adcec708' },
 		};
-		const expectedImpostorHash = '852a803d8652597c481fee560146940bc34d3ed39ffc98aff2339ddd35d1747d';
+		const expectedImpostorHash = '9209feb7c32f54a5db95272f4a893c2777082fc9cddc34327ee864060e12e03b';
 
 		for ( const seed of [ 1, 2, 3, 7, 42 ] ) {
 

@@ -1182,7 +1182,10 @@ function getTextureFacetNormals( seed: number, mesh?: MeshData, scoopShape?: Roc
 
 }
 
-export function createRockTextures( seed: number, size = 1024, shapeSeed = seed, shapeMesh?: MeshData, shapeVariant?: string, scoopShape?: { shape: RockHullShape; verticalOffset: number }, ridgeUvSegments: RockRidgeUvSegment[] = [], mossOptions?: RockMossTextureOptions ): { albedo: TextureData; normal: TextureData } {
+// 岩と小石の石テクスチャの一辺。1024 では 1 アセット 8 MB（RGBA 2 枚）になるため 512 にする（2026-10-30）。
+export const ROCK_TEXTURE_SIZE = 512;
+
+export function createRockTextures( seed: number, size = ROCK_TEXTURE_SIZE, shapeSeed = seed, shapeMesh?: MeshData, shapeVariant?: string, scoopShape?: { shape: RockHullShape; verticalOffset: number }, ridgeUvSegments: RockRidgeUvSegment[] = [], mossOptions?: RockMossTextureOptions ): { albedo: TextureData; normal: TextureData } {
 
 	const seedKey = Math.floor( Math.abs( seed ) * 1000 );
 	const shapeKey = Math.floor( Math.abs( shapeSeed ) * 1000 );

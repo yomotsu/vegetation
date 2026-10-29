@@ -407,9 +407,9 @@ describe( 'procedural pebbles data', () => {
 		expect( data.parts[ 0 ]!.normalTexture ).toBe( 'normal' );
 		expect( data.parts[ 0 ]!.flatShading ).toBe( false );
 		expect( data.collider ).toBeNull();
-		expect( data.textures.albedo!.width ).toBe( 1024 );
-		expect( data.textures.albedo!.height ).toBe( 1024 );
-		expect( data.textures.normal!.width ).toBe( 1024 );
+		expect( data.textures.albedo!.width ).toBe( 512 );
+		expect( data.textures.albedo!.height ).toBe( 512 );
+		expect( data.textures.normal!.width ).toBe( 512 );
 		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 200 );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeGreaterThan( vertexCount( data.lods[ 4 ]! ) );
 		expect( vertexCount( data.lods[ 3 ]! ) ).toBeLessThanOrEqual( 90 );
