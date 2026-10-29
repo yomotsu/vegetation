@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateRockData } from '../../src/core';
-import type { MeshData } from '../../src/core';
+import { generateRockData } from '../../src/core/generators/rock';
+import type { MeshData } from '../../src/core/types';
 import { minimumRockApexAngle } from '../helpers/rockSharpness';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';
 import { buildConvexHullFaces, buildRockHullMesh, buildRockHullMeshWithChamfers, createRockHullShape, getRockScoopInfluence, isRockScoopInterior, recomputeCreasedNormals } from '../../src/core/rockGeometry';

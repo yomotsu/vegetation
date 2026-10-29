@@ -1,8 +1,8 @@
 # vegetation
 
-Procedural stylized trees, rocks and pebbles for [three.js](https://threejs.org/).
+Procedural stylized trees, rocks, pebbles, grass and flowers for [three.js](https://threejs.org/).
 
-Every asset is generated from a seed and comes with five levels of detail (LOD0–LOD3 meshes and an LOD4 billboard impostor), procedural textures, and a collider mesh. Rocks and pebbles can grow moss. Generation can run in Web Workers so the page keeps rendering. Works with `WebGLRenderer` and `WebGPURenderer`.
+Every asset is generated from a seed and has five LODs (LOD0–LOD3 meshes and an LOD4 billboard impostor) with procedural textures. Trees, rocks and pebbles also include collider meshes; grass and flowers do not. Rocks and pebbles can grow moss. Generation can run in Web Workers so the page keeps rendering. Works with `WebGLRenderer` and `WebGPURenderer`.
 
 ## Install
 
@@ -35,7 +35,7 @@ const lod = RockMesh.createLOD( { seed: 7 } );
 scene.add( lod );
 ```
 
-`TreeMesh.createLOD`, `RockMesh.createLOD` and `PebblesMesh.createLOD` accept an optional second argument with the switch distances (five numbers, metres).
+`TreeMesh.createLOD`, `RockMesh.createLOD`, `PebblesMesh.createLOD`, `GrassMesh.createLOD` and `FlowersMesh.createLOD` accept an optional second argument with the switch distances (five numbers, metres).
 
 ### Generate without blocking the page
 
@@ -110,9 +110,33 @@ All options are optional.
 | `mossColor` | `0x7cb83a` | Moss color. |
 | `lod` | `0` | LOD level for `PebblesMesh`. |
 
+### Grass — `GrassMesh`, `generateGrass`, `generateGrassAsync`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `seed` | `1` | Random seed. |
+| `height` | `0.45` | Blade height in metres. |
+| `width` | `1.125 × height` | Blade width in metres. |
+| `bladeColor` | `0x4b942b` | Blade color. |
+| `lod` | `0` | LOD level for `GrassMesh`. |
+
+### Flowers — `FlowersMesh`, `generateFlowers`, `generateFlowersAsync`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `seed` | `1` | Random seed. |
+| `variety` | `'allium'` | `'allium'`, `'daisy'`, `'tulip'`, `'poppy'`, `'bluebell'`, `'calla'` or `'primrose'`. |
+| `count` | Varies by variety | Number of flowers (1–6). |
+| `spread` | Varies by variety | Scatter radius in metres. |
+| `height` | Varies by variety | Flower height in metres. |
+| `petalColor` | Varies by variety | Petal color. |
+| `centerColor` | Varies by variety | Center or flower stalk color, depending on variety. |
+| `stemColor` | `0x2f6f1e` | Stem color. |
+| `lod` | `0` | LOD level for `FlowersMesh`. |
+
 ## VegetationAsset
 
-`generateTree`, `generateRock` and `generatePebbles` (and their async versions) return a `VegetationAsset`, which owns the geometries, materials and textures of all LODs. Share one asset across many meshes or instances.
+The `generate*` functions (and their async versions) return a `VegetationAsset`, which owns the geometries, materials and textures of all LODs. Share one asset across many meshes or instances.
 
 | Member | Description |
 | --- | --- |
@@ -120,7 +144,7 @@ All options are optional.
 | `materials` | Materials, one per part. |
 | `collider` | Low-poly collider `BufferGeometry`, or `null`. |
 | `getParts( lod )` | `{ part, geometry, material }[]` for building one mesh or `InstancedMesh` per part. |
-| `setColor( part, color )` / `setColors( colors )` | Re-tint a part (`'leaf'`, `'bark'`, `'rock'`, `'stone'`). |
+| `setColor( part, color )` / `setColors( colors )` | Re-tint a part such as `'leaf'`, `'bark'`, `'blade'`, `'petal'`, `'rock'` or `'stone'`. |
 | `getColor( part )` | Current color of a part. |
 | `dispose()` | Free GPU resources. |
 
@@ -130,14 +154,22 @@ For instanced LOD4 billboards, call `orientBillboardInstances( instancedMesh, ca
 
 ## Core data API
 
-`vegetation/core` exposes the generators without any three.js dependency: `generateTreeData`, `generateRockData` and `generatePebblesData` return plain typed arrays (positions, normals, UVs, indices per LOD, texture pixels and collider data). Use it to bake assets offline or to feed another engine.
+`vegetation/core` exposes only the data generators and their types, without a three.js dependency. `generateTreeData`, `generateRockData`, `generatePebblesData`, `generateGrassData` and `generateFlowersData` return `VegetationData` with typed arrays for positions, normals, UVs and indices per LOD, texture pixels and collider data. Their option types are `TreeOptions`, `RockOptions`, `PebblesOptions`, `GrassOptions` and `FlowersOptions`; shared data types include `VegetationData`, `MeshData`, `PartDef`, `TextureData` and `ColliderData`. Use it to bake assets offline or to feed another engine.
 
 ```js
 import { generateRockData } from 'vegetation/core';
+import type { RockOptions, VegetationData } from 'vegetation/core';
 
-const data = generateRockData( { seed: 7 } );
+const options: RockOptions = { seed: 7 };
+const data: VegetationData = generateRockData( options );
 console.log( data.lods[ 0 ].positions.length / 3, 'vertices' );
 ```
+
+## Public entry points
+
+`vegetation` exports the five `*Mesh` classes, the corresponding `generate*` and `generate*Async` functions, `VegetationAsset`, `VegetationMesh`, `orientBillboardInstances`, `disposeVegetationWorkers`, and the option and data types. Internal utilities such as random-number generators, color conversion helpers and impostor material registration are not part of the public API.
+
+`vegetation/webgpu` is a side-effect entry point with no named exports. Import it once to register the WebGPU impostor materials.
 
 ## Development
 

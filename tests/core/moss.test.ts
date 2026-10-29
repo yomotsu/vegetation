@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, generatePebblesData, generateRockData, hexToLinear } from '../../src/core';
+import { hexToLinear } from '../../src/core/color';
+import { bakeImpostor } from '../../src/core/impostor';
+import { generatePebblesData } from '../../src/core/generators/pebbles';
+import { generateRockData } from '../../src/core/generators/rock';
 import { createRockEdgeHighlightMap, createRockMossSurfaceSamples } from '../../src/core/rockTexture';
 import { buildConvexHullFaces, buildRockHullMeshWithChamfers, createRockHullShape, isRockScoopInterior } from '../../src/core/rockGeometry';
-import type { MeshData, VegetationData } from '../../src/core';
+import type { MeshData, VegetationData } from '../../src/core/types';
 
 function hashBytes( data: Uint8Array ): number {
 

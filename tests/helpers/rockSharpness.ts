@@ -1,4 +1,4 @@
-import type { MeshData } from '../../src/core';
+import type { MeshData } from '../../src/core/types';
 
 /** Returns the narrowest 1-ring cone angle on any above-ground vertex. */
 export function minimumRockApexAngle( mesh: Pick<MeshData, 'positions' | 'indices'> ): number {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, generateRockData, hexToLinear } from '../../src/core';
-import type { MeshData } from '../../src/core';
+import { hexToLinear } from '../../src/core/color';
+import { bakeImpostor } from '../../src/core/impostor';
+import { generateRockData } from '../../src/core/generators/rock';
+import type { MeshData } from '../../src/core/types';
 import { createRockCrackPaths, createRockTextures, findRockFrontUv } from '../../src/core/rockTexture';
 import { sampleOutlineRadius } from '../helpers/meshOutline';
 import { withSharedRockTextures } from '../helpers/sharedRockTextures';

@@ -1,20 +1,23 @@
-export * from './types';
-export * from './textureRegenerator';
-export * from './random';
-export * from './noise';
-export * from './color';
-export * from './meshBuilder';
-export * from './primitives';
-export * from './impostor';
-export * from './impostorFade';
-export * from './vegetationAssetPreparation';
-export * from './vegetationGeneration';
-export { createFirSprigTexture, DEFAULT_LEAF_COLOR } from './leafTexture';
-export * from './barkTexture';
-export * from './rockTexture';
-export * from './generators/tree';
-export * from './generators/grass';
-export * from './flowersTexture';
-export * from './generators/flowers';
-export * from './generators/rock';
-export * from './generators/pebbles';
+export { generateTreeData } from './generators/tree';
+export type { TreeOptions } from './generators/tree';
+export { generateRockData } from './generators/rock';
+export type { RockOptions } from './generators/rock';
+export { generatePebblesData } from './generators/pebbles';
+export type { PebblesOptions } from './generators/pebbles';
+export { generateGrassData } from './generators/grass';
+export type { GrassOptions } from './generators/grass';
+export { generateFlowersData } from './generators/flowers';
+export type { FlowersOptions, FlowersVariety } from './generators/flowers';
+export type {
+	ColliderData,
+	Color3,
+	ImpostorView,
+	LodLevel,
+	MeshData,
+	MeshGroup,
+	PartDef,
+	TextureData,
+	TextureGeneratorDef,
+	Vec3,
+	VegetationData,
+} from './types';

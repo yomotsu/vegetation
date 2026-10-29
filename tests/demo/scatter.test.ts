@@ -3,7 +3,7 @@ import type { Material } from 'three';
 import { describe, expect, it } from 'vitest';
 import { generateFlowers, generateGrass, generateTree } from '../../src/index';
 import { createScatter } from '../../demo/scatter';
-import { GRASS_BLUE_NOISE_RANKS } from '../../src/core/grassBlueNoise';
+import { GRASS_BLUE_NOISE_RANKS } from '../../demo/grassBlueNoise';
 import type { VegetationAsset } from '../../src/index';
 
 describe( 'scatter preview', () => {

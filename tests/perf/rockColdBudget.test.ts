@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateRockData } from '../../src/core';
+import { generateRockData } from '../../src/core/generators/rock';
 
 describe( 'cold rock generation budget', () => {
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES, LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS, prepareVegetationAsset } from '../../src/core';
-import { generateTreeData } from '../../src/core';
-import type { MeshData } from '../../src/core';
+import { hexToLinear, linearToSrgbByte } from '../../src/core/color';
+import { bakeImpostor, buildBillboard, impostorPart, LOD3_IMPOSTOR_YAW_ANGLES, LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
+import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
+import { generateTreeData } from '../../src/core/generators/tree';
+import type { MeshData } from '../../src/core/types';
 import { validateMeshData } from '../helpers/validateMeshData';
 import { topCardCoverageIou } from '../helpers/topCardCoverage';
 

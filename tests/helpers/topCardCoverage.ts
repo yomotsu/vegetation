@@ -1,5 +1,6 @@
-import { bakeImpostor, hexToLinear, LOD4_IMPOSTOR_VIEWS } from '../../src/core';
-import type { VegetationData } from '../../src/core';
+import { hexToLinear } from '../../src/core/color';
+import { bakeImpostor, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
+import type { VegetationData } from '../../src/core/types';
 
 export function topCardCoverageIou( data: VegetationData, size = 64 ): number {
 

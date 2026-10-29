@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createBarkTexture, createFirSprigTexture, hexToLinear, linearToSrgbByte } from '../../src/core';
+import { createBarkTexture } from '../../src/core/barkTexture';
+import { hexToLinear, linearToSrgbByte } from '../../src/core/color';
+import { createFirSprigTexture } from '../../src/core/leafTexture';
 import * as publicCore from '../../src/core';
 import { generateTreeData } from '../../src/core/generators/tree';
 import { getFirSprigNeedleGeometry } from '../../src/core/leafTexture';

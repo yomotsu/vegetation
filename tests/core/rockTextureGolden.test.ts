@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, generatePebblesData, generateRockData, hexToLinear } from '../../src/core';
-import type { TextureData, VegetationData } from '../../src/core';
+import { hexToLinear } from '../../src/core/color';
+import { bakeImpostor } from '../../src/core/impostor';
+import { generatePebblesData } from '../../src/core/generators/pebbles';
+import { generateRockData } from '../../src/core/generators/rock';
+import type { TextureData, VegetationData } from '../../src/core/types';
 
 function addArray( chunks: Uint8Array[], array: Float32Array | Uint32Array | Uint8Array ): void {
 

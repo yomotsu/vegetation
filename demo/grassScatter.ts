@@ -1,7 +1,7 @@
 import { Box3, Color, FrontSide, Group, InstancedMesh, Matrix4, Quaternion, StaticDrawUsage, Vector3 } from 'three';
 import type { BufferGeometry, Camera, Material } from 'three';
 import type { VegetationAsset } from '../src/index';
-import { GRASS_BLUE_NOISE_RANKS } from '../src/core/grassBlueNoise';
+import { GRASS_BLUE_NOISE_RANKS } from './grassBlueNoise';
 import { createBidirectionalCardGeometry } from '../src/three/grassCardGeometry';
 import { setPreviewShadowFlags } from './rendering';
 

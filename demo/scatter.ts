@@ -10,7 +10,8 @@ import {
 	StaticDrawUsage,
 	Vector3,
 } from 'three';
-import { createRandom, orientBillboardInstances } from '../src/index';
+import { orientBillboardInstances } from '../src/index';
+import { createRandom } from '../src/core/random';
 import type { VegetationAsset } from '../src/index';
 import { setPreviewShadowFlags } from './rendering';
 import { createGrassScatter } from './grassScatter';

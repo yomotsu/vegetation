@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateTreeData } from '../../src/core';
+import { generateTreeData } from '../../src/core/generators/tree';
 
 describe( 'impostor card ids', () => {
 

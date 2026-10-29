@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, generatePebblesData, hexToLinear } from '../../src/core';
-import type { MeshData } from '../../src/core';
+import { hexToLinear } from '../../src/core/color';
+import { bakeImpostor } from '../../src/core/impostor';
+import { generatePebblesData } from '../../src/core/generators/pebbles';
+import type { MeshData } from '../../src/core/types';
 import { createRockTextures } from '../../src/core/rockTexture';
 import { validateMeshData } from '../helpers/validateMeshData';
 import { sampleOutlineRadius, splitConnectedComponents } from '../helpers/meshOutline';

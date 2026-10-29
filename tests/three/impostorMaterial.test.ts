@@ -1,6 +1,9 @@
 import { MeshStandardMaterial } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { generateFlowersData, generatePebblesData, generateRockData, generateTreeData } from '../../src/core';
+import { generateFlowersData } from '../../src/core/generators/flowers';
+import { generatePebblesData } from '../../src/core/generators/pebbles';
+import { generateRockData } from '../../src/core/generators/rock';
+import { generateTreeData } from '../../src/core/generators/tree';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { registerImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
 import { VegetationMesh } from '../../src/three/VegetationMesh';

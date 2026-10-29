@@ -2,7 +2,7 @@ import { MeshStandardMaterial } from 'three';
 import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import '../../src/webgpu';
-import { generateFlowersData } from '../../src/core';
+import { generateFlowersData } from '../../src/core/generators/flowers';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { VegetationMesh } from '../../src/three/VegetationMesh';
 import { getImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
