@@ -5,6 +5,8 @@ export type Vec3 = [ number, number, number ];
 export interface ImpostorView {
 	direction: readonly [ number, number, number ];
 	up?: readonly [ number, number, number ];
+	/** true のビューだけ、パートの impostorBakeExcludeIndexRanges を除いて焼く。 */
+	excludesBakeRanges?: boolean;
 }
 
 export interface MeshGroup {

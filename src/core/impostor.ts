@@ -418,7 +418,8 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	for ( let view = 0; view < viewInputs.length; view ++ ) {
 
-		const projection = createViewProjection( data.bounds, mesh, viewInputs[ view ]!, excludedIndexRanges );
+		const excludesBakeRanges = resolveImpostorView( viewInputs[ view ]! ).excludesBakeRanges === true;
+		const projection = createViewProjection( data.bounds, mesh, viewInputs[ view ]!, excludesBakeRanges ? excludedIndexRanges : [] );
 
 		for ( const group of mesh.groups ) {
 
@@ -429,7 +430,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 			for ( let i = group.start; i < group.start + group.count; i += 3 ) {
 
-				if ( isIndexInRanges( i, part.impostorBakeExcludeIndexRanges ) ) continue;
+				if ( excludesBakeRanges && isIndexInRanges( i, part.impostorBakeExcludeIndexRanges ) ) continue;
 
 				rasterizeTriangle( data, mesh, i, size, width, view, projection, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
 

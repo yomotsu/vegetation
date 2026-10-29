@@ -475,6 +475,10 @@ const ALLIUM_LOD3_IMPOSTOR_VIEWS = ALLIUM_LOD3_YAW_ANGLES.map( yawImpostorView )
 const ALLIUM_LOD4_IMPOSTOR_VIEWS = [ yawImpostorView( 0 ) ];
 const DAISY_LOD3_IMPOSTOR_VIEWS = [ ...ALLIUM_LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS[ 1 ] ] as const;
 const PRIMROSE_LOD3_IMPOSTOR_VIEWS = [ LOD4_IMPOSTOR_VIEWS[ 1 ] ] as const;
+// poppy の葉は縦カードの下部にだけ焼き、花の高さに置く上面カードには入れない。
+const POPPY_TOP_IMPOSTOR_VIEW = { ...LOD4_IMPOSTOR_VIEWS[ 1 ], excludesBakeRanges: true };
+const POPPY_LOD3_IMPOSTOR_VIEWS = [ ...ALLIUM_LOD3_IMPOSTOR_VIEWS, POPPY_TOP_IMPOSTOR_VIEW ];
+const POPPY_LOD4_IMPOSTOR_VIEWS = [ LOD4_IMPOSTOR_VIEWS[ 0 ], POPPY_TOP_IMPOSTOR_VIEW ];
 
 function combineParts( petal: MeshData, stem: MeshData ): MeshData {
 
@@ -689,14 +693,14 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 		// お椀は外側だけ描く。両面だと透けた隙間から奥の内側が外向き法線のまま見えて黒くなる。
 		? { ...impostorLod3Part( PRIMROSE_LOD3_IMPOSTOR_VIEWS, false ), doubleSided: false }
 		: variety === 'daisy' || variety === 'poppy'
-			? { ...impostorLod3Part( DAISY_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
+			? { ...impostorLod3Part( variety === 'poppy' ? POPPY_LOD3_IMPOSTOR_VIEWS : DAISY_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 			: variety === 'allium' || variety === 'tulip' || variety === 'calla'
 				? { ...impostorLod3Part( ALLIUM_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 				: { ...impostorLod3Part(), upNormalCards: true };
 	const lod4Part = variety === 'allium' || variety === 'tulip' || variety === 'calla'
 		? { ...impostorPart( ALLIUM_LOD4_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 		: variety === 'daisy' || variety === 'poppy' || variety === 'primrose'
-			? { ...impostorPart( LOD4_IMPOSTOR_VIEWS, false ), upNormalCards: true }
+			? { ...impostorPart( variety === 'poppy' ? POPPY_LOD4_IMPOSTOR_VIEWS : LOD4_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 			: { ...impostorPart(), upNormalCards: true };
 	const parts = hasPlantCard ? [ petalPart, stemPart, plantCardPart, lod3Part, lod4Part ] : [ petalPart, stemPart, lod3Part, lod4Part ];
 	const textures: Record<string, TextureData> = variety === 'allium'

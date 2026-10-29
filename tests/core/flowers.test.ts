@@ -488,7 +488,7 @@ describe( 'flowers core generator', () => {
 
 	} );
 
-	it( 'bakes poppy LOD3/4 impostors without the LOD0 leaf triangles', () => {
+	it( 'bakes the poppy leaves into the LOD3/4 vertical cards but not into the top card', () => {
 
 		const data = generateFlowersData( { seed: 5, variety: 'poppy' } );
 		const leafRanges = data.parts[ 1 ]!.impostorBakeExcludeIndexRanges!;
@@ -510,15 +510,29 @@ describe( 'flowers core generator', () => {
 		for ( const partIndex of [ 2, 3 ] ) {
 			const part = data.parts[ partIndex ]!;
 			const withoutLeaves = prepared.impostorTextures[ part.texture! ]!;
-			const withLeaves = bakeImpostor( fullBakeData, colors, 128, impostorViewsForPart( part )! );
-			let differentPixels = 0;
-			let opaquePixels = 0;
-			for ( let pixel = 0; pixel < withoutLeaves.data.length; pixel += 4 ) {
-				if ( withoutLeaves.data[ pixel + 3 ]! > 0 ) opaquePixels ++;
-				if ( withoutLeaves.data[ pixel ] !== withLeaves.data[ pixel ] || withoutLeaves.data[ pixel + 1 ] !== withLeaves.data[ pixel + 1 ] || withoutLeaves.data[ pixel + 2 ] !== withLeaves.data[ pixel + 2 ] || withoutLeaves.data[ pixel + 3 ] !== withLeaves.data[ pixel + 3 ] ) differentPixels ++;
+			const views = impostorViewsForPart( part )!;
+			const withLeaves = bakeImpostor( fullBakeData, colors, 128, views );
+			// 縦カードのタイルは葉込みの焼きと一致し、最後の上面タイルだけ葉が抜ける。
+			for ( let tile = 0; tile < views.length; tile ++ ) {
+				let differentPixels = 0;
+				let opaquePixels = 0;
+				for ( let y = 0; y < withoutLeaves.height; y ++ ) {
+					for ( let x = tile * 128; x < ( tile + 1 ) * 128; x ++ ) {
+						const pixel = ( y * withoutLeaves.width + x ) * 4;
+						if ( withoutLeaves.data[ pixel + 3 ]! > 0 ) opaquePixels ++;
+						for ( let channel = 0; channel < 4; channel ++ ) {
+							if ( withoutLeaves.data[ pixel + channel ] !== withLeaves.data[ pixel + channel ] ) {
+								differentPixels ++;
+								break;
+							}
+						}
+					}
+				}
+				expect( opaquePixels ).toBeGreaterThan( 0 );
+				expect( views[ tile ]!.excludesBakeRanges === true ).toBe( tile === views.length - 1 );
+				if ( tile === views.length - 1 ) expect( differentPixels ).toBeGreaterThan( 0 );
+				else expect( differentPixels ).toBe( 0 );
 			}
-			expect( opaquePixels ).toBeGreaterThan( 0 );
-			expect( differentPixels ).toBeGreaterThan( 0 );
 		}
 
 		const recolored = prepareVegetationAsset( data, { petal: 0xa98bd6 }, 128 );
