@@ -32,6 +32,8 @@ export interface PartDef {
 	impostorYawAngles?: readonly number[]; // 指定時は texture 用のビューを three 層で焼く。
 	impostorViews?: readonly ImpostorView[]; // 視線方向と画像の上方向を指定して焼く。
 	normalTexture?: string; // tangent-space normal map のキー
+	/** false なら視線の角度によるディザの切り替えをせず、インポスターの全カードを常に描画します。 */
+	impostorFade?: boolean;
 	/** true なら色変更でテクスチャを再生成し、false または未指定ならマテリアル色を乗算します。 */
 	colorizesTexture?: boolean;
 	/** true ならカードを逆向きにも追加し、上向き法線のまま描画します。 */

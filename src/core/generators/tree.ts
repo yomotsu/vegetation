@@ -1196,8 +1196,8 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 			doubleSided: true,
 			flatShading: false,
 		},
-		impostorLod3Part(),
-		impostorPart(),
+		{ ...impostorLod3Part(), impostorFade: false },
+		{ ...impostorPart(), impostorFade: false },
 		{
 			name: 'leafRing',
 			defaultColor: leafColor,

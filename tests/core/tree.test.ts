@@ -775,11 +775,12 @@ describe( 'conifer tree data', () => {
 			defaultColor: 0xffffff,
 			texture: 'impostor-lod3',
 			impostorViews: LOD3_IMPOSTOR_VIEWS,
+			impostorFade: false,
 			alphaTest: 0.5,
 			doubleSided: true,
 			flatShading: false,
 		} );
-		expect( data.parts[ 3 ] ).toEqual( impostorPart() );
+		expect( data.parts[ 3 ] ).toEqual( { ...impostorPart(), impostorFade: false } );
 		expect( data.parts[ 4 ] ).toEqual( {
 			name: 'leafRing',
 			defaultColor: 0x2f7d1f,
