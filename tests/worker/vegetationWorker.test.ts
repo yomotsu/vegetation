@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateRock } from '../../src/three/meshes';
+import { generateGrass, generateRock } from '../../src/three/meshes';
 import { handleVegetationWorkerMessage } from '../../src/worker/vegetationWorker';
+import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 
 describe( 'vegetation worker handler', () => {
 
@@ -17,12 +18,12 @@ describe( 'vegetation worker handler', () => {
 
 		expect( result ).toHaveProperty( 'prepared' );
 		if ( ! ( 'prepared' in result ) ) throw new Error( 'Expected prepared payload' );
-		expect( result.prepared.data ).toEqual( sync.data );
+		expect( areStructurallyByteIdentical( result.prepared.data, sync.data ) ).toBe( true );
 		for ( const [ name, texture ] of Object.entries( result.prepared.impostorTextures ) ) {
 
 			const partIndex = sync.data.parts.findIndex( ( part ) => part.texture === name && part.impostorViews !== undefined );
 			const image = sync.materials[ partIndex ]!.map!.image as { data: Uint8Array; width: number; height: number };
-			expect( texture.data ).toEqual( image.data );
+			expect( areByteIdentical( texture.data, image.data ) ).toBe( true );
 			expect( texture.width ).toBe( image.width );
 			expect( texture.height ).toBe( image.height );
 
@@ -44,5 +45,26 @@ describe( 'vegetation worker handler', () => {
 		expect( result ).toEqual( { id: 2, error: { name: 'RangeError', message: 'Rock size must be a positive finite number' } } );
 
 	} );
+
+	it( 'returns single-card grass data and regenerated textures byte-identical to sync generation', () => {
+
+		const result = handleVegetationWorkerMessage( {
+			id: 3,
+			kind: 'grass',
+			options: { seed: 5, height: 0.45, width: 0.50625, bladeColor: 0xb8a64a },
+			colors: { blade: 0xb8a64a },
+			impostorSize: 128,
+		} );
+		const sync = generateGrass( { seed: 5, height: 0.45, width: 0.50625, bladeColor: '#b8a64a' } );
+
+		expect( result ).toHaveProperty( 'prepared' );
+		if ( ! ( 'prepared' in result ) ) throw new Error( 'Expected prepared payload' );
+		expect( areStructurallyByteIdentical( result.prepared.data, sync.data ) ).toBe( true );
+		expect( Object.keys( result.prepared.impostorTextures ) ).toEqual( [] );
+		expect( areByteIdentical( result.prepared.data.textures.blade!.data, sync.data.textures.blade!.data ) ).toBe( true );
+		expect( areByteIdentical( result.prepared.data.textures['blade-normal']!.data, sync.data.textures['blade-normal']!.data ) ).toBe( true );
+		sync.dispose();
+
+	}, 30000 );
 
 } );

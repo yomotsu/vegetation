@@ -1,6 +1,7 @@
-import { BufferAttribute, BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, FrontSide, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
 import type { Camera, Color, ColorRepresentation } from 'three';
 import type { LodLevel } from '../core/types';
+import { createBidirectionalCardGeometry } from './grassCardGeometry';
 import { VegetationAsset } from './VegetationAsset';
 import type { VegetationMaterial } from './impostorMaterialFactory';
 
@@ -119,6 +120,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 
 	private partMeshes: Mesh<BufferGeometry, VegetationMaterial>[] = [];
 	private readonly ownedGeometries: BufferGeometry[] = [];
+	private readonly ownedMaterials: VegetationMaterial[] = [];
 	private shadowCast = false;
 	private shadowReceive = false;
 	private readonly ownsAsset: boolean;
@@ -141,15 +143,27 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 			throw new Error( `Vegetation LOD ${ level } has no parts` );
 		}
 
+		const firstPartIndex = asset.data.lods[ level ]!.groups[ 0 ]!.partIndex;
+		const firstPartDefinition = asset.data.parts[ firstPartIndex ]!;
+		const isCameraFacingBillboard = level === 4 && ( firstPartDefinition.impostorViews !== undefined || firstPartDefinition.impostorYawAngles !== undefined );
+		const isGrassCard = asset.data.kind === 'grass';
 		const cardAttribute = first.geometry.getAttribute( 'impostorCard' );
 		const hasHorizontalCard = level === 3 && cardAttribute !== undefined && Array.from( cardAttribute.array ).some( ( card ) => card === 1 );
-		const splitCards = level === 4 || hasHorizontalCard;
-		const rootGeometry = splitCards ? createEmptyGeometry( first.geometry ) : first.geometry;
-		super( rootGeometry, first.material );
+		const splitCards = isCameraFacingBillboard || hasHorizontalCard;
+		const rootGeometry = splitCards
+			? createEmptyGeometry( first.geometry )
+			: isGrassCard ? createBidirectionalCardGeometry( first.geometry ) : first.geometry;
+		const rootMaterial = isGrassCard ? first.material.clone() : first.material;
+		if ( isGrassCard ) rootMaterial.side = FrontSide;
+		super( rootGeometry, rootMaterial );
 		this.asset = asset;
 		this.lod = level;
 		this.ownsAsset = ownsAsset;
 		this.emptyGeometry = splitCards ? rootGeometry : null;
+		if ( isGrassCard ) {
+			this.ownedGeometries.push( rootGeometry );
+			this.ownedMaterials.push( rootMaterial );
+		}
 		this.name = first.part;
 		const castShadow = this.castShadow;
 		const receiveShadow = this.receiveShadow;
@@ -184,8 +198,8 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 		if ( splitCards ) {
 
 			const part = parts[ 0 ]!;
-			const billboardGeometry = level === 4 ? createBillboardPlaneGeometry( part.geometry, 0 ) : createImpostorCardGeometry( part.geometry, 0 );
-			const topCardGeometry = level === 4 ? createBillboardPlaneGeometry( part.geometry, 1 ) : createImpostorCardGeometry( part.geometry, 1 );
+			const billboardGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 0 ) : createImpostorCardGeometry( part.geometry, 0 );
+			const topCardGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 1 ) : createImpostorCardGeometry( part.geometry, 1 );
 			const billboard = new Mesh( billboardGeometry, part.material );
 			const topCard = new Mesh( topCardGeometry, part.material );
 			const cameraPosition = new Vector3();
@@ -198,7 +212,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 			topCard.receiveShadow = this.shadowReceive;
 			const shadowCameras = new WeakSet<Camera>();
 			const inverseWorldMatrix = new Matrix4();
-			if ( level === 4 ) {
+			if ( isCameraFacingBillboard ) {
 
 				billboard.onBeforeShadow = ( renderer, object, camera, shadowCamera ) => {
 
@@ -288,6 +302,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 			geometry.dispose();
 
 		}
+		for ( const material of this.ownedMaterials ) material.dispose();
 
 		if ( this.ownsAsset ) {
 			this.asset.dispose();

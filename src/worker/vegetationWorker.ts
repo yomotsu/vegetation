@@ -7,6 +7,9 @@ import type { TreeOptions } from '../core/generators/tree';
 import { prepareVegetationAsset } from '../core/vegetationAssetPreparation';
 import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
 import { normalizePebblesGenerationOptions, normalizeRockGenerationOptions, normalizeTreeGenerationOptions } from '../core/vegetationGeneration';
+import { generateGrassData } from '../core/generators/grass';
+import type { GrassOptions } from '../core/generators/grass';
+import { normalizeGrassGenerationOptions } from '../core/vegetationGeneration';
 import type { VegetationWorkerRequest, VegetationWorkerResponse } from './protocol';
 
 export function handleVegetationWorkerMessage( request: VegetationWorkerRequest ): VegetationWorkerResponse {
@@ -25,6 +28,14 @@ export function handleVegetationWorkerMessage( request: VegetationWorkerRequest 
 
 			const normalized = normalizeRockGenerationOptions( request.options as RockOptions, request.colors );
 			const data = generateRockData( normalized.options );
+			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
+
+		}
+
+		if ( request.kind === 'grass' ) {
+
+			const normalized = normalizeGrassGenerationOptions( request.options as GrassOptions, request.colors );
+			const data = generateGrassData( normalized.options );
 			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 		}

@@ -1,6 +1,6 @@
 import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
 
-export type VegetationWorkerKind = 'tree' | 'rock' | 'pebbles';
+export type VegetationWorkerKind = 'tree' | 'rock' | 'pebbles' | 'grass';
 
 export interface VegetationWorkerRequest {
 	id: number;

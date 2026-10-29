@@ -8,10 +8,12 @@ import type { RockOptions } from '../core/generators/rock';
 import { generateRockData } from '../core/generators/rock';
 import type { PebblesOptions } from '../core/generators/pebbles';
 import { generatePebblesData } from '../core/generators/pebbles';
+import type { GrassOptions } from '../core/generators/grass';
+import { DEFAULT_BLADE_COLOR, generateGrassData } from '../core/generators/grass';
 import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
 import { DEFAULT_MOSS_COLOR } from '../core/rockTexture';
 import { DEFAULT_BARK_COLOR } from '../core/barkTexture';
-import { normalizePebblesGenerationOptions, normalizeRockGenerationOptions, normalizeTreeGenerationOptions } from '../core/vegetationGeneration';
+import { normalizeGrassGenerationOptions, normalizePebblesGenerationOptions, normalizeRockGenerationOptions, normalizeTreeGenerationOptions } from '../core/vegetationGeneration';
 import type { VegetationWorkerKind } from '../worker/protocol';
 import { disposeVegetationWorkers, requestVegetationWorker, VegetationWorkerUnavailableError } from '../worker/workerPool';
 import type { LodLevel } from '../core/types';
@@ -32,6 +34,11 @@ export type PebblesMeshOptions = Omit<PebblesOptions, 'stoneColor' | 'mossColor'
 	lod?: number;
 	stoneColor?: ColorRepresentation;
 	mossColor?: ColorRepresentation;
+};
+
+export type GrassMeshOptions = Omit<GrassOptions, 'bladeColor'> & {
+	lod?: number;
+	bladeColor?: ColorRepresentation;
 };
 
 function colorHex( color: ColorRepresentation | undefined, fallback: number ): number {
@@ -93,6 +100,18 @@ function normalizePebblesOptions( options: PebblesMeshOptions ): ReturnType<type
 		moss: options.moss,
 		mossColor: colorHex( options.mossColor, DEFAULT_MOSS_COLOR ),
 	}, { stone: colorHex( options.stoneColor, 0xffffff ) } );
+
+}
+
+function normalizeGrassOptions( options: GrassMeshOptions ): ReturnType<typeof normalizeGrassGenerationOptions> {
+
+	const bladeColor = colorHex( options.bladeColor, DEFAULT_BLADE_COLOR );
+	return normalizeGrassGenerationOptions( {
+		seed: options.seed,
+		height: options.height,
+		width: options.width,
+		bladeColor,
+	}, { blade: bladeColor } );
 
 }
 
@@ -241,5 +260,48 @@ export class PebblesMesh extends VegetationMesh {
 
 }
 
+export function generateGrass( options: GrassMeshOptions = {} ): VegetationAsset {
+
+	const normalized = normalizeGrassOptions( options );
+	const data = generateGrassData( normalized.options );
+	return new VegetationAsset( data, { blade: options.bladeColor ?? DEFAULT_BLADE_COLOR } );
+
+}
+
+/** 同期 API と同じ生成結果を返します。 */
+export async function generateGrassAsync( options: GrassMeshOptions = {} ): Promise<VegetationAsset> {
+
+	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generateGrass( options ) );
+
+	const normalized = normalizeGrassOptions( options );
+	const request = workerRequest( 'grass', normalized.options, normalized.colors );
+	try {
+		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `grass:${ normalized.options.seed ?? 1 }` ) );
+	} catch ( error ) {
+		if ( error instanceof VegetationWorkerUnavailableError ) return generateGrass( options );
+		throw error;
+	}
+
+}
+
+export class GrassMesh extends VegetationMesh {
+
+	constructor( options: GrassMeshOptions = {} ) {
+
+		super( generateGrass( options ), options.lod, true );
+
+	}
+
+	static createLOD( options: GrassMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
+
+		const height = options.height ?? 0.45;
+		const defaultDistances = [ 0, 1, 2, 4, 8 ].map( ( distance ) => distance * height / 0.45 );
+		return VegetationMesh.fromAsset( generateGrass( options ), distances ?? defaultDistances, true );
+
+	}
+
+}
+
 export type { LodLevel, PebblesOptions, RockOptions, TreeOptions };
+export type { GrassOptions };
 export { disposeVegetationWorkers };

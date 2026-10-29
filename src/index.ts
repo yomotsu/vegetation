@@ -7,7 +7,7 @@ export { VegetationAsset } from './three/VegetationAsset';
 export { orientBillboardInstances, VegetationMesh } from './three/VegetationMesh';
 export { registerImpostorMaterialFactory } from './three/impostorMaterialFactory';
 export type { VegetationMaterial } from './three/impostorMaterialFactory';
-export { PebblesMesh, RockMesh, TreeMesh, disposeVegetationWorkers, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from './three/meshes';
+export { GrassMesh, PebblesMesh, RockMesh, TreeMesh, disposeVegetationWorkers, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from './three/meshes';
 export type {
 	ColliderData,
 	Color3,
@@ -19,4 +19,4 @@ export type {
 	TextureGeneratorDef,
 	VegetationData,
 } from './core/types';
-export type { PebblesMeshOptions, PebblesOptions, RockMeshOptions, RockOptions, TreeMeshOptions, TreeOptions } from './three/meshes';
+export type { GrassMeshOptions, GrassOptions, PebblesMeshOptions, PebblesOptions, RockMeshOptions, RockOptions, TreeMeshOptions, TreeOptions } from './three/meshes';
