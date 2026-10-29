@@ -34,6 +34,8 @@ export interface PartDef {
 	normalTexture?: string; // tangent-space normal map のキー
 	/** true なら色変更でテクスチャを再生成し、false または未指定ならマテリアル色を乗算します。 */
 	colorizesTexture?: boolean;
+	/** true ならカードを逆向きにも追加し、上向き法線のまま描画します。 */
+	upNormalCards?: boolean;
 	roughness?: number;
 	/** 誘電体の鏡面反射強度。指定時は MeshPhysicalMaterial を使用する。 */
 	specularIntensity?: number;
@@ -50,6 +52,8 @@ export interface TextureGeneratorDef {
 	type: string;
 	seed: number;
 	size: number;
+	variety?: 'allium' | 'daisy';
+	fixedColor?: number;
 }
 
 export interface TextureData {

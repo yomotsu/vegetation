@@ -6,6 +6,8 @@ import type { PebblesOptions } from './generators/pebbles';
 import type { GrassOptions } from './generators/grass';
 import type { RockOptions } from './generators/rock';
 import type { TreeOptions } from './generators/tree';
+import { DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_FLOWERS_STEM_COLOR } from './generators/flowers';
+import type { FlowersOptions } from './generators/flowers';
 
 export interface NormalizedVegetationGeneration<Options> {
 	options: Options;
@@ -26,6 +28,34 @@ export function normalizeGrassGenerationOptions(
 			bladeColor,
 		},
 		colors: { blade: bladeColor },
+	};
+
+}
+
+export function normalizeFlowersGenerationOptions(
+	options: FlowersOptions,
+	colors: Record<string, number> = {},
+): NormalizedVegetationGeneration<FlowersOptions> {
+
+	const variety = options.variety ?? 'allium';
+	const defaultPetalColor = variety === 'allium' ? DEFAULT_ALLIUM_PETAL_COLOR : DEFAULT_DAISY_PETAL_COLOR;
+	const defaultCenterColor = variety === 'allium' ? DEFAULT_ALLIUM_CENTER_COLOR : DEFAULT_DAISY_CENTER_COLOR;
+	const petalColor = colors.petal ?? options.petalColor ?? defaultPetalColor;
+	const stemColor = colors.stem ?? options.stemColor ?? DEFAULT_FLOWERS_STEM_COLOR;
+	const centerColor = options.centerColor ?? defaultCenterColor;
+
+	return {
+		options: {
+			seed: options.seed,
+			variety,
+			count: options.count,
+			spread: options.spread,
+			height: options.height,
+			petalColor,
+			centerColor,
+			stemColor,
+		},
+		colors: { petal: petalColor, stem: stemColor },
 	};
 
 }

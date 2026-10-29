@@ -50,6 +50,7 @@ export function generateGrassData( options: GrassOptions = {} ): VegetationData 
 		texture: 'blade',
 		normalTexture: 'blade-normal',
 		colorizesTexture: true,
+		upNormalCards: true,
 		alphaTest: 0.45,
 		doubleSided: true,
 		flatShading: false,
