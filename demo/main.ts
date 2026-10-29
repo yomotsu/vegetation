@@ -6,6 +6,7 @@ import {
 	MathUtils,
 	Mesh,
 	MeshNormalMaterial,
+	MeshStandardMaterial,
 	PerspectiveCamera,
 	Vector3,
 	WireframeGeometry,
@@ -14,7 +15,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { disposeVegetationWorkers, VegetationMesh } from 'vegetation';
 import type { VegetationAsset } from 'vegetation';
-import { kinds, leafColorPresets } from './registry';
+import { grassColorPresets, kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
 import { createColorUpdateScheduler } from './colorUpdateScheduler';
 import { createColliderMaterialController } from './colliderVisualization';
@@ -40,6 +41,7 @@ interface DemoState {
 	scatterCount: number;
 	seedVariants: number;
 	leafPreset: string;
+	grassPreset: string;
 	options: Record<string, number | boolean>;
 	colors: Record<string, string>;
 }
@@ -53,7 +55,15 @@ const canvasContainer = document.querySelector<HTMLDivElement>( '#canvas' )!;
 const rendererLabel = document.querySelector<HTMLDivElement>( '#renderer-label' )!;
 const status = document.querySelector<HTMLDivElement>( '#status' )!;
 const compareLabels = document.querySelector<HTMLDivElement>( '#compare-labels' )!;
-const { scene, ground, sunlight } = createPreviewScene();
+const { scene, ground, hemisphere, sunlight } = createPreviewScene();
+const groundBaseColor = ( ground.material as MeshStandardMaterial ).color.clone();
+const hemisphereBaseIntensity = hemisphere.intensity;
+const sunlightBaseIntensity = sunlight.intensity;
+
+// terrain-gen の草原に合わせる。草の下の地面は草色を暗くした色にし、
+// 上向き法線で明るく出すぎるぶん、草の scatter だけ光を落とす。
+const GRASS_GROUND_SHADE = 0.75;
+const GRASS_LIGHT_SCALE = 0.62;
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
 let controls: OrbitControls;
@@ -70,6 +80,7 @@ const state: DemoState = {
 	scatterCount: 2000,
 	seedVariants: 4,
 	leafPreset: 'green',
+	grassPreset: 'green',
 	options: { ...kinds[ 0 ]!.options },
 	colors: { ...kinds[ 0 ]!.defaultColors },
 };
@@ -111,6 +122,15 @@ function getLeafPreset( color: string ): string {
 
 	}
 
+	return 'custom';
+
+}
+
+function getGrassPreset( color: string ): string {
+
+	for ( const [ preset, presetColor ] of Object.entries( grassColorPresets ) ) {
+		if ( presetColor.toLowerCase() === color.toLowerCase() ) return preset;
+	}
 	return 'custom';
 
 }
@@ -171,6 +191,9 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 		return [ 0, 1, 0.01 ];
 
 	}
+	if ( activeKind.name === 'Grass' && name === 'height' ) {
+		return [ 0.3, 0.6, 0.01 ];
+	}
 	if ( name === 'height' ) {
 
 		return [ 2, 14, 0.1 ];
@@ -228,9 +251,30 @@ function makeAsset( kind: VegetationKind, options: Record<string, number | boole
 const initialAssetPromise = makeAsset( activeKind, { ...state.options }, { ...state.colors } );
 window.addEventListener( 'pagehide', disposeVegetationWorkers );
 
+function updateGrassScene(): void {
+
+	const grassField = activeKind.name === 'Grass' && state.mode === 'scatter';
+	const groundColor = ( ground.material as MeshStandardMaterial ).color;
+
+	if ( grassField ) {
+
+		groundColor.set( state.colors.blade ?? '#4b942b' ).multiplyScalar( GRASS_GROUND_SHADE );
+
+	} else {
+
+		groundColor.copy( groundBaseColor );
+
+	}
+
+	hemisphere.intensity = hemisphereBaseIntensity * ( grassField ? GRASS_LIGHT_SCALE : 1 );
+	sunlight.intensity = sunlightBaseIntensity * ( grassField ? GRASS_LIGHT_SCALE : 1 );
+
+}
+
 function setPartColor( part: string, color: string ): void {
 
 	scheduleColorUpdate( part, color );
+	if ( part === 'blade' ) updateGrassScene();
 
 }
 
@@ -344,6 +388,16 @@ function updateColliderVisualization(): void {
 // 正面（x = 0）から、シーン内のオブジェクトが収まる距離にカメラを置きます。
 function resetCamera(): void {
 
+	// 草原は terrain-gen の walkthrough と同じく、人の目の高さから見る。
+	if ( activeKind.name === 'Grass' && state.mode === 'scatter' ) {
+
+		controls.target.set( 0, 0.3, - 2 );
+		camera.position.set( 0, 1.7, 4 );
+		controls.update();
+		return;
+
+	}
+
 	const box = new Box3().setFromObject( root );
 
 	if ( box.isEmpty() ) {
@@ -409,6 +463,7 @@ function rebuildPreview(): void {
 
 	setWireframe( state.wireframe );
 	updateColliderVisualization();
+	updateGrassScene();
 	sunlight.shadow.needsUpdate = true;
 	lastScatterShadowUpdate = - Infinity;
 	status.hidden = ! isGenerating && state.mode !== 'scatter';
@@ -504,6 +559,8 @@ function rebuildOptionFolders( gui: GUI ): void {
 	colorFolder = gui.addFolder( 'Colors' );
 	let updateLeafColorDisplay = () => {};
 	let updateLeafPresetDisplay = () => {};
+	let updateGrassColorDisplay = () => {};
+	let updateGrassPresetDisplay = () => {};
 
 	if ( activeKind.colorParts.includes( 'leaf' ) ) {
 
@@ -526,6 +583,18 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 	}
 
+	if ( activeKind.colorParts.includes( 'blade' ) ) {
+		const presetController = colorFolder.add( state, 'grassPreset', [ ...Object.keys( grassColorPresets ), 'custom' ] ).name( 'grass preset' );
+		updateGrassPresetDisplay = () => presetController.updateDisplay();
+		presetController.onChange( ( preset: string ) => {
+			const color = grassColorPresets[ preset as keyof typeof grassColorPresets ];
+			if ( color === undefined ) return;
+			state.colors.blade = color;
+			updateGrassColorDisplay();
+			setPartColor( 'blade', color );
+		} );
+	}
+
 	for ( const part of activeKind.colorParts ) {
 
 		const colorController = colorFolder.addColor( state.colors, part ).name( part );
@@ -541,6 +610,13 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 			} );
 
+		} else if ( part === 'blade' ) {
+			updateGrassColorDisplay = () => colorController.updateDisplay();
+			colorController.onChange( ( color: string ) => {
+				state.grassPreset = 'custom';
+				updateGrassPresetDisplay();
+				setPartColor( part, color );
+			} );
 		} else {
 
 			colorController.onChange( ( color: string ) => setPartColor( part, color ) );
@@ -573,7 +649,9 @@ function createGui(): void {
 		state.options = { ...activeKind.options };
 		state.colors = { ...activeKind.defaultColors };
 		state.leafPreset = getLeafPreset( state.colors.leaf ?? '' );
+		state.grassPreset = getGrassPreset( state.colors.blade ?? '' );
 		rebuildOptionFolders( gui );
+		updateViewControls();
 		void rebuildAsset();
 
 	} );
@@ -623,7 +701,7 @@ function createGui(): void {
 	const updateViewControls = (): void => {
 
 		lodController.show( state.mode === 'single' );
-		scatterCountController.show( state.mode === 'scatter' );
+		scatterCountController.show( state.mode === 'scatter' && activeKind.name !== 'Grass' );
 		seedVariantsController.show( state.mode === 'scatter' );
 
 	};

@@ -12,6 +12,7 @@ import {
 import { createRandom, orientBillboardInstances } from '../src/index';
 import type { VegetationAsset } from '../src/index';
 import { setPreviewShadowFlags } from './rendering';
+import { createGrassScatter } from './grassScatter';
 
 const lodDistances = [ 12, 24, 42, 65 ];
 const up = new Vector3( 0, 1, 0 );
@@ -27,6 +28,7 @@ interface ScatterBatch {
 	lod: number;
 	part: string;
 	variant: number;
+	billboard: boolean;
 	active: boolean;
 	mesh: InstancedMesh;
 }
@@ -41,6 +43,8 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 
 	const count = Number.isFinite( requestedCount ) ? Math.max( 0, Math.floor( requestedCount ) ) : 2000;
 	const assets = ( Array.isArray( input ) ? input : [ input ] ).slice( 0, 4 );
+	if ( assets.length > 0 && assets.every( ( asset ) => asset.data.kind === 'grass' ) ) return createGrassScatter( assets, seed );
+
 	const random = createRandom( seed );
 	const group = new Group();
 	const batches: ScatterBatch[] = [];
@@ -95,7 +99,14 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 				mesh.userData.variant = variant;
 				group.add( mesh );
 
-				const batch = { lod, part: definition.name, variant, active: part !== undefined, mesh };
+				const batch = {
+					lod,
+					part: definition.name,
+					variant,
+					billboard: definition.impostorViews !== undefined || definition.impostorYawAngles !== undefined,
+					active: part !== undefined,
+					mesh,
+				};
 				batches.push( batch );
 				batchesByLodAndVariant[ variant * 5 + lod ]!.push( batch );
 
@@ -111,7 +122,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 
 			for ( const batch of batches ) {
 
-				if ( batch.lod === 4 && batch.mesh.visible && batch.mesh.count > 0 ) orientBillboardInstances( batch.mesh, camera );
+				if ( batch.lod === 4 && batch.billboard && batch.mesh.visible && batch.mesh.count > 0 ) orientBillboardInstances( batch.mesh, camera );
 
 			}
 
@@ -154,7 +165,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 
 			batch.mesh.visible = batch.mesh.count > 0;
 			if ( batch.mesh.count > 0 ) batch.mesh.instanceMatrix.needsUpdate = true;
-			if ( batch.lod === 4 && batch.mesh.count > 0 ) orientBillboardInstances( batch.mesh, camera );
+			if ( batch.lod === 4 && batch.billboard && batch.mesh.count > 0 ) orientBillboardInstances( batch.mesh, camera );
 			triangles += batch.mesh.count * ( batch.mesh.geometry.getIndex()?.count ?? 0 ) / 3;
 
 		}

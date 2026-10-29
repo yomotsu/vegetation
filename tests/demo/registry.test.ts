@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { kinds, leafColorPresets } from '../../demo/registry';
+import { grassColorPresets, kinds, leafColorPresets } from '../../demo/registry';
 
 describe( 'demo registry', () => {
 
@@ -14,9 +14,9 @@ describe( 'demo registry', () => {
 
 	} );
 
-	it( 'registers the tree, rock, and pebbles with their supported controls', () => {
+	it( 'registers tree, rock, pebbles, and grass with their supported controls', () => {
 
-		expect( kinds ).toHaveLength( 3 );
+		expect( kinds ).toHaveLength( 4 );
 		expect( kinds[ 0 ]!.name ).toBe( 'Tree' );
 		expect( kinds[ 0 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
 		expect( kinds[ 0 ]!.options ).toEqual( {
@@ -51,6 +51,18 @@ describe( 'demo registry', () => {
 			moss: 0,
 		} );
 		expect( kinds[ 2 ]!.create( {} ).getColor( 'stone' ).getHex() ).toBe( 0xffffff );
+		expect( kinds[ 3 ]!.name ).toBe( 'Grass' );
+		expect( kinds[ 3 ]!.colorParts ).toEqual( [ 'blade' ] );
+		expect( kinds[ 3 ]!.colorOptions ).toEqual( { blade: 'bladeColor' } );
+		expect( kinds[ 3 ]!.defaultColors ).toEqual( { blade: '#4b942b' } );
+		expect( kinds[ 3 ]!.options ).toEqual( { seed: 1, height: 0.45 } );
+		expect( kinds[ 3 ]!.create( {} ).getColor( 'blade' ).getHex() ).toBe( 0x4b942b );
+
+	} );
+
+	it( 'provides the requested grass color presets', () => {
+
+		expect( grassColorPresets ).toEqual( { green: '#4b942b', 'dry yellow': '#b8a64a', autumn: '#a86a2c' } );
 
 	} );
 

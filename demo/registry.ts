@@ -1,5 +1,5 @@
-import { generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
-import type { PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
+import { generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
+import type { GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
 
 export interface VegetationKind {
 	name: string;
@@ -17,6 +17,12 @@ export const leafColorPresets = {
 	'autumn red': '#b5361c',
 	orange: '#d9781e',
 	yellow: '#d8b62a',
+};
+
+export const grassColorPresets = {
+	green: '#4b942b',
+	'dry yellow': '#b8a64a',
+	autumn: '#a86a2c',
 };
 
 export const kinds: VegetationKind[] = [
@@ -69,6 +75,18 @@ export const kinds: VegetationKind[] = [
 			sizeVariation: 0.48,
 			burial: 0.4,
 			moss: 0,
+		},
+	},
+	{
+		name: 'Grass',
+		create: ( opts ) => generateGrass( opts as GrassMeshOptions ),
+		createAsync: ( opts ) => generateGrassAsync( opts as GrassMeshOptions ),
+		colorParts: [ 'blade' ],
+		colorOptions: { blade: 'bladeColor' },
+		defaultColors: { blade: '#4b942b' },
+		options: {
+			seed: 1,
+			height: 0.45,
 		},
 	},
 ];
