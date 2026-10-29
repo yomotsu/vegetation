@@ -15,7 +15,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { disposeVegetationWorkers, VegetationMesh } from 'vegetation';
 import type { VegetationAsset } from 'vegetation';
-import { flowerPetalColorPresets, grassColorPresets, kinds, leafColorPresets } from './registry';
+import { flowerPetalColorPresets, flowerVarietyDefaults, grassColorPresets, kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
 import { createColorUpdateScheduler } from './colorUpdateScheduler';
 import { createColliderMaterialController } from './colliderVisualization';
@@ -137,9 +137,16 @@ function getGrassPreset( color: string ): string {
 
 }
 
-function getFlowerPetalPreset( color: string ): string {
+function getCurrentFlowerVariety(): keyof typeof flowerPetalColorPresets {
 
-	for ( const [ preset, presetColor ] of Object.entries( flowerPetalColorPresets ) ) {
+	const variety = state.options.variety;
+	return typeof variety === 'string' && variety in flowerPetalColorPresets ? variety as keyof typeof flowerPetalColorPresets : 'allium';
+
+}
+
+function getFlowerPetalPreset( color: string, variety = getCurrentFlowerVariety() ): string {
+
+	for ( const [ preset, presetColor ] of Object.entries( flowerPetalColorPresets[ variety ] ) ) {
 		if ( presetColor.toLowerCase() === color.toLowerCase() ) return preset;
 	}
 	return 'custom';
@@ -564,14 +571,16 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 		const value = state.options[ key ];
 		if ( typeof value === 'string' ) {
-			const controller = optionFolder.add( state.options, key, key === 'variety' ? [ 'allium', 'daisy' ] : [ value ] ).name( key );
+			const controller = optionFolder.add( state.options, key, key === 'variety' ? [ 'allium', 'daisy', 'lupine', 'yarrow', 'tulip' ] : [ value ] ).name( key );
 			controller.onChange( ( next: string ) => {
 				if ( activeKind.name === 'Flowers' && key === 'variety' ) {
-					state.options.spread = next === 'daisy' ? 0.37 : 0.29;
-					state.options.height = next === 'daisy' ? 0.285 : 0.37;
-					state.colors.petal = next === 'daisy' ? '#d2600c' : '#f1efe8';
-					state.colors.centerColor = next === 'daisy' ? '#8a7414' : '#8a9670';
-					state.flowerPetalPreset = getFlowerPetalPreset( state.colors.petal );
+					const defaults = flowerVarietyDefaults[ next as keyof typeof flowerVarietyDefaults ];
+					state.options.count = defaults.count;
+					state.options.spread = defaults.spread;
+					state.options.height = defaults.height;
+					state.colors.petal = defaults.petal;
+					state.colors.centerColor = defaults.centerColor;
+					state.flowerPetalPreset = getFlowerPetalPreset( state.colors.petal, next as keyof typeof flowerPetalColorPresets );
 					rebuildOptionFolders( gui );
 				}
 				void rebuildAsset();
@@ -627,10 +636,12 @@ function rebuildOptionFolders( gui: GUI ): void {
 	}
 
 	if ( activeKind.colorParts.includes( 'petal' ) ) {
-		const presetController = colorFolder.add( state, 'flowerPetalPreset', [ ...Object.keys( flowerPetalColorPresets ), 'custom' ] ).name( 'petal preset' );
+		const variety = state.options.variety as keyof typeof flowerPetalColorPresets;
+		const petalPresets = flowerPetalColorPresets[ variety ];
+		const presetController = colorFolder.add( state, 'flowerPetalPreset', [ ...Object.keys( petalPresets ), 'custom' ] ).name( 'petal preset' );
 		updateFlowerPetalPresetDisplay = () => presetController.updateDisplay();
 		presetController.onChange( ( preset: string ) => {
-			const color = flowerPetalColorPresets[ preset as keyof typeof flowerPetalColorPresets ];
+			const color = petalPresets[ preset as keyof typeof petalPresets ];
 			if ( color === undefined ) return;
 			state.colors.petal = color;
 			updateFlowerPetalColorDisplay();
@@ -678,6 +689,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 	}
 
 	for ( const key of Object.keys( activeKind.textureColors ?? {} ) ) {
+		if ( activeKind.name === 'Flowers' && state.options.variety === 'tulip' && key === 'centerColor' ) continue;
 		colorFolder.addColor( state.colors, key ).name( key ).onFinishChange( () => void rebuildAsset() );
 	}
 
