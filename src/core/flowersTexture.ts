@@ -303,6 +303,37 @@ function createColorPixels( shape: FlowerTextureShape, color: number, fixedColor
 
 }
 
+export function createColorizedFlowerTexture(
+	width: number,
+	height: number,
+	color: number,
+	alpha: Uint8Array,
+	shade: Float32Array,
+	fixedMask?: Uint8Array,
+	fixedColor = color,
+	fixedShade: Float32Array = shade,
+): TextureData {
+
+	const colorData = [ ( color >>> 16 ) & 0xff, ( color >>> 8 ) & 0xff, color & 0xff ];
+	const fixedColorData = [ ( fixedColor >>> 16 ) & 0xff, ( fixedColor >>> 8 ) & 0xff, fixedColor & 0xff ];
+	const data = new Uint8Array( width * height * 4 );
+	const indices: number[] = [];
+	for ( let pixel = 0; pixel < width * height; pixel ++ ) {
+		const fixed = fixedMask?.[ pixel ] === 1;
+		const shadeValue = fixed ? fixedShade[ pixel ]! : shade[ pixel ]!;
+		const shadeIndex = Math.max( 0, Math.min( SHADE_LEVELS - 1, Math.round( Math.max( 0, Math.min( 2, shadeValue ) ) * SHADE_SCALE ) ) ) * 256;
+		const source = fixed ? fixedColorData : colorData;
+		const offset = pixel * 4;
+		data[ offset ] = shadeColorLut[ shadeIndex + source[ 0 ]! ]!;
+		data[ offset + 1 ] = shadeColorLut[ shadeIndex + source[ 1 ]! ]!;
+		data[ offset + 2 ] = shadeColorLut[ shadeIndex + source[ 2 ]! ]!;
+		data[ offset + 3 ] = alpha[ pixel ]!;
+		if ( ! fixed ) indices.push( pixel );
+	}
+	return { width, height, data, colorFactors: shade.slice(), colorPixelIndices: Uint32Array.from( indices ) };
+
+}
+
 export function createFlowersPetalTexture( seed: number, variety: 'allium' | 'daisy', petalColor: number, centerColor: number ): TextureData {
 
 	return createColorPixels( flowerTextureShape( variety, seed ), petalColor, centerColor );

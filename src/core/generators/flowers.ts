@@ -4,6 +4,10 @@ import { registerTextureRegenerator, regenerateTexture } from '../textureRegener
 import { composeFlowersColor, createFlowersPetalTexture, createFlowersStemTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
 import { createRandom } from '../random';
 import type { MeshData, PartDef, TextureData, TextureGeneratorDef, VegetationData } from '../types';
+import { buildLupinePart, createLupinePetalTexture, createLupineStemTexture } from '../flowers/lupine';
+import { buildYarrowPart, createYarrowPetalTexture, createYarrowStemTexture } from '../flowers/yarrow';
+import { buildTulipPart, createTulipPetalTexture, createTulipStemTexture } from '../flowers/tulip';
+import type { FlowerPlacement } from '../flowers/common';
 
 export const DEFAULT_FLOWERS_STEM_COLOR = 0x2f6f1e;
 export const DEFAULT_ALLIUM_PETAL_COLOR = 0xf1efe8;
@@ -11,8 +15,16 @@ export const DEFAULT_ALLIUM_CENTER_COLOR = 0x8a9670;
 export const DEFAULT_DAISY_PETAL_COLOR = 0xd2600c;
 export const DEFAULT_DAISY_CENTER_COLOR = 0x8a7414;
 export const DEFAULT_FLOWERS_COUNT = 6;
+export const DEFAULT_LUPINE_PETAL_COLOR = 0x4f6fd8;
+export const DEFAULT_LUPINE_CENTER_COLOR = 0xe7ce80;
+export const DEFAULT_LUPINE_COUNT = 5;
+export const DEFAULT_YARROW_PETAL_COLOR = 0xd0508f;
+export const DEFAULT_YARROW_CENTER_COLOR = 0xf4d6a0;
+export const DEFAULT_TULIP_PETAL_COLOR = 0xd8322a;
+export const DEFAULT_TULIP_CENTER_COLOR = 0x000000;
+export const DEFAULT_TULIP_COUNT = 4;
 
-export type FlowersVariety = 'allium' | 'daisy';
+export type FlowersVariety = 'allium' | 'daisy' | 'lupine' | 'yarrow' | 'tulip';
 
 export interface FlowersOptions {
 	seed?: number;
@@ -23,19 +35,6 @@ export interface FlowersOptions {
 	petalColor?: number;
 	centerColor?: number;
 	stemColor?: number;
-}
-
-interface PlantPlacement {
-	x: number;
-	z: number;
-	yaw: number;
-	crossAngle: number;
-	height: number;
-	leanX: number;
-	leanZ: number;
-	headTilt: number;
-	headTiltYaw: number;
-	variant: number;
 }
 
 function positive( value: number, name: string ): number {
@@ -51,10 +50,10 @@ function validateColor( value: number, name: string ): void {
 
 }
 
-function createPlacements( seed: number, count: number, spread: number, height: number, variety: FlowersVariety ): PlantPlacement[] {
+function createPlacements( seed: number, count: number, spread: number, height: number, variety: FlowersVariety ): FlowerPlacement[] {
 
 	const random = createRandom( seed + 149 );
-	const flowerRadius = variety === 'allium' ? 0.12 : 0.135;
+	const flowerRadius = variety === 'allium' ? 0.12 : variety === 'daisy' ? 0.135 : variety === 'yarrow' ? 0.05 : variety === 'tulip' ? 0.025 : 0.035;
 	const availableRadius = Math.max( 0, spread - flowerRadius );
 	const minimumSpacing = Math.min( 0.12, availableRadius * 0.6 );
 	const positions: [ number, number ][] = [];
@@ -88,8 +87,9 @@ function createPlacements( seed: number, count: number, spread: number, height: 
 		const plantHeight = height * ( 0.91 + random.next() * 0.18 );
 		const leanAngle = random.next() * Math.PI * 2;
 		// 参考 glTF の茎は、上端が高さの 8〜27%（daisy は 11〜35%）横へずれる。
-		const lean = ( variety === 'daisy' ? random.range( 0.11, 0.35 ) : random.range( 0.08, 0.27 ) ) * plantHeight;
-		const headTilt = variety === 'daisy' ? random.range( 15, 35 ) * Math.PI / 180 : 0;
+		// チューリップとルピナスの茎はほぼまっすぐ。
+		const lean = ( variety === 'daisy' ? random.range( 0.11, 0.35 ) : variety === 'tulip' || variety === 'lupine' ? random.range( 0.03, 0.1 ) : random.range( 0.08, 0.27 ) ) * plantHeight;
+		const headTilt = variety === 'daisy' ? random.range( 15, 35 ) * Math.PI / 180 : variety === 'yarrow' ? random.range( 5, 15 ) * Math.PI / 180 : 0;
 		const headTiltYaw = random.next() * Math.PI * 2;
 
 		return {
@@ -113,7 +113,7 @@ const STEM_ROW_BIAS = 1.6;
 
 function addVerticalCard(
 	builder: MeshBuilder,
-	placement: PlantPlacement,
+	placement: FlowerPlacement,
 	width: number,
 	bottom: number,
 	top: number,
@@ -156,7 +156,7 @@ function addVerticalCard(
 
 }
 
-function addFlowerQuad( builder: MeshBuilder, placement: PlantPlacement, width: number, height: number, yaw: number ): void {
+function addFlowerQuad( builder: MeshBuilder, placement: FlowerPlacement, width: number, height: number, yaw: number ): void {
 
 	const cosine = Math.cos( yaw );
 	const sine = Math.sin( yaw );
@@ -187,7 +187,7 @@ const DAISY_HEAD_SIZE = 0.16;
 const ALLIUM_HEAD_SIZE = 0.24;
 const ALLIUM_HEAD_RISE = 0.035;
 
-function addDaisyHead( builder: MeshBuilder, placement: PlantPlacement, size: number ): void {
+function addDaisyHead( builder: MeshBuilder, placement: FlowerPlacement, size: number ): void {
 
 	const centerY = placement.height;
 	const outerRadius = size / Math.SQRT2;
@@ -208,7 +208,11 @@ function addDaisyHead( builder: MeshBuilder, placement: PlantPlacement, size: nu
 
 }
 
-function buildFlowersPart( variety: FlowersVariety, lod: number, plants: PlantPlacement[], part: 'petal' | 'stem' ): MeshData {
+function buildFlowersPart( variety: FlowersVariety, lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
+
+	if ( variety === 'lupine' ) return buildLupinePart( lod, plants, part );
+	if ( variety === 'yarrow' ) return buildYarrowPart( lod, plants, part );
+	if ( variety === 'tulip' ) return buildTulipPart( lod, plants, part );
 
 	const builder = new MeshBuilder();
 
@@ -295,9 +299,11 @@ function combineParts( petal: MeshData, stem: MeshData ): MeshData {
 
 function defaultColors( variety: FlowersVariety ): { petalColor: number; centerColor: number } {
 
-	return variety === 'allium'
-		? { petalColor: DEFAULT_ALLIUM_PETAL_COLOR, centerColor: DEFAULT_ALLIUM_CENTER_COLOR }
-		: { petalColor: DEFAULT_DAISY_PETAL_COLOR, centerColor: DEFAULT_DAISY_CENTER_COLOR };
+	if ( variety === 'allium' ) return { petalColor: DEFAULT_ALLIUM_PETAL_COLOR, centerColor: DEFAULT_ALLIUM_CENTER_COLOR };
+	if ( variety === 'daisy' ) return { petalColor: DEFAULT_DAISY_PETAL_COLOR, centerColor: DEFAULT_DAISY_CENTER_COLOR };
+	if ( variety === 'lupine' ) return { petalColor: DEFAULT_LUPINE_PETAL_COLOR, centerColor: DEFAULT_LUPINE_CENTER_COLOR };
+	if ( variety === 'yarrow' ) return { petalColor: DEFAULT_YARROW_PETAL_COLOR, centerColor: DEFAULT_YARROW_CENTER_COLOR };
+	return { petalColor: DEFAULT_TULIP_PETAL_COLOR, centerColor: DEFAULT_TULIP_CENTER_COLOR };
 
 }
 
@@ -316,12 +322,12 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const seed = options.seed ?? 1;
 	const variety = options.variety ?? 'allium';
 	if ( ! Number.isFinite( seed ) ) throw new RangeError( 'Flowers seed must be finite' );
-	if ( variety !== 'allium' && variety !== 'daisy' ) throw new RangeError( 'Flowers variety must be allium or daisy' );
-	const count = options.count ?? DEFAULT_FLOWERS_COUNT;
+	if ( variety !== 'allium' && variety !== 'daisy' && variety !== 'lupine' && variety !== 'yarrow' && variety !== 'tulip' ) throw new RangeError( 'Flowers variety is unsupported' );
+	const count = options.count ?? ( variety === 'lupine' ? DEFAULT_LUPINE_COUNT : variety === 'tulip' ? DEFAULT_TULIP_COUNT : DEFAULT_FLOWERS_COUNT );
 	if ( ! Number.isInteger( count ) || count < 1 || count > DEFAULT_FLOWERS_COUNT ) throw new RangeError( 'Flowers count must be an integer from 1 to 6' );
 	const defaults = defaultColors( variety );
-	const spread = positive( options.spread ?? ( variety === 'allium' ? 0.29 : 0.37 ), 'spread' );
-	const height = positive( options.height ?? ( variety === 'allium' ? 0.37 : 0.285 ), 'height' );
+	const spread = positive( options.spread ?? ( variety === 'allium' ? 0.29 : variety === 'daisy' ? 0.37 : 0.3 ), 'spread' );
+	const height = positive( options.height ?? ( variety === 'allium' ? 0.37 : variety === 'daisy' ? 0.285 : variety === 'lupine' ? 0.52 : variety === 'yarrow' ? 0.42 : 0.36 ), 'height' );
 	const petalColor = options.petalColor ?? defaults.petalColor;
 	const centerColor = options.centerColor ?? defaults.centerColor;
 	const stemColor = options.stemColor ?? DEFAULT_FLOWERS_STEM_COLOR;
@@ -335,7 +341,9 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const maximumPlantHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
 	const headRise = variety === 'allium'
 		? ALLIUM_HEAD_SIZE * 0.5 + ALLIUM_HEAD_RISE
-		: Math.max( ...plants.map( ( plant ) => DAISY_HEAD_SIZE * 0.5 * Math.tan( plant.headTilt ) ) ) + DAISY_HEAD_SIZE * DAISY_CUP_DEPTH;
+		: variety === 'daisy'
+			? Math.max( ...plants.map( ( plant ) => DAISY_HEAD_SIZE * 0.5 * Math.tan( plant.headTilt ) ) ) + DAISY_HEAD_SIZE * DAISY_CUP_DEPTH
+			: variety === 'yarrow' ? 0.025 + Math.max( ...plants.map( ( plant ) => 0.05 * Math.SQRT2 * Math.tan( plant.headTilt ) ) ) : 0;
 	const bounds = { radius: spread, height: maximumPlantHeight + headRise };
 	const lod3Index = 2;
 	const lod4Index = 3;
@@ -372,10 +380,16 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const lod3Part = impostorLod3Part();
 	const lod4Part = impostorPart();
 	const parts = [ petalPart, stemPart, lod3Part, lod4Part ];
-	const textures = {
-		petal: createFlowersPetalTexture( seed, variety, petalColor, centerColor ),
-		stem: createFlowersStemTexture( seed, variety, stemColor ),
-	};
+	const textures = variety === 'allium' || variety === 'daisy'
+		? {
+			petal: createFlowersPetalTexture( seed, variety, petalColor, centerColor ),
+			stem: createFlowersStemTexture( seed, variety, stemColor ),
+		}
+		: variety === 'lupine'
+			? { petal: createLupinePetalTexture( seed, petalColor, centerColor ), stem: createLupineStemTexture( stemColor ) }
+			: variety === 'yarrow'
+				? { petal: createYarrowPetalTexture( seed, petalColor, centerColor ), stem: createYarrowStemTexture( stemColor ) }
+				: { petal: createTulipPetalTexture( petalColor ), stem: createTulipStemTexture( stemColor ) };
 
 	return {
 		kind: 'flowers',

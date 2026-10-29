@@ -4,6 +4,8 @@ import type { MeshData } from '../../src/core/types';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 import { validateMeshData } from '../helpers/validateMeshData';
 
+const newVarieties = [ 'lupine', 'yarrow', 'tulip' ] as const;
+
 function triangleCount( mesh: MeshData ): number {
 
 	return mesh.indices.length / 3;
@@ -97,9 +99,168 @@ describe( 'flowers core generator', () => {
 
 	}
 
-	it( 'keeps every face up-normal and weights roots 0 through flower tips 1', () => {
+	it( 'keeps allium and daisy seed-1 geometry and textures byte-identical', async () => {
+
+		const hash = async ( bytes: ArrayBufferView ) => {
+			const source = new Uint8Array( bytes.buffer, bytes.byteOffset, bytes.byteLength );
+			const digest = await globalThis.crypto.subtle.digest( 'SHA-256', Uint8Array.from( source ) );
+			return Array.from( new Uint8Array( digest ), ( value ) => value.toString( 16 ).padStart( 2, '0' ) ).join( '' );
+		};
+		const expected = {
+			allium: {
+				positions: '9c5d46efeb123860749707463cac4c26aaf9cc3945132927909149a4387a44cc',
+				indices: '6e0df0d9cd4098f2706f499a0cb240a0aa6b31b6549f8b7099e8b0316f2aa6aa',
+				petal: '8df3b2b3af006018a551685114158cc58d8770c120db35859bc4a63a3b5d33ae',
+				stem: '8a1c0ca9271f2fb5e1877d7d6f57ea5c19449a9eeaddb03a999f96c8ae1a96ed',
+			},
+			daisy: {
+				positions: '428c601204a4316a80ca6ff6b3455a33c962cd2076277d695faab564f2140fa8',
+				indices: 'bab8dcf8a445986d4199cc1f71c281d6e9a1338132bca9004bb38c1dbe45bfa8',
+				petal: '222a9e2a0bb425d388c14a29da4801971dc58b9be6226094d9125333a30c9c1d',
+				stem: 'ea67baca2f1e5707db9ed676c70efb101bd22204733ea5910ab6da569b9354c6',
+			},
+		};
 
 		for ( const variety of [ 'allium', 'daisy' ] as const ) {
+			const data = generateFlowersData( { seed: 1, variety } );
+			expect( {
+				positions: await hash( data.lods[ 0 ]!.positions ),
+				indices: await hash( data.lods[ 0 ]!.indices ),
+				petal: await hash( data.textures.petal!.data ),
+				stem: await hash( data.textures.stem!.data ),
+			} ).toEqual( expected[ variety ] );
+		}
+
+	} );
+
+	for ( const variety of newVarieties ) {
+
+		it( `creates deterministic valid ${ variety } LODs within the flower budgets`, () => {
+
+			const first = generateFlowersData( { seed: 31, variety } );
+			const second = generateFlowersData( { seed: 31, variety } );
+			const vertices = variety === 'lupine' ? [ 150, 70 ] : variety === 'yarrow' ? [ 126, 78 ] : [ 144, 60 ];
+			const triangles = first.lods.map( triangleCount );
+			expect( first.kind ).toBe( 'flowers' );
+			expect( first.lods ).toHaveLength( 5 );
+			expect( first.parts.slice( 0, 2 ).map( ( part ) => part.name ) ).toEqual( [ 'petal', 'stem' ] );
+			for ( let lod = 0; lod < 5; lod ++ ) {
+				validateMeshData( first.lods[ lod ]! );
+				expect( areStructurallyByteIdentical( first.lods[ lod ]!, second.lods[ lod ]! ) ).toBe( true );
+				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBe( vertices[ 0 ] );
+				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBe( vertices[ 1 ] );
+			}
+			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
+			expect( areByteIdentical( first.textures.petal!.data, second.textures.petal!.data ) ).toBe( true );
+			expect( areByteIdentical( first.textures.stem!.data, second.textures.stem!.data ) ).toBe( true );
+
+		} );
+
+	}
+
+	it( 'keeps new flower normals upward and wind weights between the ground and flower tips', () => {
+
+		for ( const variety of newVarieties ) {
+			const mesh = generateFlowersData( { seed: 7, variety } ).lods[ 0 ]!;
+			for ( let offset = 0; offset < mesh.normals.length; offset += 3 ) expect( [ mesh.normals[ offset ], mesh.normals[ offset + 1 ], mesh.normals[ offset + 2 ] ] ).toEqual( [ 0, 1, 0 ] );
+			for ( const weight of mesh.windWeight ) expect( weight ).toBeGreaterThanOrEqual( 0 );
+			for ( const weight of mesh.windWeight ) expect( weight ).toBeLessThanOrEqual( 1 );
+			let hasRoot = false;
+			for ( let vertex = 0; vertex < mesh.windWeight.length; vertex ++ ) if ( mesh.positions[ vertex * 3 + 1 ] === 0 && mesh.windWeight[ vertex ] === 0 ) hasRoot = true;
+			expect( hasRoot ).toBe( true );
+			const top = vertexWithMaximumY( mesh );
+			expect( mesh.windWeight[ top ] ).toBe( 1 );
+		}
+
+	} );
+
+	it( 'keeps new flower textures under the pixel limit and regenerates colors without touching geometry', () => {
+
+		for ( const variety of newVarieties ) {
+			const options = { seed: 19, variety };
+			const data = generateFlowersData( options );
+			const geometry = data.lods.map( ( mesh ) => ( { ...mesh } ) );
+			const pixels = Object.values( data.textures ).reduce( ( sum, texture ) => sum + texture.width * texture.height, 0 );
+			const petalColor = 0xa98bd6;
+			const stemColor = 0x81603d;
+			expect( pixels ).toBeLessThanOrEqual( 256 * 256 );
+			regenerateFlowersPetalTexture( data, petalColor );
+			regenerateFlowersStemTexture( data, stemColor );
+			const fresh = generateFlowersData( { ...options, petalColor, stemColor } );
+			expect( areByteIdentical( data.textures.petal!.data, fresh.textures.petal!.data ) ).toBe( true );
+			expect( areByteIdentical( data.textures.stem!.data, fresh.textures.stem!.data ) ).toBe( true );
+			for ( let lod = 0; lod < 5; lod ++ ) expect( areStructurallyByteIdentical( data.lods[ lod ]!, geometry[ lod ]! ) ).toBe( true );
+		}
+
+	} );
+
+	it( 'draws variety-specific lupine, yarrow, and tulip silhouettes', () => {
+
+		const lupine = generateFlowersData( { seed: 3, variety: 'lupine' } );
+		const lupineMesh = lupine.lods[ 0 ]!;
+		const lupineStemOffset = 28 * 5;
+		const lupineSpikeTop = Math.max( ...Array.from( { length: lupineStemOffset }, ( _, index ) => lupineMesh.positions[ index * 3 + 1 ]! ) );
+		const lupineStemTop = Math.max( ...Array.from( { length: lupineMesh.positions.length / 3 - lupineStemOffset }, ( _, index ) => lupineMesh.positions[ ( lupineStemOffset + index ) * 3 + 1 ]! ) );
+		expect( lupineSpikeTop ).toBeGreaterThan( lupineStemTop );
+
+		const yarrow = generateFlowersData( { seed: 3, variety: 'yarrow' } ).lods[ 0 ]!;
+		const yarrowCenterY = yarrow.positions[ 1 ]!;
+		const yarrowRimY = [ 1, 2, 3, 4 ].reduce( ( sum, vertex ) => sum + yarrow.positions[ vertex * 3 + 1 ]!, 0 ) / 4;
+		expect( yarrowCenterY ).toBeGreaterThan( yarrowRimY );
+
+		const tulip = generateFlowersData( { seed: 3, variety: 'tulip' } ).lods[ 0 ]!;
+		const stemTip = [ 0, 0, 0 ];
+		// 花びらは 1 枚 6 頂点（3 段）× 3 枚 × 4 株。その後に茎カード（2 段 = 6 頂点）が続く。
+		const tulipStemOffset = 18 * 4;
+		for ( const vertex of [ tulipStemOffset + 4, tulipStemOffset + 5 ] ) for ( let axis = 0; axis < 3; axis ++ ) stemTip[ axis ]! += tulip.positions[ vertex * 3 + axis ]! / 2;
+		const angles: number[] = [];
+		const topOffsets: number[] = [];
+		for ( let petal = 0; petal < 3; petal ++ ) {
+			const offset = petal * 6;
+			const topX = ( tulip.positions[ ( offset + 4 ) * 3 ]! + tulip.positions[ ( offset + 5 ) * 3 ]! ) * 0.5 - stemTip[ 0 ]!;
+			const topZ = ( tulip.positions[ ( offset + 4 ) * 3 + 2 ]! + tulip.positions[ ( offset + 5 ) * 3 + 2 ]! ) * 0.5 - stemTip[ 2 ]!;
+			angles.push( Math.atan2( topZ, topX ) );
+			topOffsets.push( Math.hypot( topX, topZ ) );
+		}
+		angles.sort( ( a, b ) => a - b );
+		const gaps = [ angles[ 1 ]! - angles[ 0 ]!, angles[ 2 ]! - angles[ 1 ]!, Math.PI * 2 - angles[ 2 ]! + angles[ 0 ]! ];
+		for ( const gap of gaps ) expect( gap ).toBeCloseTo( Math.PI * 2 / 3, 1 );
+		expect( topOffsets.every( ( offset ) => offset > 0.01 ) ).toBe( true );
+
+		// 花の下部はふっくら: 高さ 40% の段が、付け根の段より外へ張り出す。
+		for ( let petal = 0; petal < 3; petal ++ ) {
+			const offset = petal * 6;
+			const radius = ( first: number ) => Math.hypot(
+				( tulip.positions[ first * 3 ]! + tulip.positions[ ( first + 1 ) * 3 ]! ) * 0.5 - stemTip[ 0 ]!,
+				( tulip.positions[ first * 3 + 2 ]! + tulip.positions[ ( first + 1 ) * 3 + 2 ]! ) * 0.5 - stemTip[ 2 ]!,
+			);
+			expect( radius( offset + 2 ) ).toBeGreaterThan( radius( offset ) + 0.012 );
+			expect( radius( offset + 2 ) ).toBeGreaterThan( radius( offset + 4 ) );
+		}
+
+	} );
+
+	it( 'keeps both crossed stem cards on one curve for tulip and lupine', () => {
+
+		// 段数や形の違う茎を重ねると、茎が 2 本に見える。
+		const cases = [
+			{ variety: 'tulip' as const, stemOffset: 18 * 4, plants: 4 },
+			{ variety: 'lupine' as const, stemOffset: 10 * 5, plants: 5 },
+		];
+		for ( const { variety, stemOffset } of cases ) {
+			const mesh = generateFlowersData( { seed: 5, variety } ).lods[ 0 ]!;
+			for ( let row = 0; row < 3; row ++ ) {
+				const first = [ 0, 1, 2 ].map( ( axis ) => ( mesh.positions[ ( stemOffset + row * 2 ) * 3 + axis ]! + mesh.positions[ ( stemOffset + row * 2 + 1 ) * 3 + axis ]! ) * 0.5 );
+				const second = [ 0, 1, 2 ].map( ( axis ) => ( mesh.positions[ ( stemOffset + 6 + row * 2 ) * 3 + axis ]! + mesh.positions[ ( stemOffset + 6 + row * 2 + 1 ) * 3 + axis ]! ) * 0.5 );
+				expect( Math.hypot( first[ 0 ]! - second[ 0 ]!, first[ 1 ]! - second[ 1 ]!, first[ 2 ]! - second[ 2 ]! ) ).toBeLessThan( 1e-6 );
+			}
+		}
+
+	} );
+
+	it( 'keeps every face up-normal and weights roots 0 through flower tips 1', () => {
+
+		for ( const variety of [ 'allium', 'daisy', ...newVarieties ] as const ) {
 
 			const lods = generateFlowersData( { seed: 7, variety } ).lods;
 			for ( const mesh of lods ) expect( [ ...mesh.normals ].every( ( value, index ) => index % 3 === 1 ? value === 1 : value === 0 ) ).toBe( true );
@@ -120,7 +281,7 @@ describe( 'flowers core generator', () => {
 	it( 'keeps the textures within the reference 256 x 256 atlas', () => {
 
 		// 参考 glTF は花 1 種につき 256×256 のアトラス 1 枚。花と茎の合計がそれを超えないこと。
-		for ( const variety of [ 'allium', 'daisy' ] as const ) {
+		for ( const variety of [ 'allium', 'daisy', ...newVarieties ] as const ) {
 			const data = generateFlowersData( { seed: 3, variety } );
 			const pixels = Object.values( data.textures ).reduce( ( sum, texture ) => sum + texture.width * texture.height, 0 );
 			expect( pixels ).toBeLessThanOrEqual( 256 * 256 );
@@ -245,15 +406,15 @@ describe( 'flowers core generator', () => {
 
 	it( 'bakes the center color into the petal texture and keeps analytic alpha antialiasing', () => {
 
-		for ( const variety of [ 'allium', 'daisy' ] as const ) {
+		for ( const variety of [ 'allium', 'daisy', ...newVarieties ] as const ) {
 
 			const first = generateFlowersData( { seed: 5, variety } ).textures.petal!;
 			const changed = generateFlowersData( { seed: 5, variety, centerColor: 0xff00ff } ).textures.petal!;
 			const alpha = new Set<number>();
 			for ( let index = 3; index < first.data.length; index += 4 ) alpha.add( first.data[ index ]! );
 
-			expect( areByteIdentical( first.data, changed.data ) ).toBe( false );
-			expect( [ ...alpha ].some( ( value ) => value > 0 && value < 255 ) ).toBe( true );
+			expect( areByteIdentical( first.data, changed.data ) ).toBe( variety === 'tulip' );
+			if ( variety === 'allium' || variety === 'daisy' || variety === 'tulip' ) expect( [ ...alpha ].some( ( value ) => value > 0 && value < 255 ) ).toBe( true );
 			expect( first.colorFactors ).toHaveLength( first.width * first.height );
 			expect( first.colorPixelIndices!.length ).toBeGreaterThan( 0 );
 
@@ -263,7 +424,7 @@ describe( 'flowers core generator', () => {
 
 	it( 'keeps generation and impostor baking under 50 ms', () => {
 
-		for ( const variety of [ 'allium', 'daisy' ] as const ) {
+		for ( const variety of [ 'allium', 'daisy', ...newVarieties ] as const ) {
 
 			const start = performance.now();
 			generateFlowersData( { seed: 1, variety } );
