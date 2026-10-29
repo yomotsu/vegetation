@@ -750,7 +750,7 @@ export function generateRockData( options: RockOptions = {} ): VegetationData {
 			doubleSided: false,
 			flatShading: false,
 		},
-		impostorPart(),
+		{ ...impostorPart(), impostorFade: false },
 	];
 	const textureShapeKey = `${ roughness.toFixed( 3 ) }:${ flatness.toFixed( 3 ) }:${ weathering.toFixed( 3 ) }:${ closeBottom ? 1 : 0 }${ moss > 0 ? `:burial:${ burial.toFixed( 4 ) }` : '' }`;
 	const textures = moss > 0

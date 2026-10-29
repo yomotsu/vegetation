@@ -932,7 +932,8 @@ async function rockDataHash( data: ReturnType<typeof generateRockData> ): Promis
 	addArray( data.collider!.indices );
 	addArray( data.textures.albedo!.data );
 	addArray( data.textures.normal!.data );
-	chunks.push( new TextEncoder().encode( JSON.stringify( { bounds: data.bounds, parts: data.parts } ) ) );
+	// impostorFade は描画方法の指定なので、形とテクスチャの比較から外す。
+	chunks.push( new TextEncoder().encode( JSON.stringify( { bounds: data.bounds, parts: data.parts.map( ( { impostorFade, ...part } ) => part ) } ) ) );
 	const bytes = new Uint8Array( chunks.reduce( ( total, chunk ) => total + chunk.length, 0 ) );
 	let offset = 0;
 	for ( const chunk of chunks ) {

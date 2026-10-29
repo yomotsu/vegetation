@@ -499,7 +499,7 @@ export function generatePebblesData( options: PebblesOptions = {} ): VegetationD
 			doubleSided: false,
 			flatShading: false,
 		},
-		impostorPart(),
+		{ ...impostorPart(), impostorFade: false },
 	];
 	const textures = createRockTextures( seed );
 
