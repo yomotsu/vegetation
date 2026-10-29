@@ -236,8 +236,9 @@ export function buildCallaPart( lod: number, plants: FlowerPlacement[], part: 'p
 			addCallaFunnelCard( builder, plant, plant.yaw + Math.PI * 0.5, false, lod );
 			addCallaSpadix( builder, plant, lod );
 		} else if ( lod === 0 ) {
-			addCallaStemCard( builder, plant, plant.yaw, 2 );
-			addCallaStemCard( builder, plant, plant.yaw + plant.crossAngle, 2 );
+			// 花茎はまっすぐなので 1 段でよい（中段の頂点は直線上で形に効かない）。
+			addCallaStemCard( builder, plant, plant.yaw, 1 );
+			addCallaStemCard( builder, plant, plant.yaw + plant.crossAngle, 1 );
 			for ( let leaf = 0; leaf < 3; leaf ++ ) addCallaLeaf( builder, plant, plant.yaw + 0.5 + leaf * Math.PI * 2 / 3, 1 - leaf * 0.08, leaf );
 		} else {
 			const stem = plant.height - FLOWER_LENGTH;

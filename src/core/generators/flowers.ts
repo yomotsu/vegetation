@@ -1,5 +1,6 @@
 import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
+import { weldIdenticalVertices } from '../rockGeometry';
 import { registerTextureRegenerator, regenerateTexture } from '../textureRegenerator';
 import { composeFlowersColor, createFlowersPetalTexture, createFlowersStemTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
 import { createRandom } from '../random';
@@ -413,6 +414,8 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const lod0 = combineParts( buildFlowersPart( variety, 0, plants, 'petal' ), buildFlowersPart( variety, 0, plants, 'stem' ) );
 	const lod1 = combineParts( buildFlowersPart( variety, 1, plants, 'petal' ), buildFlowersPart( variety, 1, plants, 'stem' ) );
 	const lod2 = combineParts( buildFlowersPart( variety, 2, plants, 'petal' ), buildFlowersPart( variety, 2, plants, 'stem' ) );
+	// 位置と属性がまったく同じ頂点は 1 つにまとめる（同じ絵を使う葉の付け根など）。
+	for ( const mesh of [ lod0, lod1, lod2 ] ) weldIdenticalVertices( mesh );
 	const maximumPlantHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
 	const headRise = variety === 'allium'
 		? ALLIUM_HEAD_SIZE * 0.5 + ALLIUM_HEAD_RISE

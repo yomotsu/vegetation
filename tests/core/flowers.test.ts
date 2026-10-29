@@ -281,7 +281,7 @@ describe( 'flowers core generator', () => {
 		const cases = [
 			{ variety: 'poppy' as const, segments: 3 },
 			{ variety: 'bluebell' as const, segments: 3 },
-			{ variety: 'calla' as const, segments: 2 },
+			{ variety: 'calla' as const, segments: 1 },
 			{ variety: 'primrose' as const, segments: 1 },
 		];
 		for ( const { variety, segments } of cases ) {
