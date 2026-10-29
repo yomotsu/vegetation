@@ -2,8 +2,10 @@ import {
 	Camera,
 	BufferGeometry,
 	DynamicDrawUsage,
+	FrontSide,
 	Group,
 	InstancedMesh,
+	Material,
 	Matrix4,
 	Quaternion,
 	StaticDrawUsage,
@@ -13,6 +15,7 @@ import { createRandom, orientBillboardInstances } from '../src/index';
 import type { VegetationAsset } from '../src/index';
 import { setPreviewShadowFlags } from './rendering';
 import { createGrassScatter } from './grassScatter';
+import { createBidirectionalCardGeometry } from '../src/three/grassCardGeometry';
 
 const lodDistances = [ 12, 24, 42, 65 ];
 const up = new Vector3( 0, 1, 0 );
@@ -50,6 +53,8 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 	const batches: ScatterBatch[] = [];
 	const batchesByLodAndVariant: ScatterBatch[][] = Array.from( { length: assets.length * 5 }, () => [] );
 	const emptyGeometries: BufferGeometry[] = [];
+	const ownedGeometries: BufferGeometry[] = [];
+	const ownedMaterials: Material[] = [];
 	const positions: ScatterPosition[] = [];
 	const cameraPosition = new Vector3();
 	const matrix = new Matrix4();
@@ -88,7 +93,18 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 					geometry = part.geometry;
 				}
 
-				const mesh = new InstancedMesh( geometry, asset.materials[ asset.data.parts.indexOf( definition ) ]!, count );
+				let material = asset.materials[ asset.data.parts.indexOf( definition ) ]!;
+
+				// VegetationMesh と同じく、両面描画の裏で法線が下を向いて黒くならないよう、カードを逆向きにも足して表面だけ描く。
+				if ( part !== undefined && definition.upNormalCards === true ) {
+					geometry = createBidirectionalCardGeometry( geometry );
+					material = material.clone();
+					material.side = FrontSide;
+					ownedGeometries.push( geometry );
+					ownedMaterials.push( material );
+				}
+
+				const mesh = new InstancedMesh( geometry, material, count );
 				mesh.count = 0;
 				mesh.visible = false;
 				mesh.frustumCulled = false;
@@ -179,8 +195,12 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 		for ( const batch of batches ) batch.mesh.dispose();
 		group.clear();
 		for ( const geometry of emptyGeometries ) geometry.dispose();
+		for ( const geometry of ownedGeometries ) geometry.dispose();
+		for ( const material of ownedMaterials ) material.dispose();
 		batches.length = 0;
 		emptyGeometries.length = 0;
+		ownedGeometries.length = 0;
+		ownedMaterials.length = 0;
 		positions.length = 0;
 
 	}

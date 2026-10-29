@@ -1,7 +1,8 @@
-import { FrontSide, LOD, Mesh, MeshPhysicalMaterial } from 'three';
+import { FrontSide, InstancedMesh, LOD, Matrix4, Mesh, MeshPhysicalMaterial, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { FlowersMesh, generateFlowers, generateFlowersAsync } from '../../src/index';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
+import { orientBillboardInstances } from '../../src/three/VegetationMesh';
 
 describe( 'flowers three.js API', () => {
 
@@ -27,17 +28,61 @@ describe( 'flowers three.js API', () => {
 
 		const mesh = new FlowersMesh( { seed: 6, petalColor: '#f2c230', stemColor: '#2f6f1e' } );
 		const positions = mesh.asset.geometries.map( ( geometry ) => geometry.getAttribute( 'position' ).array.slice() );
-		const oldPetal = ( mesh.asset.materials[ 0 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		expect( mesh.asset.data.parts[ 0 ]!.texture ).toBeNull();
+		expect( mesh.asset.data.parts[ 1 ]!.texture ).toBeNull();
+		expect( Object.keys( mesh.asset.data.textures ) ).toEqual( [ 'plantCard' ] );
+		const oldPlantCard = ( mesh.asset.materials[ 2 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		const oldLod3Impostor = ( mesh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		const oldLod4Impostor = ( mesh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data.slice();
 		mesh.setColor( 'petal', '#a98bd6' );
+		const petalChangedPlantCard = ( mesh.asset.materials[ 2 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		const petalChangedLod3Impostor = ( mesh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		const petalChangedLod4Impostor = ( mesh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data.slice();
 		mesh.setColor( 'stem', '#81603d' );
 		expect( mesh.getColor( 'petal' ).getHex() ).toBe( 0xa98bd6 );
-		expect( areByteIdentical( ( mesh.asset.materials[ 0 ]!.map!.image as { data: Uint8Array } ).data, oldPetal ) ).toBe( false );
+		expect( areByteIdentical( petalChangedPlantCard, oldPlantCard ) ).toBe( false );
+		expect( areByteIdentical( ( mesh.asset.materials[ 2 ]!.map!.image as { data: Uint8Array } ).data, petalChangedPlantCard ) ).toBe( false );
+		expect( areByteIdentical( petalChangedLod3Impostor, oldLod3Impostor ) ).toBe( false );
+		expect( areByteIdentical( petalChangedLod4Impostor, oldLod4Impostor ) ).toBe( false );
 		expect( mesh.asset.geometries.map( ( geometry ) => geometry.getAttribute( 'position' ).array ) ).toEqual( positions );
 
 		const lod = FlowersMesh.createLOD( { seed: 6 } );
 		expect( lod ).toBeInstanceOf( LOD );
 		expect( lod.levels.map( ( level ) => ( level.object as FlowersMesh ).lod ) ).toEqual( [ 0, 1, 2, 3, 4 ] );
 		for ( const level of lod.levels ) ( level.object as FlowersMesh ).dispose();
+		mesh.dispose();
+
+	} );
+
+	it( 'builds a single-card allium LOD4 and orients its instances to the camera', () => {
+
+		const mesh = new FlowersMesh( { seed: 3, variety: 'allium', lod: 4 } );
+		const [ billboard ] = mesh.parts;
+		expect( mesh.parts ).toHaveLength( 1 );
+		expect( billboard!.geometry.getIndex()!.count ).toBe( 6 );
+		expect( billboard!.geometry.getAttribute( 'impostorCard' ).array ).toEqual( new Float32Array( [ 0, 0, 0, 0 ] ) );
+		expect( [ ...billboard!.geometry.getAttribute( 'uv' ).array ] ).toEqual( [ 0, 0, 1, 0, 1, 1, 0, 1 ] );
+		expect( mesh.asset.data.parts[ 3 ]!.impostorFade ).toBe( false );
+		expect( ( mesh.asset.materials[ 3 ]!.map!.image as { width: number } ).width ).toBe( 256 );
+		expect( ( mesh.asset.materials[ 4 ]!.map!.image as { width: number } ).width ).toBe( 128 );
+
+		const instances = new InstancedMesh( billboard!.geometry, billboard!.material, 1 );
+		instances.setMatrixAt( 0, new Matrix4() );
+		const camera = new PerspectiveCamera();
+		camera.position.set( 1, 0, 0 );
+		camera.updateMatrixWorld( true );
+		orientBillboardInstances( instances, camera );
+		const matrix = new Matrix4();
+		instances.getMatrixAt( 0, matrix );
+		const direction = new Vector3( 0, 0, 1 ).applyMatrix4( matrix );
+		expect( direction.x ).toBeCloseTo( 1, 6 );
+		expect( direction.z ).toBeCloseTo( 0, 6 );
+		const shadowCamera = new PerspectiveCamera();
+		shadowCamera.position.set( 1, 0, 0 );
+		shadowCamera.updateMatrixWorld( true );
+		billboard!.onBeforeShadow( null as never, null as never, shadowCamera, shadowCamera, billboard!.geometry, null as never, null as never );
+		expect( billboard!.rotation.y ).toBeCloseTo( Math.PI / 2, 6 );
+		instances.dispose();
 		mesh.dispose();
 
 	} );
@@ -50,8 +95,9 @@ describe( 'flowers three.js API', () => {
 			for ( const variety of [ 'allium', 'daisy', 'tulip', 'poppy', 'bluebell', 'calla', 'primrose' ] as const ) {
 				const synchronous = generateFlowers( { seed: 11, variety, petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
 				const asynchronous = await generateFlowersAsync( { seed: 11, variety, petalColor: '#a98bd6', centerColor: '#b9cf6a' } );
+				const colorPartIndex = variety === 'allium' ? 2 : 0;
 				expect( areStructurallyByteIdentical( asynchronous.data, synchronous.data ) ).toBe( true );
-				expect( areStructurallyByteIdentical( asynchronous.materials[ 0 ]!.map!.image, synchronous.materials[ 0 ]!.map!.image ) ).toBe( true );
+				expect( areStructurallyByteIdentical( asynchronous.materials[ colorPartIndex ]!.map!.image, synchronous.materials[ colorPartIndex ]!.map!.image ) ).toBe( true );
 				synchronous.dispose();
 				asynchronous.dispose();
 			}

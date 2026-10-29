@@ -29,13 +29,14 @@ for ( let i = 0; i < 256; i ++ ) {
 
 }
 
-export function impostorPart(): PartDef {
+export function impostorPart( views: readonly ImpostorView[] = LOD4_IMPOSTOR_VIEWS, impostorFade?: boolean ): PartDef {
 
 	return {
 		name: 'impostor',
 		defaultColor: 0xffffff,
 		texture: 'impostor',
-		impostorViews: LOD4_IMPOSTOR_VIEWS,
+		impostorViews: views,
+		...( impostorFade === undefined ? {} : { impostorFade } ),
 		alphaTest: 0.5,
 		doubleSided: true,
 		flatShading: false,
@@ -43,13 +44,14 @@ export function impostorPart(): PartDef {
 
 }
 
-export function impostorLod3Part(): PartDef {
+export function impostorLod3Part( views: readonly ImpostorView[] = LOD3_IMPOSTOR_VIEWS, impostorFade?: boolean ): PartDef {
 
 	return {
 		name: 'impostor-lod3',
 		defaultColor: 0xffffff,
 		texture: 'impostor-lod3',
-		impostorViews: LOD3_IMPOSTOR_VIEWS,
+		impostorViews: views,
+		...( impostorFade === undefined ? {} : { impostorFade } ),
 		alphaTest: 0.5,
 		doubleSided: true,
 		flatShading: false,
@@ -130,54 +132,69 @@ function getFootprint( mesh: MeshData | undefined, fallbackRadius: number, minim
 
 }
 
-export function buildBillboard( bounds: { radius: number; height: number }, impostorPartIndex: number, lod0?: MeshData, topHeight = bounds.height * 0.75 ): MeshData {
+export function buildBillboard( bounds: { radius: number; height: number }, impostorPartIndex: number, lod0?: MeshData, topHeight = bounds.height * 0.75, includeTopCard = true ): MeshData {
 
 	const builder = new MeshBuilder();
 	const radius = bounds.radius;
 	const height = bounds.height;
 	const normalWeight = Math.SQRT1_2;
 	const color: Color3 = [ 1, 1, 1 ];
-	const footprint = getFootprint( lod0, radius, topHeight );
+	const footprint = includeTopCard ? getFootprint( lod0, radius, topHeight ) : null;
 
 	builder.beginGroup( impostorPartIndex );
 
 	const a0 = builder.addVertex( [ - radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 0 ], color, 0, 0 );
-	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 0.5, 0 ], color, 0, 0 );
-	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0.5, 1 ], color, 1, 0 );
+	const u1 = includeTopCard ? 0.5 : 1;
+	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ u1, 0 ], color, 0, 0 );
+	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ u1, 1 ], color, 1, 0 );
 	const a3 = builder.addVertex( [ - radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 1 ], color, 1, 0 );
 
 	builder.addTriangle( a0, a1, a2 );
 	builder.addTriangle( a0, a2, a3 );
 
-	const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 0.5, 0 ], color, 0, 1 );
-	const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 1, 0 ], color, 0, 1 );
-	const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 1, 1 ], color, 0, 1 );
-	const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 0.5, 1 ], color, 0, 1 );
+	if ( footprint !== null ) {
 
-	builder.addTriangle( top0, top1, top2 );
-	builder.addTriangle( top0, top2, top3 );
+		const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 0.5, 0 ], color, 0, 1 );
+		const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 1, 0 ], color, 0, 1 );
+		const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 1, 1 ], color, 0, 1 );
+		const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 0.5, 1 ], color, 0, 1 );
+
+		builder.addTriangle( top0, top1, top2 );
+		builder.addTriangle( top0, top2, top3 );
+
+	}
 
 	return builder.build();
 
 }
 
-export function buildSixPlaneImpostor( height: number, radius: number, partIndex: number, lod0?: MeshData, topHeight = height * 0.25 ): MeshData {
+export function buildSixPlaneImpostor(
+	height: number,
+	radius: number,
+	partIndex: number,
+	lod0?: MeshData,
+	topHeight = height * 0.25,
+	options: { yawAngles?: readonly number[]; includeTopCard?: boolean } = {},
+): MeshData {
 
 	const builder = new MeshBuilder();
 	const normalWeight = Math.SQRT1_2;
 	const color: Color3 = [ 1, 1, 1 ];
 	const planeRadius = radius * 0.995;
-	const footprint = getFootprint( lod0, radius, topHeight );
+	const yawAngles = options.yawAngles ?? LOD3_IMPOSTOR_YAW_ANGLES;
+	const includeTopCard = options.includeTopCard ?? true;
+	const tileCount = yawAngles.length + ( includeTopCard ? 1 : 0 );
+	const footprint = includeTopCard ? getFootprint( lod0, radius, topHeight ) : null;
 	builder.beginGroup( partIndex );
 
-	for ( let view = 0; view < LOD3_IMPOSTOR_YAW_ANGLES.length; view ++ ) {
+	for ( let view = 0; view < yawAngles.length; view ++ ) {
 
-		const yaw = LOD3_IMPOSTOR_YAW_ANGLES[ view ]!;
+		const yaw = yawAngles[ view ]!;
 		const rightX = Math.cos( yaw );
 		const rightZ = - Math.sin( yaw );
 		const normal: [ number, number, number ] = [ Math.sin( yaw ) * normalWeight, normalWeight, Math.cos( yaw ) * normalWeight ];
-		const tileStart = view / LOD3_IMPOSTOR_VIEWS.length;
-		const tileEnd = ( view + 1 ) / LOD3_IMPOSTOR_VIEWS.length;
+		const tileStart = view / tileCount;
+		const tileEnd = ( view + 1 ) / tileCount;
 		const a0 = builder.addVertex( [ - rightX * planeRadius, 0, - rightZ * planeRadius ], normal, [ tileStart, 0 ], color, 0, 0 );
 		const a1 = builder.addVertex( [ rightX * planeRadius, 0, rightZ * planeRadius ], normal, [ tileEnd, 0 ], color, 0, 0 );
 		const a2 = builder.addVertex( [ rightX * planeRadius, height, rightZ * planeRadius ], normal, [ tileEnd, 1 ], color, 1, 0 );
@@ -188,15 +205,19 @@ export function buildSixPlaneImpostor( height: number, radius: number, partIndex
 
 	}
 
-	const topTileStart = LOD3_IMPOSTOR_YAW_ANGLES.length / LOD3_IMPOSTOR_VIEWS.length;
-	const topTileEnd = 1;
-	const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileStart, 0 ], color, 0, 1 );
-	const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileEnd, 0 ], color, 0, 1 );
-	const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileEnd, 1 ], color, 0, 1 );
-	const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileStart, 1 ], color, 0, 1 );
+	if ( footprint !== null ) {
 
-	builder.addTriangle( top0, top1, top2 );
-	builder.addTriangle( top0, top2, top3 );
+		const topTileStart = yawAngles.length / tileCount;
+		const topTileEnd = 1;
+		const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileStart, 0 ], color, 0, 1 );
+		const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileEnd, 0 ], color, 0, 1 );
+		const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileEnd, 1 ], color, 0, 1 );
+		const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileStart, 1 ], color, 0, 1 );
+
+		builder.addTriangle( top0, top1, top2 );
+		builder.addTriangle( top0, top2, top3 );
+
+	}
 
 	return builder.build();
 

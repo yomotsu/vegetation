@@ -7,6 +7,9 @@ import type { TextureData } from './types';
 export const FLOWERS_PETAL_TEXTURE_SIZE = 128;
 export const FLOWERS_STEM_TEXTURE_WIDTH = 128;
 export const FLOWERS_STEM_TEXTURE_HEIGHT = 256;
+export const ALLIUM_HEAD_SIZE = 0.24;
+export const ALLIUM_HEAD_RISE = 0.035;
+export const ALLIUM_PLANT_CARD_TEXTURE_WIDTH = FLOWERS_PETAL_TEXTURE_SIZE;
 const SHADE_LEVELS = 2048;
 const SHADE_SCALE = ( SHADE_LEVELS - 1 ) / 2;
 const shadeColorLut = new Uint8Array( SHADE_LEVELS * 256 );
@@ -343,6 +346,88 @@ export function createFlowersPetalTexture( seed: number, variety: 'allium' | 'da
 export function createFlowersStemTexture( seed: number, variety: 'allium' | 'daisy', stemColor: number ): TextureData {
 
 	return createColorPixels( stemTextureShape( variety, seed ), stemColor, stemColor );
+
+}
+
+function compositeTexturePixel( target: Uint8Array, targetOffset: number, red: number, green: number, blue: number, sourceAlphaByte: number ): void {
+
+	const sourceAlpha = sourceAlphaByte / 255;
+	if ( sourceAlpha <= 0 ) return;
+	const targetAlpha = target[ targetOffset + 3 ]! / 255;
+	const alpha = sourceAlpha + targetAlpha * ( 1 - sourceAlpha );
+	target[ targetOffset ] = Math.round( ( red * sourceAlpha + target[ targetOffset ]! * targetAlpha * ( 1 - sourceAlpha ) ) / alpha );
+	target[ targetOffset + 1 ] = Math.round( ( green * sourceAlpha + target[ targetOffset + 1 ]! * targetAlpha * ( 1 - sourceAlpha ) ) / alpha );
+	target[ targetOffset + 2 ] = Math.round( ( blue * sourceAlpha + target[ targetOffset + 2 ]! * targetAlpha * ( 1 - sourceAlpha ) ) / alpha );
+	target[ targetOffset + 3 ] = Math.round( alpha * 255 );
+
+}
+
+function compositeResampledTexture(
+	target: Uint8Array,
+	targetWidth: number,
+	targetHeight: number,
+	source: TextureData,
+	sourceX: number,
+	sourceWidth: number,
+	destinationX: number,
+	destinationY: number,
+	destinationWidth: number,
+	destinationHeight: number,
+): void {
+
+	for ( let y = 0; y < destinationHeight; y ++ ) {
+		const sourceY0 = Math.floor( y * source.height / destinationHeight );
+		const sourceY1 = Math.max( sourceY0 + 1, Math.floor( ( y + 1 ) * source.height / destinationHeight ) );
+		for ( let x = 0; x < destinationWidth; x ++ ) {
+			const sourceX0 = sourceX + Math.floor( x * sourceWidth / destinationWidth );
+			const sourceX1 = sourceX + Math.max( Math.floor( ( x + 1 ) * sourceWidth / destinationWidth ), Math.floor( x * sourceWidth / destinationWidth ) + 1 );
+			let alpha = 0;
+			let red = 0;
+			let green = 0;
+			let blue = 0;
+			let samples = 0;
+			for ( let sourceY = sourceY0; sourceY < Math.min( source.height, sourceY1 ); sourceY ++ ) {
+				for ( let sourceX = sourceX0; sourceX < Math.min( source.width, sourceX1 ); sourceX ++ ) {
+					const sourceOffset = ( sourceY * source.width + sourceX ) * 4;
+					const sampleAlpha = source.data[ sourceOffset + 3 ]!;
+					alpha += sampleAlpha;
+					red += source.data[ sourceOffset ]! * sampleAlpha;
+					green += source.data[ sourceOffset + 1 ]! * sampleAlpha;
+					blue += source.data[ sourceOffset + 2 ]! * sampleAlpha;
+					samples ++;
+				}
+			}
+			if ( samples === 0 || alpha === 0 ) continue;
+			const targetPixel = ( ( destinationY + y ) * targetWidth + destinationX + x ) * 4;
+			if ( targetPixel < 0 || targetPixel + 3 >= targetWidth * targetHeight * 4 ) continue;
+			compositeTexturePixel( target, targetPixel, red / alpha, green / alpha, blue / alpha, Math.round( alpha / samples ) );
+		}
+	}
+
+}
+
+/** allium の頭と茎を、頭の 0.24 m を保つ縦カード用テクスチャにまとめます。 */
+export function createFlowersAlliumPlantCardTexture( seed: number, maxCardHeight: number, petalColor: number, centerColor: number, stemColor: number ): TextureData {
+
+	const width = ALLIUM_PLANT_CARD_TEXTURE_WIDTH;
+	const stemHeightInMeters = Math.max( 0.001, maxCardHeight - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 );
+	const pixelsPerMeter = Math.max( FLOWERS_PETAL_TEXTURE_SIZE / ALLIUM_HEAD_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT / stemHeightInMeters );
+	const height = Math.ceil( Math.max( maxCardHeight, ALLIUM_HEAD_SIZE ) * pixelsPerMeter );
+	const data = new Uint8Array( width * height * 4 );
+	const petalTexture = createColorPixels( flowerTextureShape( 'allium', seed ), petalColor, centerColor );
+	const stemTexture = createColorPixels( stemTextureShape( 'allium', seed ), stemColor, stemColor );
+	const stemWidth = Math.max( 1, Math.round( width * 0.03 / ALLIUM_HEAD_SIZE ) );
+	const stemHeight = Math.max( 1, height - Math.round( ( ALLIUM_HEAD_RISE + ALLIUM_HEAD_SIZE * 0.5 ) * pixelsPerMeter ) );
+	const headHeight = Math.max( 1, Math.round( ALLIUM_HEAD_SIZE * pixelsPerMeter ) );
+	const headTop = height - headHeight;
+	const stemLeft = Math.floor( ( width - stemWidth ) * 0.5 );
+
+	// 茎カードの片側のバリアントを、0.24 m 幅に対する約 3 cm の帯へ縮小します。
+	compositeResampledTexture( data, width, height, stemTexture, 0, FLOWERS_STEM_TEXTURE_WIDTH * 0.5, stemLeft, 0, stemWidth, stemHeight );
+	// LOD0 と同じ 0.24 m 四方の花房を、カード最上部に重ねます。
+	compositeResampledTexture( data, width, height, petalTexture, 0, petalTexture.width, 0, headTop, width, headHeight );
+
+	return { width, height, data, wrap: 'clamp' };
 
 }
 

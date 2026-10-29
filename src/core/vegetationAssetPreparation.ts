@@ -36,6 +36,18 @@ export function prepareVegetationAsset(
 	const preparedData = copyTextureData( data );
 	const colors = Object.fromEntries( preparedData.parts.map( ( part ) => [ part.name, partColorsHex[ part.name ] ?? part.defaultColor ] ) );
 	const linearColors = Object.fromEntries( preparedData.parts.map( ( part ) => [ part.name, partColorsLinear[ part.name ] ?? hexToLinear( colors[ part.name ]! ) ] ) );
+	const plantCardGenerator = preparedData.textureGenerators?.plantCard;
+	if ( plantCardGenerator?.type === 'flowers-allium-plant-card' ) {
+		const petalColor = colors.petal ?? plantCardGenerator.petalColor;
+		const stemColor = colors.stem ?? plantCardGenerator.stemColor;
+		if ( petalColor !== plantCardGenerator.petalColor || stemColor !== plantCardGenerator.stemColor ) {
+			preparedData.textureGenerators = {
+				...preparedData.textureGenerators,
+				plantCard: { ...plantCardGenerator, petalColor, stemColor },
+			};
+			preparedData.textures.plantCard = regenerateTexture( preparedData, 'plantCard', petalColor ?? stemColor ?? 0xffffff );
+		}
+	}
 
 	for ( let index = 0; index < preparedData.parts.length; index ++ ) {
 

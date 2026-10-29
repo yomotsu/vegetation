@@ -287,6 +287,37 @@ export class VegetationAsset {
 			return;
 		}
 
+		let plantCardTextureChanged = false;
+		const plantCardGenerator = this.data.textureGenerators?.plantCard;
+		if ( plantCardGenerator?.type === 'flowers-allium-plant-card' ) {
+			const updatedGenerator = { ...plantCardGenerator };
+			let regeneratePlantCard = false;
+			for ( const { part, color } of changes ) {
+				if ( part.name === 'petal' && updatedGenerator.petalColor !== color.getHex() ) {
+					updatedGenerator.petalColor = color.getHex();
+					regeneratePlantCard = true;
+				}
+				else if ( part.name === 'stem' && updatedGenerator.stemColor !== color.getHex() ) {
+					updatedGenerator.stemColor = color.getHex();
+					regeneratePlantCard = true;
+				}
+			}
+			if ( regeneratePlantCard ) {
+				this.data.textureGenerators = { ...this.data.textureGenerators, plantCard: updatedGenerator };
+				const updatedTexture = regenerateTexture( this.data, 'plantCard', 0xffffff );
+				this.data.textures.plantCard = updatedTexture;
+				plantCardTextureChanged = true;
+				const cardPartIndex = this.partIndices.get( 'plantCard' );
+				if ( cardPartIndex !== undefined ) {
+					const texture = this.materials[ cardPartIndex ]!.map as DataTexture | null;
+					if ( texture !== null ) {
+						texture.image.data = updatedTexture.data;
+						texture.needsUpdate = true;
+					}
+				}
+			}
+		}
+
 		for ( const { index, part, color } of changes ) {
 
 			if ( part.colorizesTexture && part.texture !== null ) {
@@ -309,7 +340,7 @@ export class VegetationAsset {
 
 		const changedParts = new Set( changes.map( ( change ) => change.index ) );
 		const sourceGroups = this.data.lods[ 0 ]!.groups;
-		if ( ! sourceGroups.some( ( group ) => changedParts.has( group.partIndex ) ) ) {
+		if ( ! plantCardTextureChanged && ! sourceGroups.some( ( group ) => changedParts.has( group.partIndex ) ) ) {
 			return;
 		}
 

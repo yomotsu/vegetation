@@ -1,8 +1,8 @@
-import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
+import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart, yawImpostorView } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { weldIdenticalVertices } from '../rockGeometry';
 import { registerTextureRegenerator, regenerateTexture } from '../textureRegenerator';
-import { composeFlowersColor, createFlowersPetalTexture, createFlowersStemTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
+import { ALLIUM_HEAD_RISE, ALLIUM_HEAD_SIZE, ALLIUM_PLANT_CARD_TEXTURE_WIDTH, composeFlowersColor, createFlowersAlliumPlantCardTexture, createFlowersPetalTexture, createFlowersStemTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
 import { createRandom } from '../random';
 import type { MeshData, PartDef, TextureData, TextureGeneratorDef, VegetationData } from '../types';
 import { buildTulipPart, createTulipPetalTexture, createTulipStemTexture } from '../flowers/tulip';
@@ -250,10 +250,6 @@ function addFlowerQuad( builder: MeshBuilder, placement: FlowerPlacement, width:
 const DAISY_CUP_DEPTH = 0.2;
 // 花の頭のカードの一辺。参考 Flowers02 は 0.157 m で、花の直径は約 0.14 m。
 const DAISY_HEAD_SIZE = 0.16;
-// allium の花房のカード。参考の花房は幅約 11 cm で、茎の先が房の下寄りに入る。
-const ALLIUM_HEAD_SIZE = 0.24;
-const ALLIUM_HEAD_RISE = 0.035;
-
 function addDaisyHead( builder: MeshBuilder, placement: FlowerPlacement, size: number ): void {
 
 	const centerY = placement.height;
@@ -345,6 +341,81 @@ function buildFlowersPart( variety: FlowersVariety, lod: number, plants: FlowerP
 
 }
 
+function buildAlliumPlantCardPart( plants: FlowerPlacement[], partIndex: number, segments: number ): MeshData {
+
+	const builder = new MeshBuilder();
+	const maxCardHeight = Math.max( ALLIUM_HEAD_SIZE, ...plants.map( ( plant ) => plant.height + ALLIUM_HEAD_RISE + ALLIUM_HEAD_SIZE * 0.5 ) );
+	const uvSpanPerMeter = 1 / maxCardHeight;
+	const halfWidth = ALLIUM_HEAD_SIZE * 0.5;
+
+	builder.beginGroup( partIndex );
+	for ( const placement of plants ) {
+		const top = placement.height + ALLIUM_HEAD_RISE + halfWidth;
+		const headBottom = top - ALLIUM_HEAD_SIZE;
+		const headCenter = headBottom + halfWidth;
+		const tipX = placement.x + placement.leanX;
+		const tipZ = placement.z + placement.leanZ;
+		for ( const yaw of [ placement.yaw, placement.yaw + placement.crossAngle ] ) {
+			const shiftX = Math.cos( yaw ) * halfWidth;
+			const shiftZ = - Math.sin( yaw ) * halfWidth;
+			const rows: { y: number; centerX: number; centerZ: number; wind: number }[] = [];
+
+			for ( let row = 0; row <= segments; row ++ ) {
+				let y: number;
+				let centerX: number;
+				let centerZ: number;
+
+				if ( row === segments ) {
+					y = top;
+					const previous = rows[ rows.length - 1 ]!;
+					const headProgress = ( headCenter - previous.y ) / ( top - previous.y );
+					centerX = previous.centerX + ( tipX - previous.centerX ) / headProgress;
+					centerZ = previous.centerZ + ( tipZ - previous.centerZ ) / headProgress;
+				}
+				else if ( row === segments - 1 && row > 0 ) {
+					y = headBottom;
+					const progress = Math.max( 0, Math.min( 1, y / placement.height ) );
+					const bend = progress ** STEM_BEND_EXPONENT;
+					centerX = placement.x + placement.leanX * bend;
+					centerZ = placement.z + placement.leanZ * bend;
+				}
+				else {
+					const progress = row === 0 ? 0 : 1 - ( 1 - row / segments ) ** STEM_ROW_BIAS;
+					y = placement.height * progress;
+					const bend = progress ** STEM_BEND_EXPONENT;
+					centerX = placement.x + placement.leanX * bend;
+					centerZ = placement.z + placement.leanZ * bend;
+				}
+
+				rows.push( { y, centerX, centerZ, wind: Math.max( 0, Math.min( 1, y / placement.height ) ) } );
+			}
+
+			const vertexRows = rows.map( ( row ) => {
+				const v = 1 - ( top - row.y ) * uvSpanPerMeter;
+				return [
+					builder.addVertex( [ row.centerX - shiftX, row.y, row.centerZ - shiftZ ], [ 0, 1, 0 ], [ 0, v ], [ 1, 1, 1 ], row.wind ),
+					builder.addVertex( [ row.centerX + shiftX, row.y, row.centerZ + shiftZ ], [ 0, 1, 0 ], [ 1, v ], [ 1, 1, 1 ], row.wind ),
+				];
+			} );
+
+			for ( let row = 0; row < segments; row ++ ) {
+				const a = vertexRows[ row ]![ 0 ]!;
+				const b = vertexRows[ row ]![ 1 ]!;
+				const c = vertexRows[ row + 1 ]![ 1 ]!;
+				const d = vertexRows[ row + 1 ]![ 0 ]!;
+				builder.addTriangle( a, b, c );
+				builder.addTriangle( a, c, d );
+			}
+		}
+	}
+	return builder.build();
+
+}
+
+const ALLIUM_LOD3_YAW_ANGLES = [ 0, Math.PI / 2 ] as const;
+const ALLIUM_LOD3_IMPOSTOR_VIEWS = ALLIUM_LOD3_YAW_ANGLES.map( yawImpostorView );
+const ALLIUM_LOD4_IMPOSTOR_VIEWS = [ yawImpostorView( 0 ) ];
+
 function combineParts( petal: MeshData, stem: MeshData ): MeshData {
 
 	const vertexOffset = petal.positions.length / 3;
@@ -411,9 +482,15 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	validateColor( centerColor, 'center color' );
 	validateColor( stemColor, 'stem color' );
 	const plants = createPlacements( seed, count, spread, height, variety );
-	const lod0 = combineParts( buildFlowersPart( variety, 0, plants, 'petal' ), buildFlowersPart( variety, 0, plants, 'stem' ) );
-	const lod1 = combineParts( buildFlowersPart( variety, 1, plants, 'petal' ), buildFlowersPart( variety, 1, plants, 'stem' ) );
-	const lod2 = combineParts( buildFlowersPart( variety, 2, plants, 'petal' ), buildFlowersPart( variety, 2, plants, 'stem' ) );
+	const lod0 = variety === 'allium'
+		? buildAlliumPlantCardPart( plants, 2, 3 )
+		: combineParts( buildFlowersPart( variety, 0, plants, 'petal' ), buildFlowersPart( variety, 0, plants, 'stem' ) );
+	const lod1 = variety === 'allium'
+		? buildAlliumPlantCardPart( plants, 2, 2 )
+		: combineParts( buildFlowersPart( variety, 1, plants, 'petal' ), buildFlowersPart( variety, 1, plants, 'stem' ) );
+	const lod2 = variety === 'allium'
+		? buildAlliumPlantCardPart( plants, 2, 1 )
+		: combineParts( buildFlowersPart( variety, 2, plants, 'petal' ), buildFlowersPart( variety, 2, plants, 'stem' ) );
 	// 位置と属性がまったく同じ頂点は 1 つにまとめる（同じ絵を使う葉の付け根など）。
 	for ( const mesh of [ lod0, lod1, lod2 ] ) weldIdenticalVertices( mesh );
 	const maximumPlantHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
@@ -428,17 +505,25 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	}
 	const boundsHeight = Number.isFinite( maximumGeometryHeight ) ? maximumGeometryHeight : maximumPlantHeight + headRise;
 	const bounds = { radius: spread, height: boundsHeight };
-	const lod3Index = 2;
-	const lod4Index = 3;
-	const lod3 = buildSixPlaneImpostor( bounds.height, bounds.radius, lod3Index, lod0, bounds.height * 0.25 );
-	const lod4 = buildBillboard( bounds, lod4Index, lod0, bounds.height * 0.75 );
+	const lod3Index = variety === 'allium' ? 3 : 2;
+	const lod4Index = variety === 'allium' ? 4 : 3;
+	const lod3 = buildSixPlaneImpostor(
+		bounds.height,
+		bounds.radius,
+		lod3Index,
+		lod0,
+		bounds.height * 0.25,
+		variety === 'allium' ? { yawAngles: ALLIUM_LOD3_YAW_ANGLES, includeTopCard: false } : {},
+	);
+	const lod4 = buildBillboard( bounds, lod4Index, lod0, bounds.height * 0.75, variety !== 'allium' );
 	setUpNormals( lod3 );
 	setUpNormals( lod4 );
+	// allium は petal / stem の色キーを残し、描画テクスチャを plantCard にまとめます。
 	const petalPart: PartDef = {
 		name: 'petal',
 		defaultColor: petalColor,
-		texture: 'petal',
-		colorizesTexture: true,
+		texture: variety === 'allium' ? null : 'petal',
+		...( variety === 'allium' ? {} : { colorizesTexture: true } ),
 		upNormalCards: true,
 		roughness: 0.89,
 		specularIntensity: 0.0149,
@@ -450,8 +535,8 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const stemPart: PartDef = {
 		name: 'stem',
 		defaultColor: stemColor,
-		texture: 'stem',
-		colorizesTexture: true,
+		texture: variety === 'allium' ? null : 'stem',
+		...( variety === 'allium' ? {} : { colorizesTexture: true } ),
 		upNormalCards: true,
 		roughness: 0.89,
 		specularIntensity: 0.0149,
@@ -460,15 +545,38 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 		doubleSided: true,
 		flatShading: false,
 	};
-	const lod3Part = impostorLod3Part();
-	const lod4Part = impostorPart();
-	const parts = [ petalPart, stemPart, lod3Part, lod4Part ];
-	const textures = variety === 'allium' || variety === 'daisy'
+	const plantCardPart: PartDef = {
+		name: 'plantCard',
+		defaultColor: 0xffffff,
+		texture: 'plantCard',
+		upNormalCards: true,
+		roughness: petalPart.roughness,
+		specularIntensity: petalPart.specularIntensity,
+		ior: petalPart.ior,
+		alphaTest: petalPart.alphaTest,
+		doubleSided: true,
+		flatShading: false,
+	};
+	// 交差カードは裏からも見えるので、両向きに足して上向き法線のまま照らす。
+	const lod3Part = variety === 'allium' ? { ...impostorLod3Part( ALLIUM_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true } : impostorLod3Part();
+	const lod4Part = variety === 'allium' ? impostorPart( ALLIUM_LOD4_IMPOSTOR_VIEWS, false ) : impostorPart();
+	const parts = variety === 'allium' ? [ petalPart, stemPart, plantCardPart, lod3Part, lod4Part ] : [ petalPart, stemPart, lod3Part, lod4Part ];
+	const textures: Record<string, TextureData> = variety === 'allium'
 		? {
-			petal: createFlowersPetalTexture( seed, variety, petalColor, centerColor ),
-			stem: createFlowersStemTexture( seed, variety, stemColor ),
+			plantCard: createFlowersAlliumPlantCardTexture(
+				seed,
+				Math.max( ALLIUM_HEAD_SIZE, ...plants.map( ( plant ) => plant.height + ALLIUM_HEAD_RISE + ALLIUM_HEAD_SIZE * 0.5 ) ),
+				petalColor,
+				centerColor,
+				stemColor,
+			),
 		}
-		: variety === 'tulip'
+		: variety === 'daisy'
+			? {
+				petal: createFlowersPetalTexture( seed, variety, petalColor, centerColor ),
+				stem: createFlowersStemTexture( seed, variety, stemColor ),
+			}
+			: variety === 'tulip'
 			? { petal: createTulipPetalTexture( petalColor ), stem: createTulipStemTexture( stemColor ) }
 			: variety === 'poppy'
 				? { petal: createPoppyPetalTexture( seed, petalColor, centerColor ), stem: createPoppyStemTexture( stemColor ) }
@@ -491,8 +599,22 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 		collider: null,
 		textures,
 		textureGenerators: {
-			petal: { type: 'flowers-petal', seed, size: FLOWERS_PETAL_TEXTURE_SIZE, variety, fixedColor: centerColor },
-			stem: { type: 'flowers-stem', seed, size: FLOWERS_STEM_TEXTURE_HEIGHT, variety },
+			...( variety === 'allium' ? {} : {
+				petal: { type: 'flowers-petal', seed, size: FLOWERS_PETAL_TEXTURE_SIZE, variety, fixedColor: centerColor },
+				stem: { type: 'flowers-stem', seed, size: FLOWERS_STEM_TEXTURE_HEIGHT, variety },
+			} ),
+			...( variety === 'allium' ? {
+				plantCard: {
+					type: 'flowers-allium-plant-card',
+					seed,
+					size: ALLIUM_PLANT_CARD_TEXTURE_WIDTH,
+					height: Math.max( ALLIUM_HEAD_SIZE, ...plants.map( ( plant ) => plant.height + ALLIUM_HEAD_RISE + ALLIUM_HEAD_SIZE * 0.5 ) ),
+					variety: 'allium' as const,
+					fixedColor: centerColor,
+					petalColor,
+					stemColor,
+				},
+			} : {} ),
 		},
 		bounds,
 	};
@@ -508,8 +630,30 @@ function regenerateFlowersTextureData( existing: TextureData, generator: Texture
 
 }
 
+function regenerateAlliumPlantCardTexture( _existing: TextureData, generator: TextureGeneratorDef ): TextureData {
+
+	if ( generator.type !== 'flowers-allium-plant-card' || generator.height === undefined || generator.fixedColor === undefined || generator.petalColor === undefined || generator.stemColor === undefined ) {
+		throw new Error( 'Allium plant-card texture cannot be regenerated' );
+	}
+	return createFlowersAlliumPlantCardTexture( generator.seed, generator.height, generator.petalColor, generator.fixedColor, generator.stemColor );
+
+}
+
+function regenerateAlliumPlantCardColor( data: VegetationData, channel: 'petalColor' | 'stemColor', color: number ): void {
+
+	const generator = data.textureGenerators?.plantCard;
+	if ( generator?.type !== 'flowers-allium-plant-card' || data.textures.plantCard === undefined ) return;
+	generator[ channel ] = color;
+	data.textures.plantCard = regenerateTexture( data, 'plantCard', color );
+
+}
+
 export function regenerateFlowersPetalTexture( data: VegetationData, color: number ): void {
 
+	if ( data.textureGenerators?.plantCard?.type === 'flowers-allium-plant-card' ) {
+		regenerateAlliumPlantCardColor( data, 'petalColor', color );
+		return;
+	}
 	if ( data.textureGenerators?.petal?.type !== 'flowers-petal' || data.textures.petal === undefined ) throw new Error( 'Flowers petal texture cannot be regenerated' );
 	data.textures.petal = regenerateTexture( data, 'petal', color );
 
@@ -517,6 +661,10 @@ export function regenerateFlowersPetalTexture( data: VegetationData, color: numb
 
 export function regenerateFlowersStemTexture( data: VegetationData, color: number ): void {
 
+	if ( data.textureGenerators?.plantCard?.type === 'flowers-allium-plant-card' ) {
+		regenerateAlliumPlantCardColor( data, 'stemColor', color );
+		return;
+	}
 	if ( data.textureGenerators?.stem?.type !== 'flowers-stem' || data.textures.stem === undefined ) throw new Error( 'Flowers stem texture cannot be regenerated' );
 	data.textures.stem = regenerateTexture( data, 'stem', color );
 
@@ -524,3 +672,4 @@ export function regenerateFlowersStemTexture( data: VegetationData, color: numbe
 
 registerTextureRegenerator( 'flowers-petal', regenerateFlowersTextureData );
 registerTextureRegenerator( 'flowers-stem', regenerateFlowersTextureData );
+registerTextureRegenerator( 'flowers-allium-plant-card', regenerateAlliumPlantCardTexture );

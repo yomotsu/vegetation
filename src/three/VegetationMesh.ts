@@ -89,7 +89,7 @@ function createImpostorCardGeometry( source: BufferGeometry, cardId: number ): B
 
 }
 
-/** 水平カードの UV も一緒に回るため、各 LOD4 インスタンス全体を yaw 回転します。 */
+/** 各 LOD4 インスタンスをカメラへ向けます。上面カードがある場合は UV も一緒に yaw 回転します。 */
 export function orientBillboardInstances( mesh: InstancedMesh, camera: Camera ): void {
 
 	mesh.updateWorldMatrix( true, false );
@@ -199,17 +199,11 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 
 			const part = parts[ 0 ]!;
 			const billboardGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 0 ) : createImpostorCardGeometry( part.geometry, 0 );
-			const topCardGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 1 ) : createImpostorCardGeometry( part.geometry, 1 );
 			const billboard = new Mesh( billboardGeometry, part.material );
-			const topCard = new Mesh( topCardGeometry, part.material );
 			const cameraPosition = new Vector3();
 			billboard.name = part.part;
-			topCard.name = part.part;
-			topCard.userData.impostorCard = 1;
 			billboard.castShadow = this.shadowCast;
 			billboard.receiveShadow = this.shadowReceive;
-			topCard.castShadow = false;
-			topCard.receiveShadow = this.shadowReceive;
 			const inverseWorldMatrix = new Matrix4();
 			if ( isCameraFacingBillboard ) {
 
@@ -242,9 +236,19 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 
 			}
 			this.add( billboard );
-			this.add( topCard );
-			this.partMeshes.push( billboard, topCard );
-			this.ownedGeometries.push( billboardGeometry, topCardGeometry );
+			this.partMeshes.push( billboard );
+			this.ownedGeometries.push( billboardGeometry );
+			if ( first.geometry.getIndex()!.count >= 12 ) {
+				const topCardGeometry = isCameraFacingBillboard ? createBillboardPlaneGeometry( part.geometry, 1 ) : createImpostorCardGeometry( part.geometry, 1 );
+				const topCard = new Mesh( topCardGeometry, part.material );
+				topCard.name = part.part;
+				topCard.userData.impostorCard = 1;
+				topCard.castShadow = false;
+				topCard.receiveShadow = this.shadowReceive;
+				this.add( topCard );
+				this.partMeshes.push( topCard );
+				this.ownedGeometries.push( topCardGeometry );
+			}
 
 		} else {
 

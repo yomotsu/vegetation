@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateFlowers, generateGrass, generateRock } from '../../src/three/meshes';
+import { generateFlowersData } from '../../src/core/generators/flowers';
+import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import { handleVegetationWorkerMessage } from '../../src/worker/vegetationWorker';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 
@@ -43,6 +45,21 @@ describe( 'vegetation worker handler', () => {
 		} );
 
 		expect( result ).toEqual( { id: 2, error: { name: 'RangeError', message: 'Rock size must be a positive finite number' } } );
+
+	} );
+
+	it( 'recolors the allium plant-card texture while preparing worker data', () => {
+
+		const options = { seed: 13, variety: 'allium' as const };
+		const data = generateFlowersData( options );
+		const petalColor = 0xa98bd6;
+		const stemColor = 0x81603d;
+		const prepared = prepareVegetationAsset( data, { petal: petalColor, stem: stemColor }, 128 );
+		const expected = generateFlowersData( { ...options, petalColor, stemColor } );
+
+		expect( areByteIdentical( prepared.data.textures.plantCard!.data, expected.textures.plantCard!.data ) ).toBe( true );
+		expect( prepared.impostorTextures[ 'impostor-lod3' ]!.width ).toBe( 256 );
+		expect( prepared.impostorTextures.impostor!.width ).toBe( 128 );
 
 	} );
 

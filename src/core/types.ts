@@ -59,6 +59,8 @@ export interface TextureGeneratorDef {
 	branchCount?: number;
 	variety?: 'allium' | 'daisy' | 'tulip' | 'poppy' | 'bluebell' | 'calla' | 'primrose';
 	fixedColor?: number;
+	petalColor?: number;
+	stemColor?: number;
 }
 
 export interface TextureData {

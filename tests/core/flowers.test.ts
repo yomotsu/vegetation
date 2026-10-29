@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateFlowersData, regenerateFlowersPetalTexture, regenerateFlowersStemTexture } from '../../src/core/generators/flowers';
+import { ALLIUM_HEAD_RISE, ALLIUM_HEAD_SIZE, ALLIUM_PLANT_CARD_TEXTURE_WIDTH, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT, createFlowersPetalTexture } from '../../src/core/flowersTexture';
+import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import type { MeshData } from '../../src/core/types';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -55,14 +57,21 @@ function cardRowCenter( mesh: MeshData, firstVertex: number, row: number ): [ nu
 
 }
 
-function quadCenter( mesh: MeshData, firstVertex: number ): [ number, number, number ] {
+function cardCenterAtY( mesh: MeshData, firstVertex: number, rows: number, targetY: number ): [ number, number, number ] {
 
-	const center: [ number, number, number ] = [ 0, 0, 0 ];
-	for ( let vertex = 0; vertex < 4; vertex ++ ) {
-		const position = vertexPosition( mesh, firstVertex + vertex );
-		for ( let axis = 0; axis < 3; axis ++ ) center[ axis ] = center[ axis ]! + position[ axis ]! / 4;
+	for ( let row = 0; row < rows - 1; row ++ ) {
+		const lower = cardRowCenter( mesh, firstVertex, row );
+		const upper = cardRowCenter( mesh, firstVertex, row + 1 );
+		if ( targetY < lower[ 1 ] || targetY > upper[ 1 ] ) continue;
+		const progress = ( targetY - lower[ 1 ] ) / ( upper[ 1 ] - lower[ 1 ] );
+		return [
+			lower[ 0 ] + ( upper[ 0 ] - lower[ 0 ] ) * progress,
+			targetY,
+			lower[ 2 ] + ( upper[ 2 ] - lower[ 2 ] ) * progress,
+		];
 	}
-	return center;
+
+	throw new RangeError( 'Requested height is outside the vertical card' );
 
 }
 
@@ -74,12 +83,12 @@ describe( 'flowers core generator', () => {
 
 			const first = generateFlowersData( { seed: 31, variety } );
 			const second = generateFlowersData( { seed: 31, variety } );
-			const caps = variety === 'allium' ? [ [ 144, 96 ], [ 48, 24 ] ] : [ [ 150, 120 ], [ 78, 48 ] ];
+			const caps = variety === 'allium' ? [ [ 144, 96 ], [ 96, 48 ] ] : [ [ 150, 120 ], [ 78, 48 ] ];
 
 			expect( first.kind ).toBe( 'flowers' );
 			expect( first.collider ).toBeNull();
 			expect( first.lods ).toHaveLength( 5 );
-			expect( first.parts.map( ( part ) => part.name ) ).toEqual( [ 'petal', 'stem', 'impostor-lod3', 'impostor' ] );
+			expect( first.parts.map( ( part ) => part.name ) ).toEqual( variety === 'allium' ? [ 'petal', 'stem', 'plantCard', 'impostor-lod3', 'impostor' ] : [ 'petal', 'stem', 'impostor-lod3', 'impostor' ] );
 
 			for ( let lod = 0; lod < 5; lod ++ ) {
 
@@ -92,8 +101,8 @@ describe( 'flowers core generator', () => {
 
 			}
 
-			expect( first.lods.map( triangleCount ) ).toEqual( [ ...first.lods.map( triangleCount ) ].sort( ( a, b ) => b - a ) );
 			expect( first.lods.slice( 1 ).every( ( mesh, index ) => triangleCount( mesh ) < triangleCount( first.lods[ index ]! ) ) ).toBe( true );
+			if ( variety === 'allium' ) expect( first.lods.map( triangleCount ) ).toEqual( [ 72, 48, 24, 4, 2 ] );
 
 		} );
 
@@ -108,10 +117,9 @@ describe( 'flowers core generator', () => {
 		};
 		const expected = {
 			allium: {
-				positions: '9c5d46efeb123860749707463cac4c26aaf9cc3945132927909149a4387a44cc',
-				indices: '6e0df0d9cd4098f2706f499a0cb240a0aa6b31b6549f8b7099e8b0316f2aa6aa',
-				petal: '8df3b2b3af006018a551685114158cc58d8770c120db35859bc4a63a3b5d33ae',
-				stem: '8a1c0ca9271f2fb5e1877d7d6f57ea5c19449a9eeaddb03a999f96c8ae1a96ed',
+				positions: '8f1942c59997e9fc8a6e48476a5e937490c4f8bbae0c61489a60d8b25860791a',
+				indices: '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f',
+				plantCard: '465747905ce5c83a47934b38ac89a151d5b14f05fe574936dc2fe7253d617532',
 			},
 			daisy: {
 				positions: '428c601204a4316a80ca6ff6b3455a33c962cd2076277d695faab564f2140fa8',
@@ -123,12 +131,82 @@ describe( 'flowers core generator', () => {
 
 		for ( const variety of [ 'allium', 'daisy' ] as const ) {
 			const data = generateFlowersData( { seed: 1, variety } );
-			expect( {
+			const actual = {
 				positions: await hash( data.lods[ 0 ]!.positions ),
 				indices: await hash( data.lods[ 0 ]!.indices ),
-				petal: await hash( data.textures.petal!.data ),
-				stem: await hash( data.textures.stem!.data ),
-			} ).toEqual( expected[ variety ] );
+				...( variety === 'allium' ? { plantCard: await hash( data.textures.plantCard!.data ) } : {
+					petal: await hash( data.textures.petal!.data ),
+					stem: await hash( data.textures.stem!.data ),
+				} ),
+			};
+			expect( actual ).toEqual( expected[ variety ] );
+		}
+
+	} );
+
+	it( 'uses crossed allium plant cards with three, two, then one segment', () => {
+
+		const data = generateFlowersData( { seed: 7, variety: 'allium' } );
+		const lods = data.lods.slice( 0, 3 );
+		const plantCardTexture = data.textures.plantCard!;
+
+		expect( lods.map( triangleCount ) ).toEqual( [ 72, 48, 24 ] );
+		expect( lods.map( ( mesh ) => mesh.groups.map( ( group ) => group.partIndex ) ) ).toEqual( [ [ 2 ], [ 2 ], [ 2 ] ] );
+		expect( data.parts[ 2 ]!.name ).toBe( 'plantCard' );
+		expect( data.parts[ 0 ]!.name ).toBe( 'petal' );
+		expect( data.parts[ 1 ]!.name ).toBe( 'stem' );
+		expect( data.parts[ 0 ]!.texture ).toBeNull();
+		expect( data.parts[ 1 ]!.texture ).toBeNull();
+		expect( data.textures.plantCard!.width ).toBe( ALLIUM_PLANT_CARD_TEXTURE_WIDTH );
+		// 幅は花房の元テクスチャと同じ 128 px。茎の横方向は約 16 px に縮む（拡大しても細部は増えないため）。
+		expect( plantCardTexture.width ).toBe( FLOWERS_PETAL_TEXTURE_SIZE );
+		const texturePixelsPerMeter = plantCardTexture.height / data.bounds.height;
+		expect( ALLIUM_HEAD_SIZE * texturePixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_PETAL_TEXTURE_SIZE );
+		expect( ( data.bounds.height - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 ) * texturePixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_STEM_TEXTURE_HEIGHT );
+
+		for ( let plant = 0; plant < 6; plant ++ ) {
+			for ( let card = 0; card < 2; card ++ ) {
+				const lod0FirstVertex = plant * 16 + card * 8;
+				const lod0Base = cardRowCenter( lods[ 0 ]!, lod0FirstVertex, 0 );
+				const lod0Row = cardRowCenter( lods[ 0 ]!, lod0FirstVertex, 1 );
+				const lod0Top = cardRowCenter( lods[ 0 ]!, lod0FirstVertex, 3 );
+				const tipY = lod0Top[ 1 ] - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5;
+				const lod0Progress = lod0Row[ 1 ] / tipY;
+				const inferredTipX = lod0Base[ 0 ] + ( lod0Row[ 0 ] - lod0Base[ 0 ] ) / lod0Progress ** 2.4;
+				const inferredTipZ = lod0Base[ 2 ] + ( lod0Row[ 2 ] - lod0Base[ 2 ] ) / lod0Progress ** 2.4;
+
+				for ( let lod = 0; lod < lods.length; lod ++ ) {
+					const mesh = lods[ lod ]!;
+					const segments = 3 - lod;
+					const rows = segments + 1;
+					const verticesPerCard = rows * 2;
+					const verticesPerPlant = verticesPerCard * 2;
+					const firstVertex = plant * verticesPerPlant + card * verticesPerCard;
+					const cardTop = cardRowCenter( mesh, firstVertex, segments )[ 1 ];
+					const headCenterY = cardTop - ALLIUM_HEAD_SIZE * 0.5;
+					const headCenter = cardCenterAtY( mesh, firstVertex, rows, headCenterY );
+					const widthStart = vertexPosition( mesh, firstVertex );
+					const widthEnd = vertexPosition( mesh, firstVertex + 1 );
+
+					expect( cardTop - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 ).toBeCloseTo( tipY, 6 );
+					expect( headCenter[ 1 ] - tipY ).toBeCloseTo( ALLIUM_HEAD_RISE, 6 );
+					expect( headCenter[ 0 ] ).toBeCloseTo( inferredTipX, 6 );
+					expect( headCenter[ 2 ] ).toBeCloseTo( inferredTipZ, 6 );
+					expect( Math.hypot( widthEnd[ 0 ] - widthStart[ 0 ], widthEnd[ 2 ] - widthStart[ 2 ] ) ).toBeCloseTo( ALLIUM_HEAD_SIZE, 6 );
+					expect( mesh.windWeight[ firstVertex ] ).toBe( 0 );
+					expect( mesh.windWeight[ firstVertex + verticesPerCard - 2 ] ).toBe( 1 );
+
+					if ( lod < 2 ) {
+						const base = cardRowCenter( mesh, firstVertex, 0 );
+						for ( let row = 1; row < segments; row ++ ) {
+							const point = cardRowCenter( mesh, firstVertex, row );
+							const progress = point[ 1 ] / tipY;
+							expect( point[ 0 ] ).toBeCloseTo( base[ 0 ] + ( inferredTipX - base[ 0 ] ) * progress ** 2.4, 6 );
+							expect( point[ 2 ] ).toBeCloseTo( base[ 2 ] + ( inferredTipZ - base[ 2 ] ) * progress ** 2.4, 6 );
+						}
+					}
+				}
+		}
 		}
 
 	} );
@@ -141,9 +219,9 @@ describe( 'flowers core generator', () => {
 			return Array.from( new Uint8Array( digest ), ( value ) => value.toString( 16 ).padStart( 2, '0' ) ).join( '' );
 		};
 		const expected = [
-			[ 'allium', 1, [ '9c5d46efeb123860749707463cac4c26aaf9cc3945132927909149a4387a44cc', '6e0df0d9cd4098f2706f499a0cb240a0aa6b31b6549f8b7099e8b0316f2aa6aa', '47e367f845c96bc8e582b8eae92aed760682fc63e67a6b382cf93ef67780a7f1', '8df3b2b3af006018a551685114158cc58d8770c120db35859bc4a63a3b5d33ae', '8a1c0ca9271f2fb5e1877d7d6f57ea5c19449a9eeaddb03a999f96c8ae1a96ed' ] ],
-			[ 'allium', 2, [ 'c11372d485623a0bd3df5951bb35a1435a4067c89f24afb9fdbf8bc70376c48f', '6e0df0d9cd4098f2706f499a0cb240a0aa6b31b6549f8b7099e8b0316f2aa6aa', '17a738c3e836ebc6dfc6939c1a8c879749aa61c3437fc7b996a573f48480bbd2', '9b3b0252a1f6991ddbb7f02c0fc9acb032e900283438b5ffa047c5fe6894ab45', 'db19c9797e1b44a526ca29a7df9d40ecd9e989c1624a76489e3c63c4dfe29079' ] ],
-			[ 'allium', 7, [ '03f97aeb3ee9321493e2e6a05d36b325ed31d245ac802dda565d8678137a92e0', '6e0df0d9cd4098f2706f499a0cb240a0aa6b31b6549f8b7099e8b0316f2aa6aa', 'f98f407038486a020820f796fffd3191d0bc74cefa8ffb504c66628a60c70fe6', '82538e595c7518986262214e753b99b5a7af3d548a46a44969e626849b46b98d', '1e1b4eddca692b5d3abf632110e6609ea3bb6d8a85b80262f724e14f512f3c9f' ] ],
+			[ 'allium', 1, [ '8f1942c59997e9fc8a6e48476a5e937490c4f8bbae0c61489a60d8b25860791a', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '72c75ceaf1f2316c9ee766440be177939daa26da6af5d4b23bc31a5ea9965b2a', '465747905ce5c83a47934b38ac89a151d5b14f05fe574936dc2fe7253d617532' ] ],
+			[ 'allium', 2, [ '564759aa846c87aef2287f5ffc9e0c84f957dd09584da121d142a2dbe79d3b5a', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '4c9bb25185197b2256ad189dd50a84e44dcce87d7396fdd0f0f90a76cd534380', 'c3459e00a0a23e1bb8f7e19077a8afe7da15a268b104526fe69626e154ecdecd' ] ],
+			[ 'allium', 7, [ '5bb34d281ac5bd04cfab1b7a60dfdcebb35437bbe57238635787fb91cd829d9b', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '43aadacfa2a84c1bf34ac29bed80f138c14e7656490c0ac8c9dd785bdd9ffe6f', '33808a8b181301bec9cabdc235308ca8be14c62fa1a05a15f95749c132f9d320' ] ],
 			[ 'daisy', 1, [ '428c601204a4316a80ca6ff6b3455a33c962cd2076277d695faab564f2140fa8', 'bab8dcf8a445986d4199cc1f71c281d6e9a1338132bca9004bb38c1dbe45bfa8', '57fbdacbfda8e1942248579fd85df15cb28798790db0ef7e90fadfe9c992def4', '222a9e2a0bb425d388c14a29da4801971dc58b9be6226094d9125333a30c9c1d', 'ea67baca2f1e5707db9ed676c70efb101bd22204733ea5910ab6da569b9354c6' ] ],
 			[ 'daisy', 2, [ '42c32016ce3597322586bb69ca00a75530ae21aaedadd2fb02ee20cc349c7d0a', 'bab8dcf8a445986d4199cc1f71c281d6e9a1338132bca9004bb38c1dbe45bfa8', 'fd68a392fb79a5deab3b4570aac244ead053af7eb41ab3b3e7ebb85680553416', '43ea4c6d2c7ef3ab7df96158ab76ec9da5e3a1cad49ee105145aaf9de286adea', '5033481f927f85805d9b44abd7a244a6a117325c388393f54b4d57ed21a2c1fa' ] ],
 			[ 'daisy', 7, [ '0ddbb7c47de8fa01e4e3235785228288d8d9178cd18be5de49fe3eae06646a76', 'bab8dcf8a445986d4199cc1f71c281d6e9a1338132bca9004bb38c1dbe45bfa8', '346e626c596260439e050e9cbff38e62feba0f71d16a40ea71cbdf4b2fbf6c29', '694a01b81576c102e399d0525fbf9105b8090ab0edb2e6366020aa9bbdc4dc2d', '234137286cb32df7ded25af49300ad9e61eeed760d2fae41fbb15a19b5b254b5' ] ],
@@ -154,13 +232,13 @@ describe( 'flowers core generator', () => {
 
 		for ( const [ variety, seed, values ] of expected ) {
 			const data = generateFlowersData( { variety: variety as 'allium' | 'daisy' | 'tulip', seed: seed as number } );
-			expect( [
+			const actual = [
 				await hash( data.lods[ 0 ]!.positions ),
 				await hash( data.lods[ 0 ]!.indices ),
 				await hash( data.lods[ 0 ]!.uvs ),
-				await hash( data.textures.petal!.data ),
-				await hash( data.textures.stem!.data ),
-			] ).toEqual( values );
+				...( variety === 'allium' ? [ await hash( data.textures.plantCard!.data ) ] : [ await hash( data.textures.petal!.data ), await hash( data.textures.stem!.data ) ] ),
+			];
+			expect( actual ).toEqual( values );
 		}
 
 	} );
@@ -379,22 +457,27 @@ describe( 'flowers core generator', () => {
 
 	} );
 
-	it( 'keeps the textures within the reference 256 x 256 atlas', () => {
+	it( 'keeps the original flower textures within the reference atlas and preserves allium card density', () => {
 
-		// 参考 glTF は花 1 種につき 256×256 のアトラス 1 枚。花と茎の合計がそれを超えないこと。
 		for ( const variety of [ 'allium', 'daisy', 'tulip', ...newVarieties ] as const ) {
 			const data = generateFlowersData( { seed: 3, variety } );
-			const pixels = Object.values( data.textures ).reduce( ( sum, texture ) => sum + texture.width * texture.height, 0 );
+			const pixels = Object.entries( data.textures ).filter( ( [ name ] ) => name !== 'plantCard' ).reduce( ( sum, [ , texture ] ) => sum + texture.width * texture.height, 0 );
 			expect( pixels ).toBeLessThanOrEqual( 256 * 256 );
+			if ( variety === 'allium' ) {
+				const plantCard = data.textures.plantCard!;
+				const pixelsPerMeter = plantCard.height / data.bounds.height;
+				expect( plantCard.width ).toBe( ALLIUM_PLANT_CARD_TEXTURE_WIDTH );
+				expect( ALLIUM_HEAD_SIZE * pixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_PETAL_TEXTURE_SIZE );
+				expect( ( data.bounds.height - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 ) * pixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_STEM_TEXTURE_HEIGHT );
+			}
 		}
 
 	} );
 
-	it( 'centers the compact allium umbel on a curved stem tip', () => {
+	it( 'keeps the compact allium umbel in the high-resolution plant-card head region', () => {
 
 		const data = generateFlowersData( { seed: 7, variety: 'allium' } );
-		const mesh = data.lods[ 0 ]!;
-		const petalTexture = data.textures.petal!;
+		const petalTexture = createFlowersPetalTexture( 7, 'allium', 0xffffff, 0xffffff );
 		let minX = petalTexture.width;
 		let minY = petalTexture.height;
 		let maxX = - 1;
@@ -416,34 +499,76 @@ describe( 'flowers core generator', () => {
 		expect( ( maxY - minY + 1 ) / petalTexture.height ).toBeGreaterThanOrEqual( 0.33 );
 		expect( ( maxY - minY + 1 ) / petalTexture.height ).toBeLessThanOrEqual( 0.5 );
 
-		for ( const lod of [ mesh, data.lods[ 1 ]! ] ) {
-			const isLod0 = lod === mesh;
-			const petalsPerPlant = isLod0 ? 8 : 4;
-			const petalVertices = isLod0 ? 48 : 24;
-			const stemVerticesPerPlant = isLod0 ? 16 : 4;
-			const stemSegments = isLod0 ? 3 : 1;
-			for ( let plant = 0; plant < 6; plant ++ ) {
-				const petalCenterVertex = plant * petalsPerPlant;
-				const headCenter = quadCenter( lod, petalCenterVertex );
-				const stemOffset = petalVertices + plant * stemVerticesPerPlant;
-				const stemTip = cardRowCenter( lod, stemOffset, stemSegments );
-				// 花房は茎の先より 3.5 cm 上に中心を置き、茎の先が房の下寄りに入る。
-				const distance = Math.hypot( headCenter[ 0 ] - stemTip[ 0 ], headCenter[ 1 ] - stemTip[ 1 ] - 0.035, headCenter[ 2 ] - stemTip[ 2 ] );
-				expect( distance ).toBeLessThan( 1e-6 );
+		const plantCardTexture = data.textures.plantCard!;
+		const headTop = plantCardTexture.height - Math.round( ALLIUM_HEAD_SIZE * plantCardTexture.height / data.bounds.height );
+		let headCoverage = 0;
+		for ( let pixel = headTop * plantCardTexture.width; pixel < plantCardTexture.width * plantCardTexture.height; pixel ++ ) {
+			if ( plantCardTexture.data[ pixel * 4 + 3 ]! > 0 ) headCoverage ++;
+		}
+		expect( headCoverage ).toBeGreaterThan( 0 );
+
+	} );
+
+	it( 'builds a deterministic allium plant-card texture and recolors both layers', () => {
+
+		const first = generateFlowersData( { seed: 19, variety: 'allium' } );
+		const second = generateFlowersData( { seed: 19, variety: 'allium' } );
+		const original = first.textures.plantCard!.data.slice();
+		const petalColor = 0xa98bd6;
+		const stemColor = 0x81603d;
+
+		expect( areByteIdentical( first.textures.plantCard!.data, second.textures.plantCard!.data ) ).toBe( true );
+		regenerateFlowersPetalTexture( first, petalColor );
+		expect( areByteIdentical( first.textures.plantCard!.data, original ) ).toBe( false );
+		regenerateFlowersStemTexture( first, stemColor );
+		const fresh = generateFlowersData( { seed: 19, variety: 'allium', petalColor, stemColor } );
+		expect( areByteIdentical( first.textures.plantCard!.data, fresh.textures.plantCard!.data ) ).toBe( true );
+		const differentCenter = generateFlowersData( { seed: 19, variety: 'allium', centerColor: 0xff00ff } );
+		expect( areByteIdentical( differentCenter.textures.plantCard!.data, second.textures.plantCard!.data ) ).toBe( false );
+
+	} );
+
+	it( 'uses two vertical cards in allium LOD3 and one full-tile vertical card in LOD4', () => {
+
+		const data = generateFlowersData( { seed: 5, variety: 'allium' } );
+		const lod3 = data.lods[ 3 ]!;
+		const lod4 = data.lods[ 4 ]!;
+
+		expect( triangleCount( lod3 ) ).toBe( 4 );
+		expect( [ ...lod3.impostorCard ].every( ( card ) => card === 0 ) ).toBe( true );
+		expect( triangleCount( lod4 ) ).toBe( 2 );
+		expect( [ ...lod4.impostorCard ].every( ( card ) => card === 0 ) ).toBe( true );
+		expect( Math.min( ...lod3.uvs.filter( ( _, index ) => index % 2 === 0 ) ) ).toBe( 0 );
+		expect( Math.max( ...lod3.uvs.filter( ( _, index ) => index % 2 === 0 ) ) ).toBe( 1 );
+		expect( Math.min( ...lod4.uvs.filter( ( _, index ) => index % 2 === 0 ) ) ).toBe( 0 );
+		expect( Math.max( ...lod4.uvs.filter( ( _, index ) => index % 2 === 0 ) ) ).toBe( 1 );
+		expect( data.parts[ 3 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 3 ]!.impostorViews ).toHaveLength( 2 );
+		expect( data.parts[ 3 ]!.upNormalCards ).toBe( true );
+		expect( data.parts[ 4 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 4 ]!.impostorViews ).toHaveLength( 1 );
+
+		const prepared = prepareVegetationAsset( data, {}, 128 );
+		for ( const [ textureName, viewCount ] of [ [ 'impostor-lod3', 2 ], [ 'impostor', 1 ] ] as const ) {
+			const texture = prepared.impostorTextures[ textureName ]!;
+			const tileWidth = texture.width / viewCount;
+			for ( let view = 0; view < viewCount; view ++ ) {
+				let covered = 0;
+				let lower = 0;
+				let upper = 0;
+				for ( let y = 0; y < texture.height; y ++ ) {
+					for ( let x = view * tileWidth; x < ( view + 1 ) * tileWidth; x ++ ) {
+						if ( texture.data[ ( y * texture.width + x ) * 4 + 3 ]! < 128 ) continue;
+						covered ++;
+						if ( y < texture.height / 4 ) lower ++;
+						if ( y >= texture.height * 3 / 4 ) upper ++;
+					}
+				}
+				expect( covered ).toBeGreaterThan( 100 );
+				expect( lower ).toBeGreaterThan( 0 );
+				expect( upper ).toBeGreaterThan( 0 );
 			}
 		}
-
-		let maximumStemTip = - Infinity;
-		for ( let plant = 0; plant < 6; plant ++ ) {
-			const stemOffset = 48 + plant * 16;
-			const base = cardRowCenter( mesh, stemOffset, 0 );
-			const middle = cardRowCenter( mesh, stemOffset, 2 );
-			const tip = cardRowCenter( mesh, stemOffset, 3 );
-			maximumStemTip = Math.max( maximumStemTip, tip[ 1 ] );
-			const curve = Math.hypot( middle[ 0 ] - ( base[ 0 ] + tip[ 0 ] ) * 0.5, middle[ 2 ] - ( base[ 2 ] + tip[ 2 ] ) * 0.5 );
-			expect( curve ).toBeGreaterThan( 0.003 );
-		}
-		expect( data.bounds.height ).toBeGreaterThan( maximumStemTip );
 
 	} );
 
@@ -509,16 +634,20 @@ describe( 'flowers core generator', () => {
 
 		for ( const variety of [ 'allium', 'daisy', 'tulip', ...newVarieties ] as const ) {
 
-			const first = generateFlowersData( { seed: 5, variety } ).textures.petal!;
-			const changed = generateFlowersData( { seed: 5, variety, centerColor: 0xff00ff } ).textures.petal!;
+			const textureKey = variety === 'allium' ? 'plantCard' : 'petal';
+			const first = generateFlowersData( { seed: 5, variety } ).textures[ textureKey ]!;
+			const changed = generateFlowersData( { seed: 5, variety, centerColor: 0xff00ff } ).textures[ textureKey ]!;
 			const alpha = new Set<number>();
 			for ( let index = 3; index < first.data.length; index += 4 ) alpha.add( first.data[ index ]! );
 
 			// tulip だけ centerColor を使わない（bluebell は花柄の色に使う）。
 			expect( areByteIdentical( first.data, changed.data ) ).toBe( variety === 'tulip' );
 			if ( variety !== 'tulip' ) expect( [ ...alpha ].some( ( value ) => value > 0 && value < 255 ) ).toBe( true );
-			expect( first.colorFactors ).toHaveLength( first.width * first.height );
-			expect( first.colorPixelIndices!.length ).toBeGreaterThan( 0 );
+			if ( variety === 'allium' ) expect( first.width ).toBe( ALLIUM_PLANT_CARD_TEXTURE_WIDTH );
+			else {
+				expect( first.colorFactors ).toHaveLength( first.width * first.height );
+				expect( first.colorPixelIndices!.length ).toBeGreaterThan( 0 );
+			}
 
 		}
 
