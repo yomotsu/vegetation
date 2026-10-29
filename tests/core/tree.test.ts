@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES, LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS } from '../../src/core';
+import { bakeImpostor, buildBillboard, hexToLinear, impostorPart, linearToSrgbByte, LOD3_IMPOSTOR_YAW_ANGLES, LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS, prepareVegetationAsset } from '../../src/core';
 import { generateTreeData } from '../../src/core';
 import type { MeshData } from '../../src/core';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -9,6 +9,7 @@ const BARK_PART_INDEX = 0;
 const LEAF_PART_INDEX = 1;
 const LOD3_IMPOSTOR_PART_INDEX = 2;
 const IMPOSTOR_PART_INDEX = 3;
+const LEAF_RING_PART_INDEX = 4;
 
 function triangleCount( mesh: { indices: Uint32Array } ): number {
 
@@ -16,9 +17,49 @@ function triangleCount( mesh: { indices: Uint32Array } ): number {
 
 }
 
+async function hashArrayBytes( ...arrays: ArrayBufferView[] ): Promise<string> {
+
+	const byteLength = arrays.reduce( ( total, array ) => total + array.byteLength, 0 );
+	const bytes = new Uint8Array( byteLength );
+	let offset = 0;
+
+	for ( const array of arrays ) {
+		bytes.set( new Uint8Array( array.buffer, array.byteOffset, array.byteLength ), offset );
+		offset += array.byteLength;
+	}
+
+	const digest = await globalThis.crypto.subtle.digest( 'SHA-256', bytes );
+
+	return Array.from( new Uint8Array( digest ), ( byte ) => byte.toString( 16 ).padStart( 2, '0' ) ).join( '' );
+
+}
+
 function vertexCount( mesh: { positions: Float32Array } ): number {
 
 	return mesh.positions.length / 3;
+
+}
+
+function groupVertexIndices( mesh: MeshData, group: { start: number; count: number } ): number[] {
+
+	return [ ...new Set( mesh.indices.slice( group.start, group.start + group.count ) ) ].sort( ( first, second ) => first - second );
+
+}
+
+function meshGroupBytes( mesh: MeshData, partIndex: number ): ArrayBufferView[] {
+
+	const group = mesh.groups.find( ( value ) => value.partIndex === partIndex )!;
+	const vertices = [ ...new Set( mesh.indices.slice( group.start, group.start + group.count ) ) ].sort( ( first, second ) => first - second );
+
+	return [
+		Float32Array.from( vertices.flatMap( ( vertex ) => Array.from( mesh.positions.slice( vertex * 3, vertex * 3 + 3 ) ) ) ),
+		Float32Array.from( vertices.flatMap( ( vertex ) => Array.from( mesh.normals.slice( vertex * 3, vertex * 3 + 3 ) ) ) ),
+		Float32Array.from( vertices.flatMap( ( vertex ) => Array.from( mesh.uvs.slice( vertex * 2, vertex * 2 + 2 ) ) ) ),
+		Float32Array.from( vertices.flatMap( ( vertex ) => Array.from( mesh.colors.slice( vertex * 3, vertex * 3 + 3 ) ) ) ),
+		Float32Array.from( vertices.map( ( vertex ) => mesh.windWeight[ vertex ]! ) ),
+		Float32Array.from( vertices.map( ( vertex ) => mesh.impostorCard[ vertex ]! ) ),
+		mesh.indices.slice( group.start, group.start + group.count ),
+	];
 
 }
 
@@ -143,6 +184,12 @@ function defaultColors( data: ReturnType<typeof generateTreeData> ): [ number, n
 function leafGroup( mesh: MeshData ) {
 
 	return mesh.groups.find( ( group ) => group.partIndex === LEAF_PART_INDEX )!;
+
+}
+
+function leafRingGroup( mesh: MeshData ) {
+
+	return mesh.groups.find( ( group ) => group.partIndex === LEAF_RING_PART_INDEX )!;
 
 }
 
@@ -379,40 +426,6 @@ function frondCount( mesh: MeshData, trianglesPerFrond: number ): number {
 
 }
 
-function frondVertices( mesh: MeshData, lod: number, frondIndex: number ): number[] {
-
-	const indicesPerFrond = lod === 0 ? 24 : lod === 1 ? 12 : 6;
-	const start = leafGroup( mesh ).start + frondIndex * indicesPerFrond;
-	const vertices = new Set<number>();
-
-	for ( let index = start; index < start + indicesPerFrond; index ++ ) {
-
-		vertices.add( mesh.indices[ index ]! );
-
-	}
-
-	return [ ...vertices ];
-
-}
-
-function frondHeightExtent( mesh: MeshData, lod: number, frondIndex: number ): number {
-
-	const vertices = frondVertices( mesh, lod, frondIndex );
-	let minimum = Infinity;
-	let maximum = - Infinity;
-
-	for ( const vertex of vertices ) {
-
-		const y = mesh.positions[ vertex * 3 + 1 ]!;
-		minimum = Math.min( minimum, y );
-		maximum = Math.max( maximum, y );
-
-	}
-
-	return maximum - minimum;
-
-}
-
 function bakeSideCoverage( data: ReturnType<typeof generateTreeData>, lod: number, yawAngles: number[] ) {
 
 	const leafTexture = data.textures.leaf!;
@@ -613,6 +626,87 @@ describe( 'conifer tree data', () => {
 
 	} );
 
+	it( 'bakes one transparent 128-pixel leafRing cell for each tier', () => {
+
+		const texture = generateTreeData( { seed: 1 } ).textures.leafRing!;
+
+		expect( texture.width ).toBe( 10 * 128 );
+		expect( texture.height ).toBe( 128 );
+		expect( texture.data.length ).toBe( texture.width * texture.height * 4 );
+
+		for ( let tier = 0; tier < 10; tier ++ ) {
+
+			let opaquePixels = 0;
+			let transparentPixels = 0;
+
+			for ( let y = 0; y < texture.height; y ++ ) {
+
+				for ( let x = 0; x < texture.height; x ++ ) {
+
+					const alpha = texture.data[ ( y * texture.width + tier * texture.height + x ) * 4 + 3 ]!;
+					if ( alpha > 0 ) opaquePixels ++;
+					else transparentPixels ++;
+
+				}
+
+			}
+
+			expect( opaquePixels ).toBeGreaterThan( 0 );
+			expect( transparentPixels ).toBeGreaterThan( 0 );
+
+		}
+
+		const shrunk = generateTreeData( { seed: 1, branchCount: 33 } ).textures.leafRing!;
+		expect( shrunk.width ).toBe( 33 * 64 );
+		expect( shrunk.height ).toBe( 64 );
+		expect( shrunk.width ).toBeLessThanOrEqual( 4096 );
+
+	} );
+
+	it( 'keeps LOD0, LOD3, LOD4, collider, and impostor bake bytes at their HEAD values', async () => {
+
+		const baselines = {
+			1: {
+				lod0: 'ff29667e27e6481d4b64c33ed27619608e41e22bd4b38f5b80a43befcf483d79',
+				lod3: '15798aa00cc9ad28e55617570c26ea321c256eabf69a79af2855ebfae7421d93',
+				lod4: '0204618ff594cc70bd0a14bebaffcb7ee511da6e5a9bf8e4c10b48f9294b6c25',
+				collider: '78a4f7b0e153d7f23ab25c3d822d42976c4a0aa5611bdec2e7cf16338aaf34f0',
+				impostorLod3: '7411c1cfef6ef54bfb3344ac4b2222b62539485ce49777e03e1d01916f5f138d',
+				impostor: '5d06ca88834c6ab2bfb6e292e1f760a69c682d8dcff4083dd249ad52558f676e',
+				lod1Trunk: '4bd89243607c76683d1072f168ba4b89e1c5789f4ac0e5b53338549ac3bc9b90',
+				lod2Trunk: '4b69c6ae9ee6314ed92fe5afff9a680f2a8c5c6da1526e158ad2798154f7911c',
+			},
+			3: {
+				lod0: '13bf9cf4d5a495348dd2413afac40ca9794c477a9e401cf41b59f535f58794fd',
+				lod3: 'a52cdad68dfe796e0ee6c4ef1f9a42f51810a24f36af5fa1a8ce68465c10d881',
+				lod4: '81fdec2cd36b5c0371d4196ed3d521b44d3ba742175175e6f8849e25605188bb',
+				collider: '38d04880cebd491f1ee77bb81b10b9914bf80aaf18f065e722ab2676fdf7b1e1',
+				impostorLod3: '7b248e98dae89bd253726b0783862c83e7e7efd2b696530207563dafb7557667',
+				impostor: '2afaa8043f91a4932bad15c36574b43dae8c38f73048be4a2714b034c1ed3c38',
+				lod1Trunk: '4e00d38a03ef40e4279c50393ab1c0a34932dfb156bfc7b88531fe274be942a2',
+				lod2Trunk: '16624011eb88652eb6f20c7fe8d3c32dd0a29640112a15411221d38cae46a038',
+			},
+		} as const;
+
+		for ( const seed of [ 1, 3 ] as const ) {
+
+			const data = generateTreeData( { seed } );
+			const prepared = prepareVegetationAsset( data );
+			const baseline = baselines[ seed ];
+
+			expect( await hashArrayBytes( data.lods[ 0 ]!.positions, data.lods[ 0 ]!.indices ) ).toBe( baseline.lod0 );
+			expect( await hashArrayBytes( data.lods[ 3 ]!.positions, data.lods[ 3 ]!.indices ) ).toBe( baseline.lod3 );
+			expect( await hashArrayBytes( data.lods[ 4 ]!.positions, data.lods[ 4 ]!.indices ) ).toBe( baseline.lod4 );
+			expect( await hashArrayBytes( data.collider!.positions, data.collider!.indices ) ).toBe( baseline.collider );
+			expect( await hashArrayBytes( ...meshGroupBytes( data.lods[ 1 ]!, BARK_PART_INDEX ) ) ).toBe( baseline.lod1Trunk );
+			expect( await hashArrayBytes( ...meshGroupBytes( data.lods[ 2 ]!, BARK_PART_INDEX ) ) ).toBe( baseline.lod2Trunk );
+			expect( await hashArrayBytes( prepared.impostorTextures[ 'impostor-lod3' ]!.data ) ).toBe( baseline.impostorLod3 );
+			expect( await hashArrayBytes( prepared.impostorTextures.impostor!.data ) ).toBe( baseline.impostor );
+
+		}
+
+	} );
+
 	it( 'uses a gray-ish bark map multiplied by the brown default color', () => {
 
 		const data = generateTreeData( { seed: 1 } );
@@ -650,7 +744,7 @@ describe( 'conifer tree data', () => {
 
 		expect( data.bounds.height ).toBe( 7.5 );
 		expect( data.lods ).toHaveLength( 5 );
-		expect( data.parts ).toHaveLength( 4 );
+		expect( data.parts ).toHaveLength( 5 );
 		expect( data.parts[ 0 ] ).toEqual( {
 			name: 'bark',
 			defaultColor: 0x6b4c32,
@@ -686,7 +780,21 @@ describe( 'conifer tree data', () => {
 			flatShading: false,
 		} );
 		expect( data.parts[ 3 ] ).toEqual( impostorPart() );
-		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf' ] );
+		expect( data.parts[ 4 ] ).toEqual( {
+			name: 'leafRing',
+			defaultColor: 0x2f7d1f,
+			texture: 'leafRing',
+			colorizesTexture: true,
+			alphaTest: 0.5,
+			doubleSided: true,
+			flatShading: false,
+			roughness: 0.95,
+			emissive: 0x000000,
+			emissiveIntensity: 0,
+			specularIntensity: 0.014872,
+			ior: 1.05,
+		} );
+		expect( Object.keys( data.textures ).sort() ).toEqual( [ 'bark', 'leaf', 'leafRing' ] );
 
 		for ( const lod of data.lods ) validateMeshData( lod );
 
@@ -1252,28 +1360,39 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps every frond while reducing per-frond detail across LOD0, LOD1, and LOD2', () => {
+	it( 'builds one bowl per tier and keeps the leader frond in the leaf part', () => {
 
-		const data = generateTreeData( { seed: 1 } );
+		for ( const seed of [ 1, 3 ] ) {
 
-		expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 51 );
-		expect( frondCount( data.lods[ 1 ]!, 4 ) ).toBe( 51 );
-		expect( frondCount( data.lods[ 2 ]!, 2 ) ).toBe( 51 );
-		expect( triangleCount( data.lods[ 0 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 1 ]! ) );
-		expect( triangleCount( data.lods[ 1 ]! ) ).toBeGreaterThan( triangleCount( data.lods[ 2 ]! ) );
-
-		for ( let frond = 0; frond < 51; frond ++ ) {
-
-			const reference = lodFrondRoot( data.lods[ 0 ]!, 0, frond );
+			const data = generateTreeData( { seed } );
+			expect( frondCount( data.lods[ 0 ]!, 8 ) ).toBe( 51 );
 
 			for ( const lod of [ 1, 2 ] ) {
 
-				const root = lodFrondRoot( data.lods[ lod ]!, lod, frond );
-				const tip = lodFrondTip( data.lods[ lod ]!, lod, frond );
+				const mesh = data.lods[ lod ]!;
+				const bowl = leafRingGroup( mesh );
+				const leader = leafGroup( mesh );
+				const tierVertices = groupVertexIndices( mesh, bowl );
+				const expectedVerticesPerTier = lod === 1 ? 16 : 11;
+				const expectedTrianglesPerTier = lod === 1 ? 20 : 10;
+				const expectedLeaderVertices = lod === 1 ? 6 : 4;
+				const expectedLeaderTriangles = lod === 1 ? 4 : 2;
 
-				expect( Math.hypot( root[ 0 ] - reference[ 0 ], root[ 2 ] - reference[ 2 ] ) ).toBeLessThan( 0.001 );
-				expect( Math.abs( root[ 1 ] - reference[ 1 ] ) ).toBeLessThan( 0.2 );
-				expect( distance3( tip, lodFrondTip( data.lods[ 0 ]!, 0, frond ) ) ).toBeLessThan( 0.2 );
+				expect( tierVertices ).toHaveLength( 10 * expectedVerticesPerTier );
+				expect( bowl.count / 3 ).toBe( 10 * expectedTrianglesPerTier );
+				expect( groupVertexIndices( mesh, leader ) ).toHaveLength( expectedLeaderVertices );
+				expect( leader.count / 3 ).toBe( expectedLeaderTriangles );
+				expect( vertexCount( mesh ) ).toBe( lod === 1 ? 209 : 140 );
+				expect( triangleCount( mesh ) ).toBe( lod === 1 ? 270 : 138 );
+
+				const leaderRoot = lodFrondRoot( mesh, lod, 0 );
+				const leaderTip = lodFrondTip( mesh, lod, 0 );
+				const referenceLeaderRoot = lodFrondRoot( data.lods[ 0 ]!, 0, 50 );
+				const referenceLeaderTip = lodFrondTip( data.lods[ 0 ]!, 0, 50 );
+
+				expect( Math.hypot( leaderRoot[ 0 ] - referenceLeaderRoot[ 0 ], leaderRoot[ 2 ] - referenceLeaderRoot[ 2 ] ) ).toBeLessThan( 0.001 );
+				expect( Math.abs( leaderRoot[ 1 ] - referenceLeaderRoot[ 1 ] ) ).toBeLessThan( 0.2 );
+				expect( distance3( leaderTip, referenceLeaderTip ) ).toBeLessThan( 0.2 );
 
 			}
 
@@ -1281,18 +1400,80 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'keeps at least half of each LOD0 frond height extent in LOD1 and LOD2', () => {
+	it( 'maps bowl UVs to horizontal positions and follows the frond tier heights', () => {
 
 		const data = generateTreeData( { seed: 1 } );
+		const reference = data.lods[ 0 ]!;
+		const referenceLeaves = leafGroup( reference );
 
-		for ( let frond = 0; frond < frondCount( data.lods[ 0 ]!, 8 ); frond ++ ) {
+		for ( const lod of [ 1, 2 ] ) {
 
-			const referenceExtent = frondHeightExtent( data.lods[ 0 ]!, 0, frond );
+			const mesh = data.lods[ lod ]!;
+			const bowl = leafRingGroup( mesh );
+			const vertices = groupVertexIndices( mesh, bowl );
+			const verticesPerTier = lod === 1 ? 16 : 11;
+			const rimOffset = lod === 1 ? 6 : 1;
 
-			for ( const lod of [ 1, 2 ] ) {
+			for ( let tier = 0; tier < 10; tier ++ ) {
 
-				expect( frondHeightExtent( data.lods[ lod ]!, lod, frond ) ).toBeGreaterThanOrEqual( referenceExtent * 0.5 );
+				const tierVertices = vertices.slice( tier * verticesPerTier, ( tier + 1 ) * verticesPerTier );
+				const centerVertex = tierVertices[ 0 ]!;
+				const centerOffset = centerVertex * 3;
+				const center: [ number, number, number ] = [ mesh.positions[ centerOffset ]!, mesh.positions[ centerOffset + 1 ]!, mesh.positions[ centerOffset + 2 ]! ];
+				const radius = Math.max( ...tierVertices.map( ( vertex ) => Math.hypot( mesh.positions[ vertex * 3 ]! - center[ 0 ], mesh.positions[ vertex * 3 + 2 ]! - center[ 2 ] ) ) );
+				const meanBaseY = Array.from( { length: 5 }, ( _, index ) => frondPoint( reference, referenceLeaves, tier * 5 + index, 0, 1 )[ 1 ] ).reduce( ( total, value ) => total + value / 5, 0 );
 
+				expect( center[ 1 ] ).toBeCloseTo( meanBaseY, 5 );
+
+				for ( const vertex of tierVertices ) {
+
+					const positionOffset = vertex * 3;
+					const uvOffset = vertex * 2;
+					const localU = 0.5 + ( mesh.positions[ positionOffset ]! - center[ 0 ] ) / ( 2 * radius );
+					const localV = 0.5 + ( mesh.positions[ positionOffset + 2 ]! - center[ 2 ] ) / ( 2 * radius );
+
+					expect( mesh.uvs[ uvOffset ] ).toBeCloseTo( ( tier + localU ) / 10, 4 );
+					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( localV, 4 );
+					expect( mesh.normals[ positionOffset ] ).toBe( 0 );
+					expect( mesh.normals[ positionOffset + 1 ] ).toBe( 1 );
+					expect( mesh.normals[ positionOffset + 2 ] ).toBe( 0 );
+					expect( mesh.positions[ positionOffset + 1 ] ).toBeLessThanOrEqual( data.bounds.height );
+
+				}
+
+				if ( lod === 1 ) {
+
+					for ( let frond = 0; frond < 5; frond ++ ) {
+
+						const vertex = tierVertices[ 1 + frond ]!;
+						const offset = vertex * 3;
+						const referenceMid = frondPoint( reference, referenceLeaves, tier * 5 + frond, 1, 1 );
+
+						for ( let axis = 0; axis < 3; axis ++ ) {
+							expect( mesh.positions[ offset + axis ] ).toBeCloseTo( referenceMid[ axis ]!, 5 );
+						}
+
+					}
+
+				}
+
+				const rimVertices = tierVertices.slice( rimOffset );
+
+				for ( let index = 1; index < rimVertices.length; index += 2 ) {
+
+					const previous = mesh.positions[ rimVertices[ index - 1 ]! * 3 + 1 ]!;
+					const midpoint = mesh.positions[ rimVertices[ index ]! * 3 + 1 ]!;
+					const next = mesh.positions[ rimVertices[ ( index + 1 ) % rimVertices.length ]! * 3 + 1 ]!;
+
+					// 葉と葉の間は LOD0 の V 字の折れの代わりに持ち上げる。
+					expect( midpoint ).toBeGreaterThanOrEqual( Math.min( data.bounds.height, ( previous + next ) * 0.5 + 1e-4 ) );
+
+				}
+
+			}
+
+			for ( let index = bowl.start; index < bowl.start + bowl.count; index += 3 ) {
+				expect( geometricNormalY( mesh, index ) ).toBeGreaterThan( 0 );
 			}
 
 		}
@@ -1323,61 +1504,25 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'matches LOD0 frond winding, tint, UVs, and lit elevated/top-view color', () => {
+	it( 'keeps the leader card and matches LOD0 color in elevated and top views', () => {
 
 		const data = generateTreeData( { seed: 1 } );
-		const reference = data.lods[ 0 ]!;
-		const referenceLeaves = leafGroup( reference );
 
 		for ( const lod of [ 1, 2 ] ) {
 
 			const candidate = data.lods[ lod ]!;
 			const candidateLeaves = leafGroup( candidate );
-			const indicesPerFrond = lod === 1 ? 12 : 6;
-			const vertexLateral = lod === 1 ? [ 0, 1, 0, 1, 0, 1 ] : [ 0, 1, 0, 1 ];
-			const vertexLongitudinal = lod === 1 ? [ 0, 0, 0.4, 0.4, 1, 1 ] : [ 0, 0, 1, 1 ];
+			const leaderVertices = groupVertexIndices( candidate, candidateLeaves );
+			const expectedVertexCount = lod === 1 ? 6 : 4;
+			const expectedTriangleCount = lod === 1 ? 4 : 2;
 
-			for ( let frond = 0; frond < frondCount( reference, 8 ); frond ++ ) {
+			expect( leaderVertices ).toHaveLength( expectedVertexCount );
+			expect( candidateLeaves.count / 3 ).toBe( expectedTriangleCount );
 
-				const referenceStart = referenceLeaves.start + frond * 24;
-				const candidateStart = candidateLeaves.start + frond * indicesPerFrond;
-				const referenceFirstVertex = reference.indices[ referenceStart ]!;
-				const candidateFirstVertex = candidate.indices[ candidateStart ]!;
-				const referenceWinding = Math.sign( geometricNormalY( reference, referenceStart ) );
-
-				expect( referenceWinding ).toBe( 1 );
-
-				for ( let triangle = 0; triangle < indicesPerFrond; triangle += 3 ) {
-
-					expect( Math.sign( geometricNormalY( candidate, candidateStart + triangle ) ), `LOD${ lod } frond ${ frond } triangle ${ triangle / 3 }` ).toBe( referenceWinding );
-
-				}
-
-				for ( let vertex = 0; vertex < vertexLateral.length; vertex ++ ) {
-
-					const vertexIndex = candidateFirstVertex + vertex;
-					const uvOffset = vertexIndex * 2;
-					const colorOffset = vertexIndex * 3;
-					const lateral = vertexLateral[ vertex ]!;
-					const referenceVertex = referenceFirstVertex + ( lateral === 0.5 ? 1 : lateral === 0 ? 0 : 2 );
-					const referenceColorOffset = referenceVertex * 3;
-
-					expect( candidate.normals[ colorOffset ] ).toBeCloseTo( 0, 5 );
-					expect( candidate.normals[ colorOffset + 1 ] ).toBeCloseTo( 1, 5 );
-					expect( candidate.normals[ colorOffset + 2 ] ).toBeCloseTo( 0, 5 );
-				expect( candidate.uvs[ uvOffset ]! ).toBeCloseTo( lateral, 2 );
-					expect( candidate.uvs[ uvOffset + 1 ] ).toBeCloseTo( vertexLongitudinal[ vertex ]!, 5 );
-
-					for ( let channel = 0; channel < 3; channel ++ ) {
-
-						const expectedColor = ( reference.colors[ ( referenceFirstVertex + 1 ) * 3 + channel ]! + reference.colors[ referenceColorOffset + channel ]! ) * 0.5;
-
-						expect( candidate.colors[ colorOffset + channel ] ).toBeCloseTo( expectedColor, 5 );
-
-					}
-
-				}
-
+			for ( const vertex of leaderVertices ) {
+				expect( candidate.normals[ vertex * 3 ] ).toBe( 0 );
+				expect( candidate.normals[ vertex * 3 + 1 ] ).toBe( 1 );
+				expect( candidate.normals[ vertex * 3 + 2 ] ).toBe( 0 );
 			}
 
 		}
@@ -1406,9 +1551,7 @@ describe( 'conifer tree data', () => {
 
 		const data = generateTreeData( { seed: 1 } );
 		const referenceCoverage = bakeLod( data, 0, false, true );
-		const referenceCoverageTop = bakeLod( data, 0, true, true );
 		const referenceColor = bakeLod( data, 0 );
-		const referenceColorTop = bakeLod( data, 0, true );
 		const tileSize = 128;
 		const coveragePixelTolerance = 3;
 		// 128px の輪郭差を 3px 幅で比較します。
@@ -1416,9 +1559,7 @@ describe( 'conifer tree data', () => {
 		for ( const lod of [ 1, 2 ] ) {
 
 			const measured = bakeLod( data, lod, false, true );
-			const measuredTop = bakeLod( data, lod, true, true );
 			const measuredColor = bakeLod( data, lod );
-			const measuredColorTop = bakeLod( data, lod, true );
 			const minimumIou = lod === 1 ? 0.88 : 0.8;
 
 			for ( let view = 0; view < 3; view ++ ) {
@@ -1431,12 +1572,34 @@ describe( 'conifer tree data', () => {
 
 			}
 
-			const minimumRawTopIou = lod === 1 ? 0.85 : 0.78;
-			expect( coverageIou( referenceCoverageTop, measuredTop, 0, tileSize ), `LOD${ lod } raw top view` ).toBeGreaterThanOrEqual( minimumRawTopIou );
-			expect( coverageIou( referenceCoverageTop, measuredTop, 0, tileSize, coveragePixelTolerance ), `LOD${ lod } top view` ).toBeGreaterThanOrEqual( minimumIou );
+		}
 
-			for ( const difference of meanOpaqueColorDifference( referenceColorTop, measuredColorTop, 0, 0, tileSize ) ) {
-				expect( difference ).toBeLessThanOrEqual( 6 );
+	} );
+
+	it( 'keeps the bowl LODs close to LOD0 when seen from straight above', () => {
+
+		const tileSize = 128;
+		const topView = [ LOD4_IMPOSTOR_VIEWS[ 1 ] ];
+
+		for ( const seed of [ 1, 3 ] ) {
+
+			const data = generateTreeData( { seed } );
+			const bakeTop = ( lod: number ) => bakeImpostor( { ...data, lods: [ data.lods[ lod ]! ] }, defaultColors( data ), tileSize, topView );
+			const reference = bakeTop( 0 );
+			const referenceCount = opaquePixelCount( reference, 0, tileSize );
+
+			for ( const lod of [ 1, 2 ] ) {
+
+				const measured = bakeTop( lod );
+
+				// お椀は LOD0 の葉を真上から焼いた 128px のテクスチャなので、細い針葉が少し欠けます。
+				expect( opaquePixelCount( measured, 0, tileSize ) / referenceCount, `seed ${ seed } LOD${ lod } top coverage` ).toBeGreaterThanOrEqual( 0.75 );
+				expect( coverageIou( reference, measured, 0, tileSize, 3 ), `seed ${ seed } LOD${ lod } top view` ).toBeGreaterThanOrEqual( 0.78 );
+
+				for ( const difference of meanOpaqueColorDifference( reference, measured, 0, 0, tileSize ) ) {
+					expect( difference ).toBeLessThanOrEqual( 6 );
+				}
+
 			}
 
 		}

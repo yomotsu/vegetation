@@ -3,7 +3,7 @@ import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
 import { createBarkTexture, DEFAULT_BARK_COLOR } from '../barkTexture';
-import { composeFirSprigTexture, createFirSprigTexture, DEFAULT_LEAF_COLOR } from '../leafTexture';
+import { composeFirSprigTexture, createFirSprigTexture, DEFAULT_LEAF_COLOR, padTextureEdges } from '../leafTexture';
 import { registerTextureRegenerator } from '../textureRegenerator';
 import type { Color3, ColliderData, MeshData, PartDef, TextureData, TextureGeneratorDef, Vec3, VegetationData } from '../types';
 
@@ -21,6 +21,7 @@ interface Frond {
 	base: Vec3;
 	mid: Vec3;
 	tip: Vec3;
+	angle: number;
 	widthDirection: Vec3;
 	width: number;
 	fold: number;
@@ -29,7 +30,10 @@ interface Frond {
 }
 
 interface Tier {
+	center: Vec3;
 	fronds: Frond[];
+	frondMesh: MeshData;
+	rimRadius: number;
 }
 
 interface TreeLayout {
@@ -49,8 +53,11 @@ const barkPartIndex = 0;
 const leafPartIndex = 1;
 const impostorLod3PartIndex = 2;
 const impostorPartIndex = 3;
+const leafRingPartIndex = 4;
 const frondsPerTier = 5;
 const lodFrondFoldRatio = 0.16;
+// お椀は縁でしか折れを表せないため、横からの葉の量が LOD0 と揃うよう大きめに持ち上げる。
+const bowlFoldRatio = lodFrondFoldRatio * 3.5;
 // Tree01 の測定値から幹の半径を設定します。
 const trunkProfile = [
 	[ - 0.2, 0.36 ],
@@ -247,7 +254,7 @@ function makeFrond( base: Vec3, angle: number, length: number, width: number, fo
 		Math.sin( angle ) * secondLength * Math.cos( secondRadians ) * horizontalScale,
 	] );
 
-	return { base, mid, tip, widthDirection, width, fold, radius, leader };
+	return { base, mid, tip, angle, widthDirection, width, fold, radius, leader };
 
 }
 
@@ -327,7 +334,9 @@ function createTreeLayout( seed: number, height: number, rootDepth: number, crow
 
 		}
 
-		tiers.push( { fronds } );
+		const tier: Omit<Tier, 'frondMesh' | 'rimRadius'> = { center: trunkPoint, fronds };
+		const frondMesh = createTierFrondMesh( tier );
+		tiers.push( { ...tier, frondMesh, rimRadius: getTierRimRadius( tier, frondMesh ) } );
 
 	}
 
@@ -427,6 +436,128 @@ function getFrondAverageLine( frond: Frond ): [ Vec3, Vec3 ] {
 
 }
 
+interface LeafBowlTier {
+	center: Vec3;
+	fronds: Frond[];
+	rimPoints: Vec3[];
+	midPoints: Vec3[];
+	rimRadius: number;
+	color: Color3;
+}
+
+function getLeafBowlTier( layout: TreeLayout, tier: Tier, lod: 1 | 2 ): LeafBowlTier {
+
+	const fronds = tier.fronds.filter( ( frond ) => ! frond.leader );
+	const meanBaseY = fronds.reduce( ( total, frond ) => total + frond.base[ 1 ] / fronds.length, 0 );
+	const center: Vec3 = [ tier.center[ 0 ], meanBaseY, tier.center[ 2 ] ];
+	const color: Color3 = [ 0, 0, 0 ];
+	const directionHeights: number[] = [];
+	const rimPoints: Vec3[] = [];
+	const midPoints = lod === 1 ? fronds.map( ( frond ) => getFrondPoint( frond, 0.4 ) ) : [];
+
+	for ( const frond of fronds ) {
+
+		const meanColor = getFrondMeanVertexColor( frond.radius );
+		color[ 0 ] += meanColor[ 0 ] / fronds.length;
+		color[ 1 ] += meanColor[ 1 ] / fronds.length;
+		color[ 2 ] += meanColor[ 2 ] / fronds.length;
+		const line = lod === 1 ? [ getFrondPoint( frond, 0.4 ), frond.tip ] as [ Vec3, Vec3 ] : getFrondAverageLine( frond );
+		const start = line[ 0 ];
+		const end = line[ 1 ];
+		const startRadius = Math.hypot( start[ 0 ] - tier.center[ 0 ], start[ 2 ] - tier.center[ 2 ] );
+		const horizontalLength = Math.hypot( end[ 0 ] - start[ 0 ], end[ 2 ] - start[ 2 ] );
+		const amount = horizontalLength === 0 ? 0 : ( tier.rimRadius - startRadius ) / horizontalLength;
+
+		directionHeights.push( Math.min( layout.height, start[ 1 ] + ( end[ 1 ] - start[ 1 ] ) * amount ) );
+
+	}
+
+	for ( let index = 0; index < fronds.length; index ++ ) {
+
+		const frond = fronds[ index ]!;
+		const next = ( index + 1 ) % fronds.length;
+		const nextAngle = fronds[ next ]!.angle + ( next === 0 ? Math.PI * 2 : 0 );
+		const angle = frond.angle;
+		const midpointAngle = ( angle + nextAngle ) * 0.5;
+		const directionHeight = directionHeights[ index ]!;
+		// 葉と葉の間を持ち上げ、LOD0 の V 字の折れによる横からの厚みを残す。
+		const foldHeight = ( frond.width + fronds[ next ]!.width ) * 0.5 * bowlFoldRatio;
+		const midpointHeight = Math.min( layout.height, ( directionHeight + directionHeights[ next ]! ) * 0.5 + foldHeight );
+
+		rimPoints.push( [ tier.center[ 0 ] + Math.cos( angle ) * tier.rimRadius, directionHeight, tier.center[ 2 ] + Math.sin( angle ) * tier.rimRadius ] );
+		rimPoints.push( [ tier.center[ 0 ] + Math.cos( midpointAngle ) * tier.rimRadius, midpointHeight, tier.center[ 2 ] + Math.sin( midpointAngle ) * tier.rimRadius ] );
+
+	}
+
+	return { center, fronds, rimPoints, midPoints, rimRadius: tier.rimRadius, color };
+
+}
+
+function getLeafRingUv( tierIndex: number, tierCount: number, center: Vec3, radius: number, point: Vec3 ): [ number, number ] {
+
+	const localU = 0.5 + ( point[ 0 ] - center[ 0 ] ) / ( 2 * radius );
+	const localV = 0.5 + ( point[ 2 ] - center[ 2 ] ) / ( 2 * radius );
+
+	return [ ( tierIndex + localU ) / tierCount, localV ];
+
+}
+
+function addLeafRingLod2( builder: MeshBuilder, layout: TreeLayout ): void {
+
+	builder.beginGroup( leafRingPartIndex );
+
+	for ( let tierIndex = 0; tierIndex < layout.tiers.length; tierIndex ++ ) {
+
+		const tier = layout.tiers[ tierIndex ]!;
+		const bowl = getLeafBowlTier( layout, tier, 2 );
+		const frond = bowl.fronds[ 0 ]!;
+		const centerIndex = builder.addVertex( bowl.center, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, bowl.center ), bowl.color, getFrondWind( bowl.center, frond ) );
+		const rimIndices = bowl.rimPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ Math.floor( index / 2 ) ]! ) ) );
+
+		for ( let index = 0; index < rimIndices.length; index ++ ) {
+
+			const current = rimIndices[ index ]!;
+			const next = rimIndices[ ( index + 1 ) % rimIndices.length ]!;
+			builder.addTriangle( centerIndex, next, current );
+
+		}
+
+	}
+
+}
+
+function addLeafRingLod1( builder: MeshBuilder, layout: TreeLayout ): void {
+
+	builder.beginGroup( leafRingPartIndex );
+
+	for ( let tierIndex = 0; tierIndex < layout.tiers.length; tierIndex ++ ) {
+
+		const tier = layout.tiers[ tierIndex ]!;
+		const bowl = getLeafBowlTier( layout, tier, 1 );
+		const frond = bowl.fronds[ 0 ]!;
+		const centerIndex = builder.addVertex( bowl.center, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, bowl.center ), bowl.color, getFrondWind( bowl.center, frond ) );
+		const midIndices = bowl.midPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ index ]! ) ) );
+		const rimIndices = bowl.rimPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ Math.floor( index / 2 ) ]! ) ) );
+
+		for ( let index = 0; index < midIndices.length; index ++ ) {
+
+			const current = midIndices[ index ]!;
+			const next = midIndices[ ( index + 1 ) % midIndices.length ]!;
+			builder.addTriangle( centerIndex, next, current );
+
+			const rimCurrent = rimIndices[ index * 2 ]!;
+			const rimMidpoint = rimIndices[ index * 2 + 1 ]!;
+			const rimNext = rimIndices[ ( index * 2 + 2 ) % rimIndices.length ]!;
+			builder.addTriangle( current, rimMidpoint, rimCurrent );
+			builder.addTriangle( current, rimNext, rimMidpoint );
+			builder.addTriangle( current, next, rimNext );
+
+		}
+
+	}
+
+}
+
 function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: number[] ): void {
 
 	const inset = 1 / 512;
@@ -473,6 +604,180 @@ function addFrond( builder: MeshBuilder, frond: Frond, longitudinalSamples: numb
 
 }
 
+function createTierFrondMesh( tier: Pick<Tier, 'fronds'> ): MeshData {
+
+	const builder = new MeshBuilder();
+
+	for ( const frond of tier.fronds ) {
+
+		if ( frond.leader ) continue;
+		addFrond( builder, frond, [ 0, 0.4, 1 ] );
+
+	}
+
+	return builder.build();
+
+}
+
+function getLeafRingCellSize( cells: number ): number {
+
+	if ( cells > 4096 ) {
+		throw new RangeError( 'Tree branchCount cannot exceed 4096 when creating leafRing' );
+	}
+
+	let size = 128;
+
+	while ( cells * size > 4096 ) {
+		size /= 2;
+	}
+
+	return size;
+
+}
+
+function getTierRimRadius( tier: Pick<Tier, 'center' | 'fronds'>, frondMesh = createTierFrondMesh( tier ) ): number {
+
+	let maximumDistance = 0;
+
+	for ( let vertex = 0; vertex < frondMesh.positions.length / 3; vertex ++ ) {
+
+		const x = frondMesh.positions[ vertex * 3 ]! - tier.center[ 0 ];
+		const z = frondMesh.positions[ vertex * 3 + 2 ]! - tier.center[ 2 ];
+		maximumDistance = Math.max( maximumDistance, Math.hypot( x, z ) );
+
+	}
+
+	return maximumDistance / Math.cos( Math.PI / 10 );
+
+}
+
+function createLeafRingTexture( layout: TreeLayout, leafTexture: TextureData ): TextureData {
+
+	const cellSize = getLeafRingCellSize( layout.tiers.length );
+	const width = layout.tiers.length * cellSize;
+	const data = new Uint8Array( width * cellSize * 4 );
+	const worldXs = new Float64Array( cellSize );
+	const worldZs = new Float64Array( cellSize );
+
+	for ( let tierIndex = 0; tierIndex < layout.tiers.length; tierIndex ++ ) {
+
+		const tier = layout.tiers[ tierIndex ]!;
+		const frondMesh = tier.frondMesh;
+		const rimRadius = tier.rimRadius;
+		for ( let pixel = 0; pixel < cellSize; pixel ++ ) {
+			worldXs[ pixel ] = tier.center[ 0 ] + ( ( pixel + 0.5 ) / cellSize - 0.5 ) * 2 * rimRadius;
+			worldZs[ pixel ] = tier.center[ 2 ] + ( ( pixel + 0.5 ) / cellSize - 0.5 ) * 2 * rimRadius;
+		}
+		const depth = new Float32Array( cellSize * cellSize );
+		const sample = new Uint8Array( 4 );
+		depth.fill( - Infinity );
+
+		for ( let triangle = 0; triangle < frondMesh.indices.length; triangle += 3 ) {
+
+			const firstVertex = frondMesh.indices[ triangle ]! * 3;
+			const secondVertex = frondMesh.indices[ triangle + 1 ]! * 3;
+			const thirdVertex = frondMesh.indices[ triangle + 2 ]! * 3;
+			const firstX = frondMesh.positions[ firstVertex ]!;
+			const firstY = frondMesh.positions[ firstVertex + 1 ]!;
+			const firstZ = frondMesh.positions[ firstVertex + 2 ]!;
+			const secondX = frondMesh.positions[ secondVertex ]!;
+			const secondY = frondMesh.positions[ secondVertex + 1 ]!;
+			const secondZ = frondMesh.positions[ secondVertex + 2 ]!;
+			const thirdX = frondMesh.positions[ thirdVertex ]!;
+			const thirdY = frondMesh.positions[ thirdVertex + 1 ]!;
+			const thirdZ = frondMesh.positions[ thirdVertex + 2 ]!;
+			const firstU = frondMesh.uvs[ frondMesh.indices[ triangle ]! * 2 ]!;
+			const firstV = frondMesh.uvs[ frondMesh.indices[ triangle ]! * 2 + 1 ]!;
+			const secondU = frondMesh.uvs[ frondMesh.indices[ triangle + 1 ]! * 2 ]!;
+			const secondV = frondMesh.uvs[ frondMesh.indices[ triangle + 1 ]! * 2 + 1 ]!;
+			const thirdU = frondMesh.uvs[ frondMesh.indices[ triangle + 2 ]! * 2 ]!;
+			const thirdV = frondMesh.uvs[ frondMesh.indices[ triangle + 2 ]! * 2 + 1 ]!;
+			const denominator = ( secondZ - thirdZ ) * ( firstX - thirdX ) + ( thirdX - secondX ) * ( firstZ - thirdZ );
+
+			if ( Math.abs( denominator ) < 1e-10 ) continue;
+
+			const firstPixelX = ( ( firstX - tier.center[ 0 ] ) / ( 2 * rimRadius ) + 0.5 ) * cellSize - 0.5;
+			const secondPixelX = ( ( secondX - tier.center[ 0 ] ) / ( 2 * rimRadius ) + 0.5 ) * cellSize - 0.5;
+			const thirdPixelX = ( ( thirdX - tier.center[ 0 ] ) / ( 2 * rimRadius ) + 0.5 ) * cellSize - 0.5;
+			const firstPixelY = ( ( firstZ - tier.center[ 2 ] ) / ( 2 * rimRadius ) + 0.5 ) * cellSize - 0.5;
+			const secondPixelY = ( ( secondZ - tier.center[ 2 ] ) / ( 2 * rimRadius ) + 0.5 ) * cellSize - 0.5;
+			const thirdPixelY = ( ( thirdZ - tier.center[ 2 ] ) / ( 2 * rimRadius ) + 0.5 ) * cellSize - 0.5;
+			const minimumX = Math.max( 0, Math.floor( Math.min( firstPixelX, secondPixelX, thirdPixelX ) ) );
+			const maximumX = Math.min( cellSize - 1, Math.ceil( Math.max( firstPixelX, secondPixelX, thirdPixelX ) ) );
+			const minimumY = Math.max( 0, Math.floor( Math.min( firstPixelY, secondPixelY, thirdPixelY ) ) );
+			const maximumY = Math.min( cellSize - 1, Math.ceil( Math.max( firstPixelY, secondPixelY, thirdPixelY ) ) );
+			const leafData = leafTexture.data;
+			const leafWidth = leafTexture.width;
+			const leafHeight = leafTexture.height;
+
+			for ( let y = minimumY; y <= maximumY; y ++ ) {
+
+				const worldZ = worldZs[ y ]!;
+
+				for ( let x = minimumX; x <= maximumX; x ++ ) {
+
+					const worldX = worldXs[ x ]!;
+					const firstWeight = ( ( secondZ - thirdZ ) * ( worldX - thirdX ) + ( thirdX - secondX ) * ( worldZ - thirdZ ) ) / denominator;
+					const secondWeight = ( ( thirdZ - firstZ ) * ( worldX - thirdX ) + ( firstX - thirdX ) * ( worldZ - thirdZ ) ) / denominator;
+					const thirdWeight = 1 - firstWeight - secondWeight;
+
+					if ( firstWeight < - 1e-6 || secondWeight < - 1e-6 || thirdWeight < - 1e-6 ) continue;
+
+					const height = firstWeight * firstY + secondWeight * secondY + thirdWeight * thirdY;
+					const pixelIndex = y * cellSize + x;
+					const sourceU = firstWeight * firstU + secondWeight * secondU + thirdWeight * thirdU;
+					const sourceV = firstWeight * firstV + secondWeight * secondV + thirdWeight * thirdV;
+					const textureIndex = ( y * width + tierIndex * cellSize + x ) * 4;
+					const textureX = clamp( clamp( sourceU, 0, 1 ) * leafWidth - 0.5, 0, leafWidth - 1 );
+					const textureY = clamp( clamp( sourceV, 0, 1 ) * leafHeight - 0.5, 0, leafHeight - 1 );
+					const textureX0 = Math.floor( textureX );
+					const textureY0 = Math.floor( textureY );
+					const textureX1 = Math.min( textureX0 + 1, leafWidth - 1 );
+					const textureY1 = Math.min( textureY0 + 1, leafHeight - 1 );
+					const xAmount = clamp( textureX - textureX0, 0, 1 );
+					const yAmount = clamp( textureY - textureY0, 0, 1 );
+					const topLeftIndex = ( textureY0 * leafWidth + textureX0 ) * 4;
+					const topRightIndex = ( textureY0 * leafWidth + textureX1 ) * 4;
+					const bottomLeftIndex = ( textureY1 * leafWidth + textureX0 ) * 4;
+					const bottomRightIndex = ( textureY1 * leafWidth + textureX1 ) * 4;
+
+					for ( let channel = 0; channel < 4; channel ++ ) {
+						const topLeft = leafData[ topLeftIndex + channel ]!;
+						const topRight = leafData[ topRightIndex + channel ]!;
+						const bottomLeft = leafData[ bottomLeftIndex + channel ]!;
+						const bottomRight = leafData[ bottomRightIndex + channel ]!;
+						const top = topLeft + ( topRight - topLeft ) * xAmount;
+						const bottom = bottomLeft + ( bottomRight - bottomLeft ) * xAmount;
+						sample[ channel ] = Math.round( top + ( bottom - top ) * yAmount );
+					}
+
+					// 透明な葉の隙間が下の不透明な葉を消さないよう、不透明な面同士だけで高さを比べる。
+					const sampleOpaque = sample[ 3 ]! >= 128;
+					const currentOpaque = data[ textureIndex + 3 ]! >= 128;
+
+					if ( sampleOpaque ? currentOpaque && height <= depth[ pixelIndex ]! : currentOpaque || sample[ 3 ]! <= data[ textureIndex + 3 ]! ) continue;
+
+					depth[ pixelIndex ] = height;
+
+					for ( let channel = 0; channel < 4; channel ++ ) {
+						data[ textureIndex + channel ] = sample[ channel ]!;
+					}
+
+				}
+
+			}
+
+		}
+
+	}
+
+	const texture: TextureData = { width, height: cellSize, data };
+	padTextureEdges( texture );
+
+	return texture;
+
+}
+
 function addFronds( builder: MeshBuilder, layout: TreeLayout, longitudinalSamples: number[] ): void {
 
 	builder.beginGroup( leafPartIndex );
@@ -504,6 +809,8 @@ function addFoldedFrondsLod1( builder: MeshBuilder, layout: TreeLayout ): void {
 	for ( const tier of layout.tiers ) {
 
 		for ( const frond of tier.fronds ) {
+
+			if ( ! frond.leader ) continue;
 
 			const halfWidth = frond.width * 0.5;
 			const foldHeight = frond.width * lodFrondFoldRatio;
@@ -552,6 +859,8 @@ function addFoldedFrondsLod2( builder: MeshBuilder, layout: TreeLayout ): void {
 	for ( const tier of layout.tiers ) {
 
 		for ( const frond of tier.fronds ) {
+
+			if ( ! frond.leader ) continue;
 
 			const tip = getFrondAverageLine( frond )[ 1 ];
 			const halfWidth = frond.width * 0.5;
@@ -732,6 +1041,7 @@ function buildLod1( layout: TreeLayout ): MeshData {
 	const extendedTrunk = addRootRing( trunk.spine, trunk.radii, layout.rootDepth );
 	builder.beginGroup( barkPartIndex );
 	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 6, layout.rootDepth );
+	addLeafRingLod1( builder, layout );
 	addFoldedFrondsLod1( builder, layout );
 	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 6, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
@@ -749,6 +1059,7 @@ function buildLod2( layout: TreeLayout ): MeshData {
 
 	builder.beginGroup( barkPartIndex );
 	const trunkVertexCount = addPointedTrunk( builder, extendedTrunk.spine, extendedTrunk.radii, 4, layout.rootDepth );
+	addLeafRingLod2( builder, layout );
 	addFoldedFrondsLod2( builder, layout );
 	const mesh = closeTrunkTip( builder.build(), extendedTrunk.spine.length, 4, normalize( subtract( trunk.spine[ trunk.spine.length - 1 ]!, trunk.spine[ trunk.spine.length - 2 ]! ) ) );
 
@@ -794,6 +1105,38 @@ function getBoundsRadius( mesh: MeshData ): number {
 
 }
 
+function getLegacyLodProxyBoundsRadius( layout: TreeLayout ): number {
+
+	let radius = 0;
+
+	for ( const tier of layout.tiers ) {
+
+		for ( const frond of tier.fronds ) {
+
+			const halfWidth = frond.width * 0.5;
+			const lod1Centers = [ 0, 0.4, 1 ].map( ( t ) => getFrondPoint( frond, t ) );
+			const lod2Centers = [ frond.base, getFrondAverageLine( frond )[ 1 ] ];
+
+			for ( const center of [ ...lod1Centers, ...lod2Centers ] ) {
+
+				for ( const side of [ - 1, 1 ] ) {
+
+					const widthOffset = multiply( frond.widthDirection, side * halfWidth );
+					const point = add( add( center, widthOffset ), [ 0, 0, 0 ] );
+					radius = Math.max( radius, Math.hypot( Math.fround( point[ 0 ] ), Math.fround( point[ 2 ] ) ) );
+
+				}
+
+			}
+
+		}
+
+	}
+
+	return radius;
+
+}
+
 export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 
 	const seed = options.seed ?? 1;
@@ -818,6 +1161,7 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 	if ( ! Number.isInteger( branchCount ) || branchCount < 1 ) {
 		throw new RangeError( 'Tree branchCount must be a positive integer' );
 	}
+	getLeafRingCellSize( branchCount );
 
 	const crownSize = clamp( crownSizeInput, 0.5, 1.5 );
 	const rootDepth = Math.max( 0, rootDepthInput );
@@ -854,22 +1198,41 @@ export function generateTreeData( options: TreeOptions = {} ): VegetationData {
 		},
 		impostorLod3Part(),
 		impostorPart(),
+		{
+			name: 'leafRing',
+			defaultColor: leafColor,
+			texture: 'leafRing',
+			colorizesTexture: true,
+			roughness: 0.95,
+			specularIntensity: 0.014872,
+			ior: 1.05,
+			emissive: 0x000000,
+			emissiveIntensity: 0,
+			alphaTest: 0.5,
+			doubleSided: true,
+			flatShading: false,
+		},
 	];
+	const leafTexture = createFirSprigTexture( seed, 256, true, leafColor );
 	const textures = {
 		bark: { ...createBarkTexture( seed ), wrap: 'repeat' as const },
-		leaf: createFirSprigTexture( seed, 256, true, leafColor ),
+		leaf: leafTexture,
+		leafRing: createLeafRingTexture( layout, leafTexture ),
 	};
 	const lod0Bounds = { radius: getBoundsRadius( lod0 ), height };
 
 	const lod3 = buildSixPlaneImpostor( height, lod0Bounds.radius, impostorLod3PartIndex, lod0, height * 0.25 );
-	const bounds = { radius: Math.max( lod0Bounds.radius, getBoundsRadius( lod1 ), getBoundsRadius( lod2 ) ), height };
+	const bounds = { radius: Math.max( lod0Bounds.radius, getLegacyLodProxyBoundsRadius( layout ) ), height };
 	const data: VegetationData = {
 		kind: 'tree',
 		parts: [ ...parts ],
 		lods: [ lod0, lod1, lod2, lod3, buildBillboard( bounds, impostorPartIndex, lod0, height * 0.25 ) ],
 		collider: buildCollider( layout ),
 		textures,
-		textureGenerators: { leaf: { type: 'tree-leaf', seed, size: 256 } },
+		textureGenerators: {
+			leaf: { type: 'tree-leaf', seed, size: 256 },
+			leafRing: { type: 'tree-leaf-ring', seed, size: 256, height, rootDepth, crownSize, branchCount },
+		},
 		bounds,
 	};
 
@@ -901,3 +1264,24 @@ export function regenerateTreeLeafTexture( data: VegetationData, color: number )
 }
 
 registerTextureRegenerator( 'tree-leaf', regenerateTreeLeafTextureData );
+
+function regenerateTreeLeafRingTextureData( existing: TextureData, generator: TextureGeneratorDef, color: number ): TextureData {
+
+	if ( generator.type !== 'tree-leaf-ring' || generator.height === undefined || generator.rootDepth === undefined || generator.crownSize === undefined || generator.branchCount === undefined ) {
+		throw new Error( 'Tree leaf ring texture cannot be regenerated' );
+	}
+
+	const crownSize = clamp( generator.crownSize, 0.5, 1.5 );
+	const layout = createTreeLayout( generator.seed, generator.height, Math.max( 0, generator.rootDepth ), crownSize, generator.branchCount );
+	const leafTexture = createFirSprigTexture( generator.seed, generator.size, true, color );
+	const texture = createLeafRingTexture( layout, leafTexture );
+
+	if ( existing.width !== texture.width || existing.height !== texture.height ) {
+		throw new Error( 'Tree leaf ring texture dimensions changed during regeneration' );
+	}
+
+	return texture;
+
+}
+
+registerTextureRegenerator( 'tree-leaf-ring', regenerateTreeLeafRingTextureData );

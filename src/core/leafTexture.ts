@@ -537,12 +537,13 @@ export function padTextureEdges( texture: TextureData ): void {
 	const tileSize = texture.height;
 	const tileCount = Math.floor( texture.width / tileSize );
 	const colorPixelIndices = texture.colorFactors === undefined ? null : [] as number[];
+	const assigned = new Uint8Array( tileSize * tileSize );
+	const queue = new Int32Array( tileSize * tileSize );
 
 	for ( let tile = 0; tile < tileCount; tile ++ ) {
 
 		const tileOffset = tile * tileSize;
-		const assigned = new Uint8Array( tileSize * tileSize );
-		const queue = new Int32Array( tileSize * tileSize );
+		assigned.fill( 0 );
 		let queueEnd = 0;
 
 		for ( let y = 0; y < tileSize; y ++ ) {
@@ -575,10 +576,10 @@ export function padTextureEdges( texture: TextureData ): void {
 			const sourceY = Math.floor( source / tileSize );
 			const sourceTextureIndex = ( sourceY * texture.width + tileOffset + sourceX ) * 4;
 
-			for ( const [ dx, dy ] of neighborOffsets ) {
+			for ( let offset = 0; offset < neighborOffsets.length; offset ++ ) {
 
-				const x = sourceX + dx!;
-				const y = sourceY + dy!;
+				const x = sourceX + neighborOffsets[ offset ]![ 0 ];
+				const y = sourceY + neighborOffsets[ offset ]![ 1 ];
 
 				if ( x < 0 || x >= tileSize || y < 0 || y >= tileSize ) continue;
 
