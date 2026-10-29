@@ -1,10 +1,13 @@
 import {
+	Box3,
 	Group,
 	LineBasicMaterial,
 	LineSegments,
+	MathUtils,
 	Mesh,
 	MeshNormalMaterial,
 	PerspectiveCamera,
+	Vector3,
 	WireframeGeometry,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -53,7 +56,6 @@ const compareLabels = document.querySelector<HTMLDivElement>( '#compare-labels' 
 const { scene, ground, sunlight } = createPreviewScene();
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
-const mossReviewCamera = new URLSearchParams( window.location.search ).get( 'mossReview' ) === '1';
 let controls: OrbitControls;
 
 const root = new Group();
@@ -78,6 +80,7 @@ let scatter: ScatterController | null = null;
 let scatterVariants: VegetationAsset[] = [];
 let optionFolder: GUI | null = null;
 let colorFolder: GUI | null = null;
+let resetCameraButton: HTMLElement | null = null;
 let labels: CompareLabel[] = [];
 let colliderLines: LineSegments[] = [];
 let lastScatterShadowUpdate = - Infinity;
@@ -345,45 +348,25 @@ function updateColliderVisualization(): void {
 
 }
 
-function frameView(): void {
+// 正面（x = 0）から、シーン内のオブジェクトが収まる距離にカメラを置きます。
+function resetCamera(): void {
 
-	const height = Number( state.options.height ?? state.options.size ?? 7.5 );
-	controls.target.set( 0, state.mode === 'scatter' ? 0 : height * 0.5, 0 );
-	if ( mossReviewCamera && state.mode === 'single' ) {
+	const box = new Box3().setFromObject( root );
 
-		controls.target.set( 0, height * 0.5, 0 );
-		if ( activeKind.name === 'Pebbles' ) {
+	if ( box.isEmpty() ) {
 
-			camera.position.set( height * 8, height * 12, height * 16 );
-			controls.minDistance = height * 1.5;
-			controls.maxDistance = height * 32;
-
-		} else {
-
-			camera.position.set( 0, height * 2, height * 0.5 );
-			controls.minDistance = height * 0.9;
-			controls.maxDistance = height * 8;
-
-		}
-		controls.update();
 		return;
 
 	}
 
-	if ( state.mode === 'single' ) {
-		camera.position.set( height * 1.5, height * 1.15, height * 2.25 );
-		controls.minDistance = height * 0.9;
-		controls.maxDistance = height * 8;
-	} else if ( state.mode === 'compare' ) {
-		camera.position.set( 0, height * 2.2, height * 5.4 );
-		controls.minDistance = height * 2;
-		controls.maxDistance = height * 18;
-	} else {
-		camera.position.set( 36, 29, 38 );
-		controls.minDistance = 12;
-		controls.maxDistance = 170;
-	}
-
+	const center = box.getCenter( new Vector3() );
+	const halfWidth = Math.max( Math.abs( box.min.x ), Math.abs( box.max.x ) );
+	const halfHeight = ( box.max.y - box.min.y ) * 0.5;
+	const verticalHalfFov = MathUtils.degToRad( camera.fov ) * 0.5;
+	const horizontalHalfFov = Math.atan( Math.tan( verticalHalfFov ) * camera.aspect );
+	const distance = Math.max( halfWidth / Math.tan( horizontalHalfFov ), halfHeight / Math.tan( verticalHalfFov ) ) * 1.1 + ( box.max.z - center.z );
+	controls.target.set( 0, center.y, center.z );
+	camera.position.set( 0, center.y, center.z + distance );
 	controls.update();
 
 }
@@ -435,7 +418,6 @@ function rebuildPreview(): void {
 	sunlight.shadow.needsUpdate = true;
 	lastScatterShadowUpdate = - Infinity;
 	status.hidden = state.mode !== 'scatter';
-	frameView();
 
 }
 
@@ -517,6 +499,15 @@ function rebuildOptionFolders( gui: GUI ): void {
 	for ( const key of Object.keys( activeKind.textureColors ?? {} ) ) {
 		colorFolder.addColor( state.colors, key ).name( key ).onFinishChange( rebuildAsset );
 	}
+
+	if ( resetCameraButton === null ) {
+
+		resetCameraButton = gui.add( { resetCamera }, 'resetCamera' ).name( 'camera reset' ).domElement;
+
+	}
+
+	// フォルダを作り直しても camera reset は一番下に置きます。
+	resetCameraButton.parentElement!.append( resetCameraButton );
 
 }
 
@@ -631,9 +622,11 @@ async function start(): Promise<void> {
 	controls = new OrbitControls( camera, renderer.domElement );
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.06;
-	controls.target.set( 0, 3, 0 );
+	controls.minDistance = 0.5;
+	controls.maxDistance = 240;
 	createGui();
 	rebuildPreview();
+	resetCamera();
 
 	window.addEventListener( 'resize', () => {
 
