@@ -211,3 +211,98 @@ export function buildPrimrosePart( lod: number, plants: FlowerPlacement[], part:
 	return setPartIndex( builder.build(), part );
 
 }
+
+export interface PrimroseDomeFootprint {
+	minX: number;
+	maxX: number;
+	minZ: number;
+	maxZ: number;
+}
+
+function domeSectorAngles( sectors: number ): number[] {
+
+	const angles = Array.from( { length: sectors }, ( _, index ) => index / sectors * Math.PI * 2 );
+	const assigned = new Set<number>();
+	for ( const cardinal of [ 0, Math.PI * 0.5, Math.PI, Math.PI * 1.5 ] ) {
+		let nearest = - 1;
+		let distance = Infinity;
+		for ( let index = 0; index < angles.length; index ++ ) {
+			if ( assigned.has( index ) ) continue;
+			const difference = Math.min( Math.abs( angles[ index ]! - cardinal ), Math.PI * 2 - Math.abs( angles[ index ]! - cardinal ) );
+			if ( difference < distance ) {
+				nearest = index;
+				distance = difference;
+			}
+		}
+		if ( nearest >= 0 ) {
+			angles[ nearest ] = cardinal;
+			assigned.add( nearest );
+		}
+	}
+	return angles.sort( ( first, second ) => first - second );
+
+}
+
+export function buildPrimroseDomePart( lod: 2 | 3, partIndex: number, footprint: PrimroseDomeFootprint, height: number, lod1TriangleCount: number ): MeshData {
+
+	const builder = new MeshBuilder();
+	const centerX = ( footprint.minX + footprint.maxX ) * 0.5;
+	const centerZ = ( footprint.minZ + footprint.maxZ ) * 0.5;
+	const radiusX = Math.max( 1e-6, ( footprint.maxX - footprint.minX ) * 0.5 );
+	const radiusZ = Math.max( 1e-6, ( footprint.maxZ - footprint.minZ ) * 0.5 );
+	const lod2TriangleBudget = Math.max( 1, lod1TriangleCount - 1 );
+	const useInnerRing = lod === 2 && lod2TriangleBudget >= 12;
+	const sectors = lod === 2
+		? useInnerRing ? Math.min( 12, Math.floor( lod2TriangleBudget / 3 ) ) : lod2TriangleBudget
+		: 7;
+	const angles = domeSectorAngles( sectors );
+	const ringRadii = useInnerRing ? [ 1, 0.5 ] : [ 1 ];
+	const rings: number[][] = [];
+	const color: [ number, number, number ] = [ 1, 1, 1 ];
+	const blendToUp = 0.38;
+
+	builder.beginGroup( partIndex );
+	for ( const radius of ringRadii ) {
+		const ring: number[] = [];
+		for ( const angle of angles ) {
+			const localX = Math.cos( angle ) * radius;
+			const localZ = Math.sin( angle ) * radius;
+			const x = centerX + localX * radiusX;
+			const z = centerZ + localZ * radiusZ;
+			const y = height * Math.sqrt( Math.max( 0, 1 - radius * radius ) );
+			const denominator = Math.max( 0.16, Math.sqrt( Math.max( 0, 1 - radius * radius ) ) );
+			let normalX = height * localX / ( radiusX * denominator );
+			let normalY = 1;
+			let normalZ = height * localZ / ( radiusZ * denominator );
+			const normalLength = Math.hypot( normalX, normalY, normalZ );
+			normalX = normalX / normalLength * ( 1 - blendToUp );
+			normalY = normalY / normalLength * ( 1 - blendToUp ) + blendToUp;
+			normalZ = normalZ / normalLength * ( 1 - blendToUp );
+			const blendedLength = Math.hypot( normalX, normalY, normalZ );
+			const u = ( x - footprint.minX ) / ( footprint.maxX - footprint.minX );
+			const v = ( footprint.maxZ - z ) / ( footprint.maxZ - footprint.minZ );
+			ring.push( builder.addVertex( [ x, y, z ], [ normalX / blendedLength, normalY / blendedLength, normalZ / blendedLength ], [ u, v ], color, 1 ) );
+		}
+		rings.push( ring );
+	}
+
+	for ( let ring = 0; ring + 1 < rings.length; ring ++ ) {
+		for ( let sector = 0; sector < sectors; sector ++ ) {
+			const next = ( sector + 1 ) % sectors;
+			const outer = rings[ ring ]!;
+			const inner = rings[ ring + 1 ]!;
+			// 上から見て反時計回りにし、表を外側（上）へ向ける。
+			builder.addTriangle( outer[ sector ]!, inner[ sector ]!, inner[ next ]! );
+			builder.addTriangle( outer[ sector ]!, inner[ next ]!, outer[ next ]! );
+		}
+	}
+
+	const apex = builder.addVertex( [ centerX, height, centerZ ], [ 0, 1, 0 ], [ 0.5, 0.5 ], color, 1 );
+	const innermost = rings[ rings.length - 1 ]!;
+	for ( let sector = 0; sector < sectors; sector ++ ) builder.addTriangle( apex, innermost[ ( sector + 1 ) % sectors ]!, innermost[ sector ]! );
+
+	const mesh = builder.build();
+	mesh.groups = mesh.groups.map( ( group ) => ( { ...group, partIndex } ) );
+	return mesh;
+
+}

@@ -1,4 +1,4 @@
-import { createColorizedFlowerTexture, createFlowerTextureShape, rasterFlowerPolygon } from '../flowersTexture';
+import { compositeFlowersTextureRegion, createColorizedFlowerTexture, createFlowerTextureShape, rasterFlowerPolygon } from '../flowersTexture';
 import { MeshBuilder } from '../meshBuilder';
 import type { MeshData, TextureData } from '../types';
 import type { FlowerPlacement } from './common';
@@ -12,15 +12,23 @@ import { setPartIndex } from './common';
 const SIZE = 128;
 const STEM_WIDTH = 128;
 const STEM_HEIGHT = 256;
+export const CALLA_PLANT_CARD_TEXTURE_WIDTH = SIZE;
+export const CALLA_PLANT_CARD_WIDTH = 0.1;
+export const CALLA_PLANT_CARD_FOLIAGE_WIDTH = 0.38;
 // 茎テクスチャ内の葉の位置（画素）。縦 1 列に並べ、隣の葉の絵を拾わないようにする。
 const LEAF_CENTER_X = 74;
 const LEAF_HALF_WIDTH = 46;
 const LEAF_ROWS = [ 4, 88, 172 ];
 const LEAF_ROW_HEIGHT = 80;
+const PLANT_CARD_LEAF_PROJECTION_SCALE = 1.23;
 // 葉が最も広い高さの割合。
 const LEAF_WIDEST = 0.45;
 // 花の長さ（茎の先端から花の上端まで）。
-const FLOWER_LENGTH = 0.11;
+export const CALLA_FLOWER_LENGTH = 0.11;
+export const CALLA_PLANT_CARD_FOLIAGE_HEIGHT = STEM_HEIGHT;
+export const CALLA_PLANT_CARD_FLOWER_Y = CALLA_PLANT_CARD_FOLIAGE_HEIGHT;
+export const CALLA_PLANT_CARD_FLOWER_HEIGHT = Math.round( CALLA_FLOWER_LENGTH * CALLA_PLANT_CARD_TEXTURE_WIDTH / CALLA_PLANT_CARD_WIDTH );
+export const CALLA_PLANT_CARD_TEXTURE_HEIGHT = CALLA_PLANT_CARD_FLOWER_Y + CALLA_PLANT_CARD_FLOWER_HEIGHT;
 
 export function createCallaPetalTexture( petalColor: number, centerColor: number ): TextureData {
 
@@ -98,7 +106,7 @@ function addCallaStemCard( builder: MeshBuilder, plant: FlowerPlacement, yaw: nu
 
 	const cosine = Math.cos( yaw );
 	const sine = Math.sin( yaw );
-	const height = plant.height - FLOWER_LENGTH;
+	const height = plant.height - CALLA_FLOWER_LENGTH;
 	const halfWidth = 0.006;
 	const vertices: number[] = [];
 	for ( let row = 0; row <= segments; row ++ ) {
@@ -139,12 +147,12 @@ function addCallaFunnelCard( builder: MeshBuilder, plant: FlowerPlacement, yaw: 
 	const radialZ = Math.sin( yaw );
 	const tangentX = - radialZ;
 	const tangentZ = radialX;
-	const baseY = plant.height - FLOWER_LENGTH - 0.004;
+	const baseY = plant.height - CALLA_FLOWER_LENGTH - 0.004;
 	const allRows = back ? BACK_ROWS : FRONT_ROWS;
 	const rows = lod === 0 ? allRows : [ allRows[ 0 ]!, allRows[ allRows.length - 1 ]! ];
 	const vertices: number[][] = [];
 	for ( const [ height, halfWidth, flare, v ] of rows ) {
-		const y = baseY + ( FLOWER_LENGTH + 0.004 ) * height;
+		const y = baseY + ( CALLA_FLOWER_LENGTH + 0.004 ) * height;
 		const centerX = plant.x + plant.leanX + radialX * flare;
 		const centerZ = plant.z + plant.leanZ + radialZ * flare;
 		// テクスチャの苞は左 x 0〜96（u 0〜0.75）、中心 x 48。
@@ -164,7 +172,7 @@ function addCallaFunnelCard( builder: MeshBuilder, plant: FlowerPlacement, yaw: 
 
 function addCallaSpadix( builder: MeshBuilder, plant: FlowerPlacement, lod: number ): void {
 
-	const baseY = plant.height - FLOWER_LENGTH * 0.835;
+	const baseY = plant.height - CALLA_FLOWER_LENGTH * 0.835;
 	const halfWidth = 0.005;
 	const centerX = plant.x + plant.leanX;
 	const centerZ = plant.z + plant.leanZ;
@@ -174,12 +182,98 @@ function addCallaSpadix( builder: MeshBuilder, plant: FlowerPlacement, lod: numb
 	const radialZ = Math.sin( plant.yaw );
 	const left = builder.addVertex( [ centerX - tangentX * halfWidth, baseY, centerZ - tangentZ * halfWidth ], [ 0, 1, 0 ], [ 0.82, 0.28 ], [ 1, 1, 1 ], 0.9 );
 	const right = builder.addVertex( [ centerX + tangentX * halfWidth, baseY, centerZ + tangentZ * halfWidth ], [ 0, 1, 0 ], [ 0.92, 0.28 ], [ 1, 1, 1 ], 0.9 );
-	const tip = builder.addVertex( [ centerX + radialX * 0.003, plant.height - FLOWER_LENGTH * 0.21, centerZ + radialZ * 0.003 ], [ 0, 1, 0 ], [ 0.92, 0.73 ], [ 1, 1, 1 ], 1 );
+	const tip = builder.addVertex( [ centerX + radialX * 0.003, plant.height - CALLA_FLOWER_LENGTH * 0.21, centerZ + radialZ * 0.003 ], [ 0, 1, 0 ], [ 0.92, 0.73 ], [ 1, 1, 1 ], 1 );
 	if ( lod === 0 ) {
-		const back = builder.addVertex( [ centerX - radialX * 0.003, plant.height - FLOWER_LENGTH * 0.21, centerZ - radialZ * 0.003 ], [ 0, 1, 0 ], [ 0.82, 0.73 ], [ 1, 1, 1 ], 1 );
+		const back = builder.addVertex( [ centerX - radialX * 0.003, plant.height - CALLA_FLOWER_LENGTH * 0.21, centerZ - radialZ * 0.003 ], [ 0, 1, 0 ], [ 0.82, 0.73 ], [ 1, 1, 1 ], 1 );
 		builder.addTriangle( left, right, tip );
 		builder.addTriangle( left, tip, back );
 	} else builder.addTriangle( left, right, tip );
+
+}
+
+/** 交差 2 枚のカード面に合わせて、茎と葉を投影したテクスチャを作ります。 */
+function createCallaPlantCardFoliageTexture( referenceStemHeight: number, stemColor: number ): TextureData {
+
+	const shape = createFlowerTextureShape( SIZE, STEM_HEIGHT );
+	const tileWidth = SIZE / 2;
+	for ( let tile = 0; tile < 2; tile ++ ) {
+		const tileStart = tile * tileWidth;
+		const tileCenter = tileStart + tileWidth * 0.5;
+		const stemHalfWidth = 0.006 / CALLA_PLANT_CARD_FOLIAGE_WIDTH * tileWidth;
+		rasterFlowerPolygon( shape, [
+			[ tileCenter - stemHalfWidth, 0 ],
+			[ tileCenter + stemHalfWidth, 0 ],
+			[ tileCenter + stemHalfWidth, STEM_HEIGHT ],
+			[ tileCenter - stemHalfWidth, STEM_HEIGHT ],
+		], ( _x, y ) => 0.5 + y / STEM_HEIGHT * 0.3 + Math.max( 0, 1 - Math.abs( _x - tileCenter ) / stemHalfWidth ) * 0.2 );
+
+		const planeAngle = tile === 0 ? 0 : - Math.PI * 0.5;
+		const planeX = Math.cos( planeAngle );
+		const planeZ = Math.sin( planeAngle );
+		for ( let leaf = 0; leaf < 3; leaf ++ ) {
+			const scale = 1 - leaf * 0.08;
+			const angle = 0.5 + leaf * Math.PI * 2 / 3;
+			const radialX = Math.cos( angle );
+			const radialZ = Math.sin( angle );
+			const tangentX = - radialZ;
+			const tangentZ = radialX;
+			const length = 0.27 * scale;
+			const leafHalfWidth = 0.05 * scale;
+			const baseHalfWidth = 0.006 * scale;
+			const point = ( radial: number, side: number, y: number ): [ number, number, number ] => [
+				radialX * radial + tangentX * side,
+				y,
+				radialZ * radial + tangentZ * side,
+			];
+			const base = [
+				point( 0.007, - baseHalfWidth, 0.004 * scale ),
+				point( 0.007, baseHalfWidth, 0.004 * scale ),
+			];
+			const middleHeight = length * LEAF_WIDEST * 0.9;
+			const middleRadial = length * LEAF_WIDEST * 0.42;
+			const curl = leafHalfWidth * 0.45;
+			const middle = [
+				point( middleRadial - curl, - leafHalfWidth * 0.9, middleHeight + 0.006 ),
+				point( middleRadial, 0, middleHeight ),
+				point( middleRadial - curl, leafHalfWidth * 0.9, middleHeight + 0.006 ),
+			];
+			const tip = point( length * 0.48, 0, length * 0.86 );
+			const triangles = [
+				[ base[ 0 ]!, base[ 1 ]!, middle[ 1 ]! ],
+				[ base[ 0 ]!, middle[ 1 ]!, middle[ 0 ]! ],
+				[ base[ 1 ]!, middle[ 2 ]!, middle[ 1 ]! ],
+				[ middle[ 0 ]!, middle[ 1 ]!, tip ],
+				[ middle[ 1 ]!, middle[ 2 ]!, tip ],
+			];
+			for ( const triangle of triangles ) {
+				const projected = triangle.map( ( vertex ): [ number, number ] => {
+					const across = ( vertex[ 0 ] * planeX + vertex[ 2 ] * planeZ ) * PLANT_CARD_LEAF_PROJECTION_SCALE;
+					return [ tileCenter + across / CALLA_PLANT_CARD_FOLIAGE_WIDTH * tileWidth, vertex[ 1 ] / referenceStemHeight * STEM_HEIGHT ];
+				} );
+				rasterFlowerPolygon( shape, projected, ( _x, y ) => 0.5 + Math.max( 0, Math.min( 1, y / STEM_HEIGHT ) ) * 0.38 );
+			}
+		}
+	}
+
+	return createColorizedFlowerTexture( SIZE, STEM_HEIGHT, stemColor, shape.alpha, shape.shade );
+
+}
+
+/** 茎・葉と花を含む、calla LOD1/2 共通の縦カード用アトラスを作ります。 */
+export function createCallaPlantCardTexture( maxCardHeight: number, petalColor: number, centerColor: number, stemColor: number ): TextureData {
+
+	const width = CALLA_PLANT_CARD_TEXTURE_WIDTH;
+	const height = CALLA_PLANT_CARD_TEXTURE_HEIGHT;
+	const texture = new Uint8Array( width * height * 4 );
+	const petalTexture = createCallaPetalTexture( petalColor, centerColor );
+	const referenceStemHeight = Math.max( 0.001, maxCardHeight - CALLA_FLOWER_LENGTH );
+	const foliageTexture = createCallaPlantCardFoliageTexture( referenceStemHeight, stemColor );
+	// 2 枚のカード面ごとに LOD0 の葉を投影し、細い茎も同じ帯へ焼きます。
+	compositeFlowersTextureRegion( texture, width, height, foliageTexture, 0, 0, SIZE, STEM_HEIGHT, 0, 0, SIZE, STEM_HEIGHT );
+	compositeFlowersTextureRegion( texture, width, height, petalTexture, 0, 0, 96, petalTexture.height, 16, CALLA_PLANT_CARD_FLOWER_Y, 96, CALLA_PLANT_CARD_FLOWER_HEIGHT );
+	compositeFlowersTextureRegion( texture, width, height, petalTexture, 104, 0, 16, petalTexture.height, 56, CALLA_PLANT_CARD_FLOWER_Y, 16, CALLA_PLANT_CARD_FLOWER_HEIGHT );
+
+	return { width, height, data: texture, wrap: 'clamp' };
 
 }
 
@@ -227,6 +321,58 @@ function addCallaLeaf( builder: MeshBuilder, plant: FlowerPlacement, angle: numb
 
 }
 
+/** LOD1/2 は共有カード画像へ葉を投影し、花の実寸を保つ別クワッドを重ねます。 */
+export function buildCallaPlantCardPart( plants: FlowerPlacement[], partIndex: number, lod: 1 | 2 ): MeshData {
+
+	const builder = new MeshBuilder();
+	const foliageHalfWidth = CALLA_PLANT_CARD_FOLIAGE_WIDTH * 0.5;
+	const textureHeight = CALLA_PLANT_CARD_TEXTURE_HEIGHT;
+	const referenceStemHeight = Math.max( 0.001, ...plants.map( ( plant ) => plant.height - CALLA_FLOWER_LENGTH ) );
+
+	builder.beginGroup( partIndex );
+	for ( const plant of plants ) {
+		const stemHeight = plant.height - CALLA_FLOWER_LENGTH;
+		const cardYaws = [ - plant.yaw, - plant.yaw + Math.PI * 0.5 ];
+		for ( let card = 0; card < cardYaws.length; card ++ ) {
+			const yaw = cardYaws[ card ]!;
+			const cosine = Math.cos( yaw );
+			const sine = Math.sin( yaw );
+			const topCenterX = plant.x + plant.leanX;
+			const topCenterZ = plant.z + plant.leanZ;
+			const tileStart = card * 0.5;
+			const tileEnd = tileStart + 0.5;
+			const foliageV = stemHeight / referenceStemHeight * STEM_HEIGHT / textureHeight;
+			const foliage = [
+				builder.addVertex( [ plant.x - cosine * foliageHalfWidth, 0, plant.z + sine * foliageHalfWidth ], [ 0, 1, 0 ], [ tileStart, 0 ], [ 1, 1, 1 ], 0 ),
+				builder.addVertex( [ plant.x + cosine * foliageHalfWidth, 0, plant.z - sine * foliageHalfWidth ], [ 0, 1, 0 ], [ tileEnd, 0 ], [ 1, 1, 1 ], 0 ),
+				builder.addVertex( [ topCenterX + cosine * foliageHalfWidth, stemHeight, topCenterZ - sine * foliageHalfWidth ], [ 0, 1, 0 ], [ tileEnd, foliageV ], [ 1, 1, 1 ], stemHeight / plant.height ),
+				builder.addVertex( [ topCenterX - cosine * foliageHalfWidth, stemHeight, topCenterZ + sine * foliageHalfWidth ], [ 0, 1, 0 ], [ tileStart, foliageV ], [ 1, 1, 1 ], stemHeight / plant.height ),
+			];
+			builder.addTriangle( foliage[ 0 ]!, foliage[ 1 ]!, foliage[ 2 ]! );
+			builder.addTriangle( foliage[ 0 ]!, foliage[ 2 ]!, foliage[ 3 ]! );
+
+			if ( lod === 1 ) {
+				builder.beginGroup( 1 );
+				addCallaStemCard( builder, plant, yaw, 1 );
+				builder.beginGroup( partIndex );
+			}
+
+			const flowerHalfWidth = CALLA_PLANT_CARD_WIDTH * 0.5;
+			const flower = [
+				builder.addVertex( [ topCenterX - cosine * flowerHalfWidth, stemHeight, topCenterZ + sine * flowerHalfWidth ], [ 0, 1, 0 ], [ 16 / SIZE, CALLA_PLANT_CARD_FLOWER_Y / textureHeight ], [ 1, 1, 1 ], stemHeight / plant.height ),
+				builder.addVertex( [ topCenterX + cosine * flowerHalfWidth, stemHeight, topCenterZ - sine * flowerHalfWidth ], [ 0, 1, 0 ], [ 112 / SIZE, CALLA_PLANT_CARD_FLOWER_Y / textureHeight ], [ 1, 1, 1 ], stemHeight / plant.height ),
+				builder.addVertex( [ topCenterX + cosine * flowerHalfWidth, plant.height, topCenterZ - sine * flowerHalfWidth ], [ 0, 1, 0 ], [ 112 / SIZE, 1 ], [ 1, 1, 1 ], 1 ),
+				builder.addVertex( [ topCenterX - cosine * flowerHalfWidth, plant.height, topCenterZ + sine * flowerHalfWidth ], [ 0, 1, 0 ], [ 16 / SIZE, 1 ], [ 1, 1, 1 ], 1 ),
+			];
+			builder.addTriangle( flower[ 0 ]!, flower[ 1 ]!, flower[ 2 ]! );
+			builder.addTriangle( flower[ 0 ]!, flower[ 2 ]!, flower[ 3 ]! );
+		}
+	}
+
+	return builder.build();
+
+}
+
 export function buildCallaPart( lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
 
 	const builder = new MeshBuilder();
@@ -240,16 +386,10 @@ export function buildCallaPart( lod: number, plants: FlowerPlacement[], part: 'p
 			addCallaStemCard( builder, plant, plant.yaw, 1 );
 			addCallaStemCard( builder, plant, plant.yaw + plant.crossAngle, 1 );
 			for ( let leaf = 0; leaf < 3; leaf ++ ) addCallaLeaf( builder, plant, plant.yaw + 0.5 + leaf * Math.PI * 2 / 3, 1 - leaf * 0.08, leaf );
-		} else {
-			const stem = plant.height - FLOWER_LENGTH;
-			const topX = plant.x + plant.leanX;
-			const topZ = plant.z + plant.leanZ;
-			const base = builder.addVertex( [ plant.x, 0, plant.z ], [ 0, 1, 0 ], [ 0.08, 0 ], [ 1, 1, 1 ], 0 );
-			const left = builder.addVertex( [ topX - 0.004, stem, topZ ], [ 0, 1, 0 ], [ 0.08, 1 ], [ 1, 1, 1 ], 0.9 );
-			const right = builder.addVertex( [ topX + 0.004, stem, topZ ], [ 0, 1, 0 ], [ 0.16, 1 ], [ 1, 1, 1 ], 0.9 );
-			builder.addTriangle( base, left, right );
-			const leafCount = lod === 1 ? 2 : 1;
-			for ( let leaf = 0; leaf < leafCount; leaf ++ ) addCallaLeaf( builder, plant, plant.yaw + 0.5 + leaf * Math.PI, 0.95, leaf );
+		} else if ( lod === 1 ) {
+			// LOD1 の独立茎カードもまっすぐな交差 2 枚。葉は plantCard テクスチャに描く。
+			addCallaStemCard( builder, plant, - plant.yaw, 1 );
+			addCallaStemCard( builder, plant, - plant.yaw + Math.PI * 0.5, 1 );
 		}
 	}
 	return setPartIndex( builder.build(), part );

@@ -31,6 +31,8 @@ export interface PartDef {
 	texture: string | null; // VegetationData.textures のキー
 	impostorYawAngles?: readonly number[]; // 指定時は texture 用のビューを three 層で焼く。
 	impostorViews?: readonly ImpostorView[]; // 視線方向と画像の上方向を指定して焼く。
+	/** LOD0 の index 配列内で、インポスター焼き込みから除外する範囲。 */
+	impostorBakeExcludeIndexRanges?: readonly { start: number; count: number }[];
 	normalTexture?: string; // tangent-space normal map のキー
 	/** false なら視線の角度によるディザの切り替えをせず、インポスターの全カードを常に描画します。 */
 	impostorFade?: boolean;

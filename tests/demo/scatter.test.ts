@@ -65,9 +65,9 @@ describe( 'scatter preview', () => {
 
 	} );
 
-	it( 'uses bidirectional front-side geometry for flower batches and retains impostor fade', () => {
+	it( 'uses bidirectional front-side geometry and retains fade for flowers that use it', () => {
 
-		const asset = generateFlowers( { seed: 7, variety: 'poppy' } );
+		const asset = generateFlowers( { seed: 7, variety: 'bluebell' } );
 		const scatter = createScatter( asset, 1, 23 );
 		const meshes = scatter.group.children as InstancedMesh[];
 
@@ -91,6 +91,28 @@ describe( 'scatter preview', () => {
 			};
 			material.onBeforeCompile( shader as never, undefined as never );
 			expect( shader.fragmentShader ).toContain( 'impostorDither' );
+		}
+
+		scatter.dispose();
+		asset.dispose();
+
+	} );
+
+	it( 'keeps primrose dome geometry single-sided in scatter batches', () => {
+
+		const asset = generateFlowers( { seed: 7, variety: 'primrose' } );
+		const scatter = createScatter( asset, 1, 23 );
+		const meshes = scatter.group.children as InstancedMesh[];
+
+		for ( const lod of [ 2, 3 ] ) {
+			const mesh = meshes.find( ( candidate ) => candidate.userData.lod === lod && candidate.userData.part === 'impostor-lod3' );
+			if ( mesh === undefined ) throw new Error( `Primrose LOD${ lod } dome batch is missing` );
+			const source = asset.getParts( lod as 2 | 3 ).find( ( part ) => part.part === 'impostor-lod3' )!;
+			const definition = asset.data.parts[ 2 ]!;
+			expect( definition.doubleSided ).toBe( false );
+			expect( definition.upNormalCards ).toBeUndefined();
+			expect( mesh.geometry.getIndex()!.count ).toBe( source.geometry.getIndex()!.count );
+			expect( ( mesh.material as Material ).side ).toBe( FrontSide );
 		}
 
 		scatter.dispose();

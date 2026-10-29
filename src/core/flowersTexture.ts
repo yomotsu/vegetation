@@ -373,11 +373,13 @@ function compositeResampledTexture(
 	destinationY: number,
 	destinationWidth: number,
 	destinationHeight: number,
+	sourceY = 0,
+	sourceHeight = source.height,
 ): void {
 
 	for ( let y = 0; y < destinationHeight; y ++ ) {
-		const sourceY0 = Math.floor( y * source.height / destinationHeight );
-		const sourceY1 = Math.max( sourceY0 + 1, Math.floor( ( y + 1 ) * source.height / destinationHeight ) );
+		const sourceY0 = sourceY + Math.floor( y * sourceHeight / destinationHeight );
+		const sourceY1 = sourceY + Math.max( sourceY0 - sourceY + 1, Math.floor( ( y + 1 ) * sourceHeight / destinationHeight ) );
 		for ( let x = 0; x < destinationWidth; x ++ ) {
 			const sourceX0 = sourceX + Math.floor( x * sourceWidth / destinationWidth );
 			const sourceX1 = sourceX + Math.max( Math.floor( ( x + 1 ) * sourceWidth / destinationWidth ), Math.floor( x * sourceWidth / destinationWidth ) + 1 );
@@ -386,9 +388,9 @@ function compositeResampledTexture(
 			let green = 0;
 			let blue = 0;
 			let samples = 0;
-			for ( let sourceY = sourceY0; sourceY < Math.min( source.height, sourceY1 ); sourceY ++ ) {
+			for ( let sourceRow = sourceY0; sourceRow < Math.min( sourceY + sourceHeight, sourceY1 ); sourceRow ++ ) {
 				for ( let sourceX = sourceX0; sourceX < Math.min( source.width, sourceX1 ); sourceX ++ ) {
-					const sourceOffset = ( sourceY * source.width + sourceX ) * 4;
+					const sourceOffset = ( sourceRow * source.width + sourceX ) * 4;
 					const sampleAlpha = source.data[ sourceOffset + 3 ]!;
 					alpha += sampleAlpha;
 					red += source.data[ sourceOffset ]! * sampleAlpha;
@@ -420,6 +422,25 @@ export function compositeFlowersTexture(
 ): void {
 
 	compositeResampledTexture( target, targetWidth, targetHeight, source, sourceX, sourceWidth, destinationX, destinationY, destinationWidth, destinationHeight );
+
+}
+
+export function compositeFlowersTextureRegion(
+	target: Uint8Array,
+	targetWidth: number,
+	targetHeight: number,
+	source: TextureData,
+	sourceX: number,
+	sourceY: number,
+	sourceWidth: number,
+	sourceHeight: number,
+	destinationX: number,
+	destinationY: number,
+	destinationWidth: number,
+	destinationHeight: number,
+): void {
+
+	compositeResampledTexture( target, targetWidth, targetHeight, source, sourceX, sourceWidth, destinationX, destinationY, destinationWidth, destinationHeight, sourceY, sourceHeight );
 
 }
 

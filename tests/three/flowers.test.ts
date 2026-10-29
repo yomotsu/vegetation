@@ -1,6 +1,8 @@
 import { FrontSide, InstancedMesh, LOD, Matrix4, Mesh, MeshPhysicalMaterial, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { FlowersMesh, generateFlowers, generateFlowersAsync } from '../../src/index';
+import { generateFlowersData } from '../../src/core/generators/flowers';
+import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 import { orientBillboardInstances } from '../../src/three/VegetationMesh';
 
@@ -89,6 +91,22 @@ describe( 'flowers three.js API', () => {
 
 	} );
 
+	it( 'keeps primrose dome geometry single-sided through VegetationMesh', () => {
+
+		for ( const lod of [ 2, 3 ] as const ) {
+			const mesh = new FlowersMesh( { seed: 5, variety: 'primrose', lod } );
+			const part = mesh.parts[ 0 ]!;
+			const source = mesh.asset.getParts( lod )[ 0 ]!;
+			const definition = mesh.asset.data.parts[ 2 ]!;
+			expect( definition.doubleSided ).toBe( false );
+			expect( definition.upNormalCards ).toBeUndefined();
+			expect( part.geometry.getIndex()!.count ).toBe( source.geometry.getIndex()!.count );
+			expect( part.material.side ).toBe( FrontSide );
+			mesh.dispose();
+		}
+
+	} );
+
 	it( 'duplicates split daisy impostor cards in both LOD3 and camera-facing LOD4', () => {
 
 		for ( const lod of [ 3, 4 ] as const ) {
@@ -114,7 +132,7 @@ describe( 'flowers three.js API', () => {
 
 	it( 'preserves impostor fade hooks when split flower cards use front-side materials', () => {
 
-		const mesh = new FlowersMesh( { seed: 5, variety: 'poppy', lod: 3 } );
+		const mesh = new FlowersMesh( { seed: 5, variety: 'bluebell', lod: 3 } );
 		const [ vertical ] = mesh.parts;
 		const shader = {
 			vertexShader: '#include <common>\n#include <begin_vertex>\n#include <project_vertex>',
@@ -146,6 +164,47 @@ describe( 'flowers three.js API', () => {
 		expect( mesh.parts ).toHaveLength( 1 );
 		expect( mesh.parts[ 0 ]!.material.side ).toBe( FrontSide );
 		fresh.dispose();
+		mesh.dispose();
+
+	} );
+
+	it( 'updates calla plant-card leaves and LOD3/4 impostors when petal or stem colors change', () => {
+
+		const mesh = new FlowersMesh( { seed: 5, variety: 'calla', lod: 1 } );
+		const plantCard = mesh.asset.materials[ 2 ]!.map!;
+		const originalCard = ( plantCard.image as { data: Uint8Array } ).data.slice();
+		const originalLod3 = ( mesh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		const originalLod4 = ( mesh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		mesh.setColor( 'petal', '#a98bd6' );
+		const petalChangedCard = ( plantCard.image as { data: Uint8Array } ).data.slice();
+		const petalChangedLod3 = ( mesh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		const petalChangedLod4 = ( mesh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		mesh.setColor( 'stem', '#81603d' );
+		const fresh = new FlowersMesh( { seed: 5, variety: 'calla', petalColor: '#a98bd6', stemColor: '#81603d', lod: 1 } );
+
+		expect( areByteIdentical( petalChangedCard, originalCard ) ).toBe( false );
+		expect( areByteIdentical( petalChangedLod3, originalLod3 ) ).toBe( false );
+		expect( areByteIdentical( petalChangedLod4, originalLod4 ) ).toBe( false );
+		expect( areByteIdentical( ( plantCard.image as { data: Uint8Array } ).data, ( fresh.asset.materials[ 2 ]!.map!.image as { data: Uint8Array } ).data ) ).toBe( true );
+		expect( areByteIdentical( ( mesh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data, ( fresh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data ) ).toBe( true );
+		expect( areByteIdentical( ( mesh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data, ( fresh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data ) ).toBe( true );
+		fresh.dispose();
+		mesh.dispose();
+
+	} );
+
+	it( 'keeps poppy leaves out of LOD3/4 when petal color changes rebake the impostors', () => {
+
+		const mesh = new FlowersMesh( { seed: 5, variety: 'poppy' } );
+		const ranges = mesh.asset.data.parts[ 1 ]!.impostorBakeExcludeIndexRanges;
+		const expected = prepareVegetationAsset( generateFlowersData( { seed: 5, variety: 'poppy', petalColor: 0xa98bd6 } ), {}, 128 );
+		mesh.setColor( 'petal', '#a98bd6' );
+
+		expect( mesh.asset.data.parts[ 1 ]!.impostorBakeExcludeIndexRanges ).toEqual( ranges );
+		for ( const [ partIndex, textureName ] of [ [ 2, 'impostor-lod3' ], [ 3, 'impostor' ] ] as const ) {
+			const image = mesh.asset.materials[ partIndex ]!.map!.image as { data: Uint8Array };
+			expect( areByteIdentical( image.data, expected.impostorTextures[ textureName ]!.data ) ).toBe( true );
+		}
 		mesh.dispose();
 
 	} );

@@ -209,20 +209,12 @@ function addPoppyBud( builder: MeshBuilder, plant: FlowerPlacement, lod: number 
 
 }
 
-function addPoppyHead( builder: MeshBuilder, plant: FlowerPlacement, lod: number ): void {
+function addPoppyHead( builder: MeshBuilder, plant: FlowerPlacement ): void {
 
 	if ( plant.bud ) return;
 	// 花の中心は茎の先に置く（低く置くと茎が花を突き抜ける）。
 	const [ centerX, centerY, centerZ ] = poppySpine( plant, 1 );
 	const center = [ centerX, centerY, centerZ ] as [ number, number, number ];
-
-	if ( lod !== 0 ) {
-		const left = builder.addVertex( [ center[ 0 ] - 0.04, centerY, center[ 2 ] ], [ 0, 1, 0 ], [ 0.05, 0.2 ], [ 1, 1, 1 ], 1 );
-		const right = builder.addVertex( [ center[ 0 ] + 0.04, centerY, center[ 2 ] ], [ 0, 1, 0 ], [ 0.63, 0.2 ], [ 1, 1, 1 ], 1 );
-		const tip = builder.addVertex( [ center[ 0 ], centerY + 0.018, center[ 2 ] ], [ 0, 1, 0 ], [ 0.34, 0.82 ], [ 1, 1, 1 ], 1 );
-		builder.addTriangle( left, right, tip );
-		return;
-	}
 
 	const radius = 0.063;
 	const centerVertex = builder.addVertex( center, [ 0, 1, 0 ], [ 0.34, 0.5 ], [ 1, 1, 1 ], 1 );
@@ -238,19 +230,23 @@ function addPoppyHead( builder: MeshBuilder, plant: FlowerPlacement, lod: number
 
 }
 
-export function buildPoppyPart( lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
+export function buildPoppyPart( lod: number, plants: FlowerPlacement[], part: 'petal' | 'stem', leafIndexRanges?: { start: number; count: number }[] ): MeshData {
 
 	const builder = new MeshBuilder();
 	for ( const plant of plants ) {
 		if ( part === 'petal' ) {
-			addPoppyHead( builder, plant, lod );
+			addPoppyHead( builder, plant );
 		} else {
 			const segments = lod === 0 ? 3 : 1;
-			addPoppyStemCard( builder, plant, plant.yaw, segments );
-			addPoppyStemCard( builder, plant, plant.yaw + plant.crossAngle, segments );
+			const stemYaws = lod === 2 ? [ plant.yaw ] : [ plant.yaw, plant.yaw + plant.crossAngle ];
+			for ( const yaw of stemYaws ) addPoppyStemCard( builder, plant, yaw, segments );
 			if ( plant.bud ) addPoppyBud( builder, plant, lod );
-			const leafCount = lod === 0 ? 6 : lod === 1 ? 3 : 1;
-			for ( let leaf = 0; leaf < leafCount; leaf ++ ) addPoppyLeaf( builder, plant, plant.yaw + leaf / leafCount * Math.PI * 2, leaf );
+			const leafCount = lod === 0 ? 6 : lod === 1 ? 3 : plants.length === 1 && plant.bud ? 0 : 1;
+			for ( let leaf = 0; leaf < leafCount; leaf ++ ) {
+				const start = builder.triangleCount * 3;
+				addPoppyLeaf( builder, plant, plant.yaw + leaf / leafCount * Math.PI * 2, leaf );
+				if ( leafIndexRanges !== undefined ) leafIndexRanges.push( { start, count: builder.triangleCount * 3 - start } );
+			}
 		}
 	}
 	return setPartIndex( builder.build(), part );

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { generateFlowersData, regenerateFlowersPetalTexture, regenerateFlowersStemTexture } from '../../src/core/generators/flowers';
+import { CALLA_FLOWER_LENGTH, CALLA_PLANT_CARD_FLOWER_HEIGHT, CALLA_PLANT_CARD_FLOWER_Y, CALLA_PLANT_CARD_FOLIAGE_HEIGHT, CALLA_PLANT_CARD_FOLIAGE_WIDTH, CALLA_PLANT_CARD_TEXTURE_HEIGHT, CALLA_PLANT_CARD_TEXTURE_WIDTH, CALLA_PLANT_CARD_WIDTH } from '../../src/core/flowers/calla';
 import { ALLIUM_HEAD_RISE, ALLIUM_HEAD_SIZE, ALLIUM_PLANT_CARD_TEXTURE_WIDTH, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT, createFlowersPetalTexture } from '../../src/core/flowersTexture';
+import { hexToLinear } from '../../src/core/color';
+import { bakeImpostor, getImpostorProjectionWindow, impostorViewsForPart, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
 import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import type { MeshData } from '../../src/core/types';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
@@ -105,6 +108,105 @@ function footprintAtHeight( mesh: MeshData, minimumHeight: number ): { minX: num
 		}
 	}
 	return bounds;
+
+}
+
+interface CallaSilhouette {
+	width: number;
+	reach: number;
+	height: number;
+	coverage: number;
+}
+
+function projectedCallaLeafSilhouette(
+	mesh: MeshData,
+	viewAngle: number,
+	root: [ number, number, number ],
+	texture?: { width: number; height: number; data: Uint8Array },
+): CallaSilhouette {
+
+	const size = 384;
+	const minX = - 0.22;
+	const maxX = 0.22;
+	const minY = - 0.01;
+	const maxY = 0.28;
+	const pixelWidth = ( maxX - minX ) / size;
+	const pixelHeight = ( maxY - minY ) / size;
+	const mask = new Uint8Array( size * size );
+	const viewX = Math.cos( viewAngle );
+	const viewZ = Math.sin( viewAngle );
+	const selectedGroups = mesh.groups.filter( ( group ) => group.partIndex === ( texture === undefined ? 1 : 2 ) );
+	for ( const group of selectedGroups ) {
+		for ( let offset = group.start; offset < group.start + group.count; offset += 3 ) {
+			const triangle = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
+			const uv = triangle.map( ( vertex ) => [ mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! ] as [ number, number ] );
+			if ( texture === undefined && ! uv.every( ( value ) => value[ 0 ] > 0.2 ) ) continue;
+			if ( texture !== undefined && ! uv.every( ( value ) => value[ 1 ] <= ( CALLA_PLANT_CARD_FOLIAGE_HEIGHT / CALLA_PLANT_CARD_TEXTURE_HEIGHT ) + 0.002 ) ) continue;
+
+			const points = triangle.map( ( vertex, index ) => {
+				const x = mesh.positions[ vertex * 3 ]! - root[ 0 ];
+				const z = mesh.positions[ vertex * 3 + 2 ]! - root[ 2 ];
+				const y = mesh.positions[ vertex * 3 + 1 ]!;
+				return {
+					x: ( x * viewX + z * viewZ - minX ) / pixelWidth,
+					y: ( maxY - y ) / pixelHeight,
+					u: uv[ index ]![ 0 ],
+					v: uv[ index ]![ 1 ],
+				};
+			} );
+			const [ a, b, c ] = points as [ typeof points[ number ], typeof points[ number ], typeof points[ number ] ];
+			const denominator = ( b.y - c.y ) * ( a.x - c.x ) + ( c.x - b.x ) * ( a.y - c.y );
+			if ( Math.abs( denominator ) < 1e-8 ) continue;
+			const startX = Math.max( 0, Math.floor( Math.min( a.x, b.x, c.x ) ) );
+			const endX = Math.min( size - 1, Math.ceil( Math.max( a.x, b.x, c.x ) ) );
+			const startY = Math.max( 0, Math.floor( Math.min( a.y, b.y, c.y ) ) );
+			const endY = Math.min( size - 1, Math.ceil( Math.max( a.y, b.y, c.y ) ) );
+			for ( let y = startY; y <= endY; y ++ ) {
+				for ( let x = startX; x <= endX; x ++ ) {
+					const sampleX = x + 0.5;
+					const sampleY = y + 0.5;
+					const weightA = ( ( b.y - c.y ) * ( sampleX - c.x ) + ( c.x - b.x ) * ( sampleY - c.y ) ) / denominator;
+					const weightB = ( ( c.y - a.y ) * ( sampleX - c.x ) + ( a.x - c.x ) * ( sampleY - c.y ) ) / denominator;
+					const weightC = 1 - weightA - weightB;
+					if ( weightA < - 1e-6 || weightB < - 1e-6 || weightC < - 1e-6 ) continue;
+					if ( texture !== undefined ) {
+						const u = Math.max( 0, Math.min( 1, weightA * a.u + weightB * b.u + weightC * c.u ) );
+						const v = Math.max( 0, Math.min( 1, weightA * a.v + weightB * b.v + weightC * c.v ) );
+						const tileCenter = u < 0.5 ? 0.25 : 0.75;
+						if ( Math.abs( u - tileCenter ) < 0.01 ) continue;
+						const textureX = Math.min( texture.width - 1, Math.floor( u * texture.width ) );
+						const textureY = Math.min( texture.height - 1, Math.floor( v * texture.height ) );
+						if ( texture.data[ ( textureY * texture.width + textureX ) * 4 + 3 ]! <= 127 ) continue;
+					}
+					mask[ y * size + x ] = 1;
+				}
+			}
+		}
+	}
+
+	let left = size;
+	let right = - 1;
+	let top = size;
+	let bottom = - 1;
+	let covered = 0;
+	for ( let y = 0; y < size; y ++ ) {
+		for ( let x = 0; x < size; x ++ ) {
+			if ( mask[ y * size + x ] === 0 ) continue;
+			left = Math.min( left, x );
+			right = Math.max( right, x );
+			top = Math.min( top, y );
+			bottom = Math.max( bottom, y );
+			covered ++;
+		}
+	}
+	const silhouetteMinX = minX + left * pixelWidth;
+	const silhouetteMaxX = minX + ( right + 1 ) * pixelWidth;
+	return {
+		width: ( right - left + 1 ) * pixelWidth,
+		reach: Math.max( Math.abs( silhouetteMinX ), Math.abs( silhouetteMaxX ) ),
+		height: ( bottom - top + 1 ) * pixelHeight,
+		coverage: covered * pixelWidth * pixelHeight,
+	};
 
 }
 
@@ -276,6 +378,357 @@ describe( 'flowers core generator', () => {
 
 	} );
 
+	it( 'keeps poppy and calla LOD0 and primrose LOD0/1 byte-identical', async () => {
+
+		const fields = [ 'positions', 'normals', 'uvs', 'colors', 'windWeight', 'impostorCard', 'indices' ] as const;
+		const hash = async ( bytes: ArrayBufferView ) => {
+			const source = new Uint8Array( bytes.buffer, bytes.byteOffset, bytes.byteLength );
+			const digest = await globalThis.crypto.subtle.digest( 'SHA-256', Uint8Array.from( source ) );
+			return Array.from( new Uint8Array( digest ), ( value ) => value.toString( 16 ).padStart( 2, '0' ) ).join( '' );
+		};
+		const expected = {
+			poppy: {
+				lods: [ [ '6fce5da5944be37b9dc1700fc53018644dfe72abe504f6fe635fdfe5ea76aeb0', '826b2e4a93f514a70ee3af485c928282041b0619da218fef6a400cad0ac1de0b', '9c01e2c5c99afb8c2c156a42095b9d647c198fcb7cc5bbd744d23fb862256f31', '32602b5f6aa16c692f6a582f5b7ebbdfa540312af0f43cce6d270f0e5abe572f', '5446686147e15355cf04312d05075fde6ac2df49b152fc103fc63c9d2526ff4d', '696bda342649ec9268da57b6a279df6f24b0e857d5e6d0605fd25af95adc3cee', '6ad0fc10aea57e1cd3d1ce5c5ad2f539d3054b3b8776dfcf509a2ffa4523baab' ] ],
+				textures: [ '37d06a4645a7397847abe4199ea53dbdc6d8eb54eaeb1cabcf891a5f966f1351', 'f94a2954e625b855f823862c8cd02a6adb6790d5b957a3a7b9cde72918922971' ],
+			},
+			calla: {
+				lods: [ [ '3eb0637de333da3589972da5315ec1ecc73ba55c46abf005d060030e7049b23d', 'ec5b75110a571b82d1a047329b3b9c3ac48586c19de1f6ed1c20ca85ef8c7167', '61270b45f606face94b8e283afd6c06138c9b37aa9b30eb1e07628e0ab7f92cd', '940eae32aa57b31c5270446b229465c1ff964dd673890d6e82797924cbb5379f', '34eb88752ec65016c4ab01fb49e0f0641c41ae17dd80d074e2b8ef1c6275c92a', '8889eb3cdd3d0ac94711b47ce78b430d8e23a7b31ecc994c56d0c3310c87674a', 'bd2122d0dfe44b1102b0e7be5c3b15ed6c54fe9e4e1a0bcc6935d7c97682ba74' ] ],
+				textures: [ '6ba7fe2abb9b8be9c66bbde2a3e9659209b1dcd289d57ecca4f9365ec1ed2b3d', '3c97d04f02c849c11d5bf1d8fe0e26e31db8b102c48d4068192cfab1e93e99d9' ],
+			},
+			primrose: {
+				lods: [
+					[ 'd63b4655176aa34b1dc6cd2fa64779c325ffeb2a53049ff7f70dee6560b0ad35', '41b9d65d6754d23d9dc019e7bd7af870440953642bc83fd15634153bd0c88443', '8e0eb2854129c037cd4ad34e93c0dc782a25a926d321aaef248a59171881cb5c', '22fd25e9489f309ce36dbc7ba69042c279e957c19689951a3e29e15dc21574ac', '99bb5e9370031dfc1f8a2cf9bd4d0d74edbc57ab0c27856335bebb5da05333d8', '2b73f6b3cd6cd9f97ccbbedc2fa1904331b916b2ace865882f72ddd083c79b04', '48bbc3e512fd9222829ebf6b0d17a8a8a0a81a539755109ec4c559aa0e42e154' ],
+					[ '3315266599db243ce6f09335da78cf328ec01089c31a59f37c8a182b6278adbc', 'be7903465f55756f988fa51fbc1cf7337f4d78d890ae869c070adfd7de6d4d55', '369c9486943961ad04338f9190db295bd4fbd26730cee8841345d1069b1aa5d1', 'dc90f6f1960b01ff1b235f01a9c5f950e2681ee588ea14d227f32febad3836dc', 'fad251f36965f0ec3baaefc91626e3140259fae3966548094bef548ac341a63e', 'e2fc162ed9124452d23c85e81d60a0c228f414c3214a5de635737e25fbd29ac1', '2361f5245ce5525b55851cc418321f4203059d91484967a00a326e72bd1df991' ],
+				],
+			},
+		};
+
+		for ( const variety of [ 'poppy', 'calla', 'primrose' ] as const ) {
+			const data = generateFlowersData( { seed: 1, variety } );
+			const lods = data.lods.slice( 0, variety === 'primrose' ? 2 : 1 );
+			const actual = {
+				lods: await Promise.all( lods.map( ( mesh ) => Promise.all( fields.map( ( field ) => hash( mesh[ field ] ) ) ) ) ),
+				...( variety === 'primrose' ? {} : { textures: await Promise.all( [ 'petal', 'stem' ].map( ( key ) => hash( data.textures[ key ]!.data ) ) ) } ),
+			};
+			expect( actual ).toEqual( expected[ variety ] );
+		}
+
+	} );
+
+	it( 'builds poppy LOD1-4 cups, stems, and horizontal flower cards', () => {
+
+		const data = generateFlowersData( { seed: 5, variety: 'poppy' } );
+		const [ lod0, lod1, lod2, lod3, lod4 ] = data.lods;
+		expect( data.lods.map( triangleCount ) ).toEqual( [ 84, 40, 22, 6, 4 ] );
+		expect( data.lods.slice( 1 ).every( ( mesh, index ) => triangleCount( mesh ) < triangleCount( data.lods[ index ]! ) ) ).toBe( true );
+		expect( data.parts[ 2 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 2 ]!.impostorViews ).toHaveLength( 3 );
+		expect( data.parts[ 2 ]!.upNormalCards ).toBe( true );
+		expect( data.parts[ 3 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 3 ]!.impostorViews ).toHaveLength( 2 );
+		expect( data.parts[ 3 ]!.upNormalCards ).toBe( true );
+		expect( data.parts[ 2 ]!.doubleSided ).toBe( true );
+		expect( data.parts[ 3 ]!.doubleSided ).toBe( true );
+
+		const headCenters = ( mesh: MeshData ) => {
+			const group = mesh.groups.find( ( candidate ) => candidate.partIndex === 0 )!;
+			const vertices = new Set( mesh.indices.slice( group.start, group.start + group.count ) );
+			return [ ...vertices ].filter( ( vertex ) => Math.abs( mesh.uvs[ vertex * 2 ]! - 0.34 ) < 1e-6 && Math.abs( mesh.uvs[ vertex * 2 + 1 ]! - 0.5 ) < 1e-6 );
+		};
+		const centerVertices = [ lod0, lod1, lod2 ].map( ( mesh ) => headCenters( mesh! ) );
+		expect( centerVertices[ 0 ] ).toHaveLength( 2 );
+		expect( centerVertices.map( ( vertices ) => vertices.length ) ).toEqual( [ 2, 2, 2 ] );
+		for ( const [ headIndex, head ] of centerVertices[ 0 ]!.entries() ) {
+			const reference = vertexPosition( lod0!, head );
+			for ( const mesh of [ lod1!, lod2! ] ) {
+				const matchingHead = headCenters( mesh ).find( ( vertex ) => {
+					const point = vertexPosition( mesh, vertex );
+					return Math.hypot( point[ 0 ] - reference[ 0 ], point[ 1 ] - reference[ 1 ], point[ 2 ] - reference[ 2 ] ) < 1e-6;
+				} );
+				expect( matchingHead ).toBeDefined();
+			}
+			expect( headIndex ).toBeLessThan( 2 );
+		}
+		const firstHead = centerVertices[ 1 ]![ 0 ]!;
+		const stemTip = ( mesh: MeshData ) => {
+			const group = mesh.groups.find( ( candidate ) => candidate.partIndex === 1 )!;
+			const firstVertex = Math.min( ...mesh.indices.slice( group.start, group.start + group.count ) );
+			return cardRowCenter( mesh, firstVertex, 1 );
+		};
+		for ( const mesh of [ lod1!, lod2! ] ) {
+			const head = vertexPosition( mesh, headCenters( mesh )[ 0 ]! );
+			const tip = stemTip( mesh );
+			expect( Math.hypot( head[ 0 ] - tip[ 0 ], head[ 1 ] - tip[ 1 ], head[ 2 ] - tip[ 2 ] ) ).toBeLessThan( 1e-6 );
+		}
+		expect( vertexPosition( lod0!, centerVertices[ 0 ]![ 0 ]! ) ).toEqual( vertexPosition( lod1!, firstHead ) );
+
+		const horizontalVertices = ( mesh: MeshData ) => Array.from( { length: mesh.impostorCard.length }, ( _, vertex ) => vertex ).filter( ( vertex ) => mesh.impostorCard[ vertex ] === 1 );
+		const expectedHeadHeight = centerVertices[ 0 ]!.reduce( ( sum, vertex ) => sum + lod0!.positions[ vertex * 3 + 1 ]!, 0 ) / centerVertices[ 0 ]!.length;
+		for ( const mesh of [ lod3!, lod4! ] ) {
+			const top = horizontalVertices( mesh );
+			expect( top ).toHaveLength( 4 );
+			for ( const vertex of top ) expect( mesh.positions[ vertex * 3 + 1 ] ).toBeCloseTo( expectedHeadHeight, 6 );
+			const topBounds = {
+				minX: Math.min( ...top.map( ( vertex ) => mesh.positions[ vertex * 3 ]! ) ),
+				maxX: Math.max( ...top.map( ( vertex ) => mesh.positions[ vertex * 3 ]! ) ),
+				minZ: Math.min( ...top.map( ( vertex ) => mesh.positions[ vertex * 3 + 2 ]! ) ),
+				maxZ: Math.max( ...top.map( ( vertex ) => mesh.positions[ vertex * 3 + 2 ]! ) ),
+			};
+			const headGroup = lod0!.groups.find( ( group ) => group.partIndex === 0 )!;
+			const headVertices = new Set( lod0!.indices.slice( headGroup.start, headGroup.start + headGroup.count ) );
+			for ( const vertex of headVertices ) {
+				expect( lod0!.positions[ vertex * 3 ] ).toBeGreaterThanOrEqual( topBounds.minX - 1e-6 );
+				expect( lod0!.positions[ vertex * 3 ] ).toBeLessThanOrEqual( topBounds.maxX + 1e-6 );
+				expect( lod0!.positions[ vertex * 3 + 2 ] ).toBeGreaterThanOrEqual( topBounds.minZ - 1e-6 );
+				expect( lod0!.positions[ vertex * 3 + 2 ] ).toBeLessThanOrEqual( topBounds.maxZ + 1e-6 );
+			}
+		}
+		expect( horizontalVertices( lod3! ).every( ( vertex ) => lod3!.positions[ vertex * 3 + 1 ] === horizontalVertices( lod3! ).reduce( ( sum, index ) => sum + lod3!.positions[ index * 3 + 1 ]!, 0 ) / 4 ) ).toBe( true );
+		expect( triangleCount( generateFlowersData( { seed: 5, variety: 'poppy', count: 1 } ).lods[ 2 ]! ) ).toBeLessThan( triangleCount( generateFlowersData( { seed: 5, variety: 'poppy', count: 1 } ).lods[ 3 ]! ) );
+
+	} );
+
+	it( 'bakes poppy LOD3/4 impostors without the LOD0 leaf triangles', () => {
+
+		const data = generateFlowersData( { seed: 5, variety: 'poppy' } );
+		const leafRanges = data.parts[ 1 ]!.impostorBakeExcludeIndexRanges!;
+		const lod0 = data.lods[ 0 ]!;
+		const fullBakeData = { ...data, parts: data.parts.map( ( part ) => ( { ...part, impostorBakeExcludeIndexRanges: undefined } ) ) };
+		const colors = data.parts.map( ( part ) => part.colorizesTexture ? [ 1, 1, 1 ] as [ number, number, number ] : hexToLinear( part.defaultColor ) );
+		const prepared = prepareVegetationAsset( data, {}, 128 );
+
+		expect( leafRanges ).toHaveLength( 18 );
+		for ( const range of leafRanges ) {
+			expect( range.count ).toBe( 6 );
+			for ( let index = range.start; index < range.start + range.count; index ++ ) {
+				const vertex = lod0.indices[ index ]!;
+				expect( lod0.positions[ vertex * 3 + 1 ] ).toBeGreaterThanOrEqual( 0.012 );
+				expect( lod0.positions[ vertex * 3 + 1 ] ).toBeLessThanOrEqual( 0.028001 );
+			}
+		}
+
+		for ( const partIndex of [ 2, 3 ] ) {
+			const part = data.parts[ partIndex ]!;
+			const withoutLeaves = prepared.impostorTextures[ part.texture! ]!;
+			const withLeaves = bakeImpostor( fullBakeData, colors, 128, impostorViewsForPart( part )! );
+			let differentPixels = 0;
+			let opaquePixels = 0;
+			for ( let pixel = 0; pixel < withoutLeaves.data.length; pixel += 4 ) {
+				if ( withoutLeaves.data[ pixel + 3 ]! > 0 ) opaquePixels ++;
+				if ( withoutLeaves.data[ pixel ] !== withLeaves.data[ pixel ] || withoutLeaves.data[ pixel + 1 ] !== withLeaves.data[ pixel + 1 ] || withoutLeaves.data[ pixel + 2 ] !== withLeaves.data[ pixel + 2 ] || withoutLeaves.data[ pixel + 3 ] !== withLeaves.data[ pixel + 3 ] ) differentPixels ++;
+			}
+			expect( opaquePixels ).toBeGreaterThan( 0 );
+			expect( differentPixels ).toBeGreaterThan( 0 );
+		}
+
+		const recolored = prepareVegetationAsset( data, { petal: 0xa98bd6 }, 128 );
+		expect( recolored.data.parts[ 1 ]!.impostorBakeExcludeIndexRanges ).toEqual( leafRanges );
+		for ( const texture of [ 'impostor-lod3', 'impostor' ] ) expect( areByteIdentical( recolored.impostorTextures[ texture ]!.data, prepared.impostorTextures[ texture ]!.data ) ).toBe( false );
+
+	} );
+
+	it( 'uses a compact shared plant-card texture and LOD0 leaf count for calla', () => {
+
+		const options = { seed: 5, variety: 'calla' as const };
+		const data = generateFlowersData( options );
+		const [ lod0, lod1, lod2, lod3, lod4 ] = data.lods;
+		expect( data.lods.map( triangleCount ) ).toEqual( [ 93, 36, 24, 4, 2 ] );
+		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'petal', 'stem', 'plantCard', 'impostor-lod3', 'impostor' ] );
+		const plantCard = data.textures.plantCard!;
+		expect( plantCard.width ).toBe( CALLA_PLANT_CARD_TEXTURE_WIDTH );
+		expect( plantCard.width ).toBe( FLOWERS_PETAL_TEXTURE_SIZE );
+		expect( plantCard.height ).toBe( CALLA_PLANT_CARD_TEXTURE_HEIGHT );
+		expect( plantCard.height ).toBeLessThanOrEqual( 512 );
+		expect( plantCard.width ).toBeLessThanOrEqual( 128 );
+		expect( CALLA_PLANT_CARD_FOLIAGE_WIDTH ).toBeGreaterThanOrEqual( 0.36 );
+		expect( plantCard.height ).toBe( 397 );
+		expect( CALLA_PLANT_CARD_FLOWER_HEIGHT ).toBe( 141 );
+		for ( let tile = 0; tile < 2; tile ++ ) {
+			let coveredFoliagePixels = 0;
+			for ( let y = 0; y < CALLA_PLANT_CARD_FOLIAGE_HEIGHT; y ++ ) {
+				for ( let x = tile * ( plantCard.width / 2 ); x < ( tile + 1 ) * ( plantCard.width / 2 ); x ++ ) {
+					if ( plantCard.data[ ( y * plantCard.width + x ) * 4 + 3 ]! > 127 ) coveredFoliagePixels ++;
+				}
+			}
+			expect( coveredFoliagePixels ).toBeGreaterThan( 0 );
+		}
+
+		const trianglesByPart = ( mesh: MeshData, partIndex: number ) => mesh.groups.filter( ( group ) => group.partIndex === partIndex ).reduce( ( sum, group ) => sum + group.count / 3, 0 );
+		expect( trianglesByPart( lod1!, 1 ) ).toBe( 12 );
+		expect( trianglesByPart( lod2!, 1 ) ).toBe( 0 );
+		for ( const mesh of [ lod1!, lod2! ] ) {
+			const stemPart = mesh.groups.filter( ( group ) => group.partIndex === 1 );
+			for ( const group of stemPart ) {
+				const vertices = new Set( mesh.indices.slice( group.start, group.start + group.count ) );
+				for ( const vertex of vertices ) expect( mesh.uvs[ vertex * 2 ]! ).toBeLessThanOrEqual( 0.16 );
+			}
+			const plantCardTriangles = trianglesByPart( mesh, 2 );
+			expect( plantCardTriangles ).toBe( 24 );
+		}
+
+		const singlePlant = generateFlowersData( { ...options, count: 1 } );
+		expect( singlePlant.lods.map( triangleCount ) ).toEqual( [ 31, 12, 8, 4, 2 ] );
+		const singleLod0 = singlePlant.lods[ 0]!;
+		const singleStemGroup = singleLod0.groups.find( ( group ) => group.partIndex === 1 )!;
+		const lod0StemTipVertices = new Set( singleLod0.indices.slice( singleStemGroup.start, singleStemGroup.start + singleStemGroup.count ) );
+		const lod0StemTop = [ ...lod0StemTipVertices ].filter( ( vertex ) => singleLod0.windWeight[ vertex ]! > 0.999 && singleLod0.uvs[ vertex * 2 ]! < 0.17 );
+		const stemTipCenter = [ 0, 1, 2 ].map( ( axis ) => lod0StemTop.reduce( ( sum, vertex ) => sum + singleLod0.positions[ vertex * 3 + axis ]!, 0 ) / lod0StemTop.length );
+		expect( lod0StemTop ).toHaveLength( 4 );
+		for ( const mesh of [ singlePlant.lods[ 1]!, singlePlant.lods[ 2]! ] ) {
+			const flowerStartV = CALLA_PLANT_CARD_FLOWER_Y / plantCard.height;
+			const flowerVertices = new Set( mesh.groups.filter( ( group ) => group.partIndex === 2 ).flatMap( ( group ) => [ ...mesh.indices.slice( group.start, group.start + group.count ) ].filter( ( vertex ) => {
+				const u = mesh.uvs[ vertex * 2 ]!;
+				return mesh.uvs[ vertex * 2 + 1 ]! >= flowerStartV - 1e-6 && ( Math.abs( u - 16 / CALLA_PLANT_CARD_TEXTURE_WIDTH ) < 1e-6 || Math.abs( u - 112 / CALLA_PLANT_CARD_TEXTURE_WIDTH ) < 1e-6 );
+			} ) ) );
+			const flowerBottom = [ ...flowerVertices ].filter( ( vertex ) => Math.abs( mesh.uvs[ vertex * 2 + 1 ]! - flowerStartV ) < 1e-6 );
+			const flowerTop = [ ...flowerVertices ].filter( ( vertex ) => Math.abs( mesh.uvs[ vertex * 2 + 1 ]! - 1 ) < 1e-6 );
+			expect( flowerBottom ).toHaveLength( 4 );
+			expect( flowerTop ).toHaveLength( 4 );
+			for ( const [ vertices, expectedY ] of [ [ flowerBottom, stemTipCenter[ 1 ]! ], [ flowerTop, stemTipCenter[ 1 ]! + CALLA_FLOWER_LENGTH ] ] as const ) {
+				const center = [ 0, 1, 2 ].map( ( axis ) => vertices.reduce( ( sum, vertex ) => sum + mesh.positions[ vertex * 3 + axis ]!, 0 ) / vertices.length );
+				expect( center[ 0 ] ).toBeCloseTo( stemTipCenter[ 0 ]!, 6 );
+				expect( center[ 1 ] ).toBeCloseTo( expectedY, 6 );
+				expect( center[ 2 ] ).toBeCloseTo( stemTipCenter[ 2 ]!, 6 );
+				const width = Math.max( ...vertices.flatMap( ( first ) => vertices.map( ( second ) => Math.hypot( mesh.positions[ first * 3 ]! - mesh.positions[ second * 3 ]!, mesh.positions[ first * 3 + 2 ]! - mesh.positions[ second * 3 + 2 ]! ) ) ) );
+				expect( width ).toBeCloseTo( CALLA_PLANT_CARD_WIDTH, 6 );
+			}
+		}
+		for ( let count = 1; count <= 6; count ++ ) {
+			const counts = generateFlowersData( { ...options, count } ).lods.map( triangleCount );
+			expect( counts.slice( 1 ).every( ( value, index ) => value < counts[ index ]! ) ).toBe( true );
+		}
+
+		for ( const index of [ 3, 4 ] ) {
+			expect( data.parts[ index ]!.impostorFade ).toBe( false );
+			expect( data.parts[ index ]!.upNormalCards ).toBe( true );
+		}
+		expect( data.parts[ 3 ]!.impostorViews ).toHaveLength( 2 );
+		expect( data.parts[ 4 ]!.impostorViews ).toHaveLength( 1 );
+		expect( lod3!.impostorCard.every( ( card ) => card === 0 ) ).toBe( true );
+		expect( lod4!.impostorCard.every( ( card ) => card === 0 ) ).toBe( true );
+
+		const petalColor = 0xa98bd6;
+		const centerColor = 0xff00ff;
+		const stemColor = 0x81603d;
+		const recolored = generateFlowersData( { ...options, petalColor, centerColor, stemColor } );
+		expect( areByteIdentical( plantCard.data, recolored.textures.plantCard!.data ) ).toBe( false );
+		const regenerated = generateFlowersData( options );
+		regenerateFlowersPetalTexture( regenerated, petalColor );
+		regenerateFlowersStemTexture( regenerated, stemColor );
+		expect( areByteIdentical( regenerated.textures.plantCard!.data, generateFlowersData( { ...options, petalColor, stemColor } ).textures.plantCard!.data ) ).toBe( true );
+		const prepared = prepareVegetationAsset( generateFlowersData( options ), { petal: petalColor, stem: stemColor }, 128 );
+		expect( areByteIdentical( prepared.data.textures.plantCard!.data, generateFlowersData( { ...options, petalColor, stemColor } ).textures.plantCard!.data ) ).toBe( true );
+		const originalPrepared = prepareVegetationAsset( generateFlowersData( options ), {}, 128 );
+		const fullyRecoloredPrepared = prepareVegetationAsset( recolored, {}, 128 );
+		for ( const texture of [ 'impostor-lod3', 'impostor' ] ) {
+			expect( areByteIdentical( prepared.impostorTextures[ texture ]!.data, originalPrepared.impostorTextures[ texture ]!.data ) ).toBe( false );
+			expect( areByteIdentical( fullyRecoloredPrepared.impostorTextures[ texture ]!.data, originalPrepared.impostorTextures[ texture ]!.data ) ).toBe( false );
+		}
+
+	} );
+
+	it( 'matches the calla leaf alpha silhouette from front, side, and 45-degree views', () => {
+
+		const seeds = [ 1, 5, 7, 11, 23 ];
+		const viewOffsets = [ 0, Math.PI / 4, Math.PI / 2 ];
+		const totals = viewOffsets.map( () => ( { lod0: { width: 0, reach: 0, height: 0, coverage: 0 }, lod1: { width: 0, reach: 0, height: 0, coverage: 0 }, lod2: { width: 0, reach: 0, height: 0, coverage: 0 } } ) );
+		for ( const seed of seeds ) {
+			const data = generateFlowersData( { seed, variety: 'calla', count: 1 } );
+			const lod1 = data.lods[ 1 ]!;
+			const firstCardGroup = lod1.groups.find( ( group ) => group.partIndex === 2 )!;
+			const firstTriangle = lod1.indices.slice( firstCardGroup.start, firstCardGroup.start + 3 );
+			const left = vertexPosition( lod1, firstTriangle[ 0 ]! );
+			const right = vertexPosition( lod1, firstTriangle[ 1 ]! );
+			const root: [ number, number, number ] = [ ( left[ 0 ] + right[ 0 ] ) * 0.5, 0, ( left[ 2 ] + right[ 2 ] ) * 0.5 ];
+			const cardAxis = Math.atan2( right[ 2 ] - left[ 2 ], right[ 0 ] - left[ 0 ] );
+			for ( let view = 0; view < viewOffsets.length; view ++ ) {
+				const angle = cardAxis + viewOffsets[ view ]!;
+				const reference = projectedCallaLeafSilhouette( data.lods[ 0 ]!, angle, root );
+				const lod1Silhouette = projectedCallaLeafSilhouette( lod1, angle, root, data.textures.plantCard! );
+				const lod2Silhouette = projectedCallaLeafSilhouette( data.lods[ 2 ]!, angle, root, data.textures.plantCard! );
+				for ( const [ name, measured ] of [ [ 'lod0', reference ], [ 'lod1', lod1Silhouette ], [ 'lod2', lod2Silhouette ] ] as const ) {
+					totals[ view ]![ name ].width += measured.width / seeds.length;
+					totals[ view ]![ name ].reach += measured.reach / seeds.length;
+					totals[ view ]![ name ].height += measured.height / seeds.length;
+					totals[ view ]![ name ].coverage += measured.coverage / seeds.length;
+				}
+			}
+		}
+
+		for ( const view of totals ) {
+			for ( const name of [ 'lod1', 'lod2' ] as const ) {
+				for ( const measurement of [ 'width', 'reach' ] as const ) {
+					expect( Math.abs( view[ name ][ measurement ] / view.lod0[ measurement ] - 1 ) ).toBeLessThan( 0.23 );
+				}
+				expect( Math.abs( view[ name ].height / view.lod0.height - 1 ) ).toBeLessThan( 0.12 );
+				expect( Math.abs( view[ name ].coverage / view.lod0.coverage - 1 ) ).toBeLessThan( 0.25 );
+			}
+		}
+
+	} );
+
+	it( 'uses a shared top-baked primrose dome at LOD2/3', () => {
+
+		const data = generateFlowersData( { seed: 5, variety: 'primrose' } );
+		const [ lod0, lod1, lod2, lod3, lod4 ] = data.lods;
+		const topView = LOD4_IMPOSTOR_VIEWS[ 1 ]!;
+		const window = getImpostorProjectionWindow( data.bounds, lod0!, topView );
+		expect( data.lods.map( triangleCount ) ).toEqual( [ 80, 36, 33, 7, 4 ] );
+		expect( triangleCount( lod1! ) ).toBeGreaterThan( triangleCount( lod2! ) );
+		expect( triangleCount( lod2! ) ).toBeGreaterThan( triangleCount( lod3! ) );
+		expect( triangleCount( lod3! ) ).toBeGreaterThan( triangleCount( lod4! ) );
+		expect( lod2!.groups ).toHaveLength( 1 );
+		expect( lod3!.groups ).toHaveLength( 1 );
+		expect( lod2!.groups[ 0 ]!.partIndex ).toBe( 2 );
+		expect( lod3!.groups[ 0 ]!.partIndex ).toBe( 2 );
+		expect( Math.min( ...Array.from( { length: lod2!.positions.length / 3 }, ( _, vertex ) => lod2!.positions[ vertex * 3 + 1 ]! ) ) ).toBe( 0 );
+		expect( maximumY( lod2! ) ).toBeCloseTo( data.bounds.height, 6 );
+		expect( data.parts[ 2 ]!.impostorViews ).toEqual( [ topView ] );
+		expect( data.parts[ 2 ]!.upNormalCards ).toBeUndefined();
+		expect( data.parts[ 2 ]!.doubleSided ).toBe( false );
+		expect( data.parts[ 3 ]!.impostorFade ).toBe( false );
+		expect( data.parts[ 3 ]!.impostorViews ).toHaveLength( 2 );
+
+		const footprint = { minX: window.minRight, maxX: window.maxRight, minZ: - window.maxUp, maxZ: - window.minUp };
+		for ( const mesh of [ lod2!, lod3! ] ) {
+			for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
+				const x = mesh.positions[ vertex * 3 ]!;
+				const z = mesh.positions[ vertex * 3 + 2 ]!;
+				expect( mesh.uvs[ vertex * 2 ] ).toBeCloseTo( ( x - window.minRight ) / ( window.maxRight - window.minRight ), 6 );
+				expect( mesh.uvs[ vertex * 2 + 1 ] ).toBeCloseTo( ( - z - window.minUp ) / ( window.maxUp - window.minUp ), 6 );
+			}
+		}
+		for ( const mesh of [ lod2!, lod3! ] ) {
+			expect( Math.min( ...Array.from( { length: mesh.positions.length / 3 }, ( _, vertex ) => mesh.positions[ vertex * 3 ]! ) ) ).toBeCloseTo( footprint.minX, 6 );
+			expect( Math.max( ...Array.from( { length: mesh.positions.length / 3 }, ( _, vertex ) => mesh.positions[ vertex * 3 ]! ) ) ).toBeCloseTo( footprint.maxX, 6 );
+			expect( Math.min( ...Array.from( { length: mesh.positions.length / 3 }, ( _, vertex ) => mesh.positions[ vertex * 3 + 2 ]! ) ) ).toBeCloseTo( footprint.minZ, 6 );
+			expect( Math.max( ...Array.from( { length: mesh.positions.length / 3 }, ( _, vertex ) => mesh.positions[ vertex * 3 + 2 ]! ) ) ).toBeCloseTo( footprint.maxZ, 6 );
+			for ( let offset = 0; offset < mesh.normals.length; offset += 3 ) {
+				const normal = [ mesh.normals[ offset ]!, mesh.normals[ offset + 1 ]!, mesh.normals[ offset + 2 ]! ];
+				expect( Math.hypot( ...normal ) ).toBeCloseTo( 1, 5 );
+				expect( normal[ 1 ] ).toBeGreaterThan( 0 );
+			}
+			for ( let index = 0; index < mesh.indices.length; index += 3 ) {
+				const first = vertexPosition( mesh, mesh.indices[ index ]! );
+				const second = vertexPosition( mesh, mesh.indices[ index + 1 ]! );
+				const third = vertexPosition( mesh, mesh.indices[ index + 2 ]! );
+				const geometricNormalY = ( second[ 2 ] - first[ 2 ] ) * ( third[ 0 ] - first[ 0 ] ) - ( second[ 0 ] - first[ 0 ] ) * ( third[ 2 ] - first[ 2 ] );
+				expect( geometricNormalY ).toBeGreaterThan( 0 );
+			}
+		}
+
+		const prepared = prepareVegetationAsset( data, {}, 128 );
+		const topTexture = prepared.impostorTextures[ 'impostor-lod3' ]!;
+		expect( topTexture.width ).toBe( 128 );
+		expect( topTexture.height ).toBe( 128 );
+		expect( [ ...topTexture.data.filter( ( _value, index ) => index % 4 === 3 ) ].some( ( alpha ) => alpha > 0 ) ).toBe( true );
+
+		const horizontal = Array.from( { length: lod4!.impostorCard.length }, ( _, vertex ) => vertex ).filter( ( vertex ) => lod4!.impostorCard[ vertex ] === 1 );
+		expect( horizontal ).toHaveLength( 4 );
+		for ( const vertex of horizontal ) expect( lod4!.positions[ vertex * 3 + 1 ] ).toBeCloseTo( data.bounds.height * 0.55, 6 );
+
+	} );
+
 	for ( const variety of newVarieties ) {
 
 		it( `creates deterministic valid ${ variety } LODs within the flower budgets`, () => {
@@ -290,7 +743,7 @@ describe( 'flowers core generator', () => {
 				validateMeshData( first.lods[ lod ]! );
 				expect( areStructurallyByteIdentical( first.lods[ lod ]!, second.lods[ lod ]! ) ).toBe( true );
 				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( 150 );
-				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( 78 );
+				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : 78 );
 			}
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
 			expect( areByteIdentical( first.textures.petal!.data, second.textures.petal!.data ) ).toBe( true );
@@ -322,7 +775,7 @@ describe( 'flowers core generator', () => {
 			const options = { seed: 19, variety };
 			const data = generateFlowersData( options );
 			const geometry = data.lods.map( ( mesh ) => ( { ...mesh } ) );
-			const pixels = Object.values( data.textures ).reduce( ( sum, texture ) => sum + texture.width * texture.height, 0 );
+			const pixels = Object.entries( data.textures ).filter( ( [ name ] ) => name !== 'plantCard' ).reduce( ( sum, [ , texture ] ) => sum + texture.width * texture.height, 0 );
 			const petalColor = 0xa98bd6;
 			const stemColor = 0x81603d;
 			expect( pixels ).toBeLessThanOrEqual( 256 * 256 );
@@ -571,9 +1024,30 @@ describe( 'flowers core generator', () => {
 
 			const data = generateFlowersData( { seed: 7, variety } );
 			const lods = data.lods;
-			expect( data.parts.every( ( part ) => part.upNormalCards === true ) ).toBe( true );
-			for ( const mesh of lods ) for ( const group of mesh.groups ) expect( data.parts[ group.partIndex ]!.upNormalCards ).toBe( true );
-			for ( const mesh of lods ) expect( [ ...mesh.normals ].every( ( value, index ) => index % 3 === 1 ? value === 1 : value === 0 ) ).toBe( true );
+			if ( variety === 'primrose' ) {
+				expect( data.parts.filter( ( _part, index ) => index !== 2 ).every( ( part ) => part.upNormalCards === true ) ).toBe( true );
+				expect( data.parts[ 2 ]!.upNormalCards ).toBeUndefined();
+				for ( let lod = 0; lod < lods.length; lod ++ ) {
+					for ( const group of lods[ lod ]!.groups ) {
+						if ( ( lod === 2 || lod === 3 ) && group.partIndex === 2 ) continue;
+						expect( data.parts[ group.partIndex ]!.upNormalCards ).toBe( true );
+					}
+					if ( lod === 2 || lod === 3 ) {
+						for ( let offset = 0; offset < lods[ lod ]!.normals.length; offset += 3 ) {
+							const normal = [ lods[ lod ]!.normals[ offset ]!, lods[ lod ]!.normals[ offset + 1 ]!, lods[ lod ]!.normals[ offset + 2 ]! ];
+							expect( Math.hypot( ...normal ) ).toBeCloseTo( 1, 5 );
+							expect( normal[ 1 ] ).toBeGreaterThan( 0 );
+						}
+						expect( [ ...lods[ lod ]!.normals ].some( ( value, index ) => index % 3 === 1 ? value < 0.99 : Math.abs( value ) > 0.01 ) ).toBe( true );
+					} else {
+						expect( [ ...lods[ lod ]!.normals ].every( ( value, index ) => index % 3 === 1 ? value === 1 : value === 0 ) ).toBe( true );
+					}
+				}
+			} else {
+				expect( data.parts.every( ( part ) => part.upNormalCards === true ) ).toBe( true );
+				for ( const mesh of lods ) for ( const group of mesh.groups ) expect( data.parts[ group.partIndex ]!.upNormalCards ).toBe( true );
+				for ( const mesh of lods ) expect( [ ...mesh.normals ].every( ( value, index ) => index % 3 === 1 ? value === 1 : value === 0 ) ).toBe( true );
+			}
 			const mesh = lods[ 0 ]!;
 
 			let hasGroundRoot = false;
@@ -806,7 +1280,7 @@ describe( 'flowers core generator', () => {
 
 		for ( const variety of [ 'allium', 'daisy', 'tulip', ...newVarieties ] as const ) {
 
-			const textureKey = variety === 'allium' ? 'plantCard' : 'petal';
+			const textureKey = variety === 'allium' || variety === 'calla' ? 'plantCard' : 'petal';
 			const first = generateFlowersData( { seed: 5, variety } ).textures[ textureKey ]!;
 			const changed = generateFlowersData( { seed: 5, variety, centerColor: 0xff00ff } ).textures[ textureKey ]!;
 			const alpha = new Set<number>();
@@ -816,6 +1290,7 @@ describe( 'flowers core generator', () => {
 			expect( areByteIdentical( first.data, changed.data ) ).toBe( variety === 'tulip' );
 			if ( variety !== 'tulip' ) expect( [ ...alpha ].some( ( value ) => value > 0 && value < 255 ) ).toBe( true );
 			if ( variety === 'allium' ) expect( first.width ).toBe( ALLIUM_PLANT_CARD_TEXTURE_WIDTH );
+			else if ( variety === 'calla' ) expect( first.width ).toBe( CALLA_PLANT_CARD_TEXTURE_WIDTH );
 			else {
 				expect( first.colorFactors ).toHaveLength( first.width * first.height );
 				expect( first.colorPixelIndices!.length ).toBeGreaterThan( 0 );

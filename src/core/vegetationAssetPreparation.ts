@@ -37,7 +37,7 @@ export function prepareVegetationAsset(
 	const colors = Object.fromEntries( preparedData.parts.map( ( part ) => [ part.name, partColorsHex[ part.name ] ?? part.defaultColor ] ) );
 	const linearColors = Object.fromEntries( preparedData.parts.map( ( part ) => [ part.name, partColorsLinear[ part.name ] ?? hexToLinear( colors[ part.name ]! ) ] ) );
 	const plantCardGenerator = preparedData.textureGenerators?.plantCard;
-	if ( plantCardGenerator?.type === 'flowers-allium-plant-card' ) {
+	if ( plantCardGenerator?.type === 'flowers-allium-plant-card' || plantCardGenerator?.type === 'flowers-calla-plant-card' ) {
 		const petalColor = colors.petal ?? plantCardGenerator.petalColor;
 		const stemColor = colors.stem ?? plantCardGenerator.stemColor;
 		if ( petalColor !== plantCardGenerator.petalColor || stemColor !== plantCardGenerator.stemColor ) {

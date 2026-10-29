@@ -20,6 +20,13 @@ export const LOD3_IMPOSTOR_VIEWS = [
 	LOD4_IMPOSTOR_VIEWS[ 1 ],
 ] as const satisfies readonly ImpostorView[];
 
+export interface ImpostorFootprint {
+	minX: number;
+	maxX: number;
+	minZ: number;
+	maxZ: number;
+}
+
 const linearSrgb = new Float32Array( 256 );
 
 for ( let i = 0; i < 256; i ++ ) {
@@ -132,14 +139,14 @@ function getFootprint( mesh: MeshData | undefined, fallbackRadius: number, minim
 
 }
 
-export function buildBillboard( bounds: { radius: number; height: number }, impostorPartIndex: number, lod0?: MeshData, topHeight = bounds.height * 0.75, includeTopCard = true ): MeshData {
+export function buildBillboard( bounds: { radius: number; height: number }, impostorPartIndex: number, lod0?: MeshData, topHeight = bounds.height * 0.75, includeTopCard = true, topFootprint?: ImpostorFootprint ): MeshData {
 
 	const builder = new MeshBuilder();
 	const radius = bounds.radius;
 	const height = bounds.height;
 	const normalWeight = Math.SQRT1_2;
 	const color: Color3 = [ 1, 1, 1 ];
-	const footprint = includeTopCard ? getFootprint( lod0, radius, topHeight ) : null;
+	const footprint = includeTopCard ? topFootprint ?? getFootprint( lod0, radius, topHeight ) : null;
 
 	builder.beginGroup( impostorPartIndex );
 
@@ -174,7 +181,7 @@ export function buildSixPlaneImpostor(
 	partIndex: number,
 	lod0?: MeshData,
 	topHeight = height * 0.25,
-	options: { yawAngles?: readonly number[]; includeTopCard?: boolean } = {},
+	options: { yawAngles?: readonly number[]; includeTopCard?: boolean; topFootprint?: ImpostorFootprint } = {},
 ): MeshData {
 
 	const builder = new MeshBuilder();
@@ -184,7 +191,7 @@ export function buildSixPlaneImpostor(
 	const yawAngles = options.yawAngles ?? LOD3_IMPOSTOR_YAW_ANGLES;
 	const includeTopCard = options.includeTopCard ?? true;
 	const tileCount = yawAngles.length + ( includeTopCard ? 1 : 0 );
-	const footprint = includeTopCard ? getFootprint( lod0, radius, topHeight ) : null;
+	const footprint = includeTopCard ? options.topFootprint ?? getFootprint( lod0, radius, topHeight ) : null;
 	builder.beginGroup( partIndex );
 
 	for ( let view = 0; view < yawAngles.length; view ++ ) {
@@ -241,7 +248,13 @@ function resolveImpostorView( view: ImpostorViewInput ): ImpostorView {
 
 }
 
-function createViewProjection( data: VegetationData, mesh: MeshData, input: ImpostorViewInput ): ViewProjection {
+function isIndexInRanges( index: number, ranges: readonly { start: number; count: number }[] | undefined ): boolean {
+
+	return ranges?.some( ( range ) => index >= range.start && index < range.start + range.count ) ?? false;
+
+}
+
+function createViewProjection( bounds: VegetationData['bounds'], mesh: MeshData, input: ImpostorViewInput, excludedIndexRanges: readonly { start: number; count: number }[] = [] ): ViewProjection {
 
 	const view = resolveImpostorView( input );
 	const directionLength = Math.hypot( ...view.direction );
@@ -299,14 +312,16 @@ function createViewProjection( data: VegetationData, mesh: MeshData, input: Impo
 
 	if ( Math.abs( direction[ 1 ] ) < 1e-8 && Math.abs( up[ 1 ] ) > 1 - 1e-8 ) {
 
-		minRight = - data.bounds.radius;
-		maxRight = data.bounds.radius;
+		minRight = - bounds.radius;
+		maxRight = bounds.radius;
 		minUp = 0;
-		maxUp = data.bounds.height;
+		maxUp = bounds.height;
 
 	} else {
 
 		for ( let triangle = 0; triangle < mesh.indices.length; triangle += 3 ) {
+
+			if ( isIndexInRanges( triangle, excludedIndexRanges ) ) continue;
 
 			const projected: [ number, number ][] = [];
 
@@ -368,6 +383,18 @@ function createViewProjection( data: VegetationData, mesh: MeshData, input: Impo
 
 }
 
+export function getImpostorProjectionWindow( bounds: VegetationData['bounds'], mesh: MeshData, view: ImpostorView ): Pick<ViewProjection, 'minRight' | 'maxRight' | 'minUp' | 'maxUp'> {
+
+	const projection = createViewProjection( bounds, mesh, view );
+	return {
+		minRight: projection.minRight,
+		maxRight: projection.maxRight,
+		minUp: projection.minUp,
+		maxUp: projection.maxUp,
+	};
+
+}
+
 /** 指定した視線方向の正射影を横並びに焼きます。 */
 export function bakeImpostor( data: VegetationData, colors: Color3[], size: number, viewInputs: readonly ImpostorViewInput[] = [ 0, Math.PI / 2 ] ): TextureData {
 
@@ -382,6 +409,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 	const image = new Uint8Array( width * height * 4 );
 	const depthBuffer = new Float32Array( width * height );
 	const mesh = data.lods[ 0 ]!;
+	const excludedIndexRanges = data.parts.flatMap( ( part ) => part.impostorBakeExcludeIndexRanges ?? [] );
 	const lightX = 0.4 / Math.hypot( 0.4, 0.8, 0.45 );
 	const lightY = 0.8 / Math.hypot( 0.4, 0.8, 0.45 );
 	const lightZ = 0.45 / Math.hypot( 0.4, 0.8, 0.45 );
@@ -390,7 +418,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	for ( let view = 0; view < viewInputs.length; view ++ ) {
 
-		const projection = createViewProjection( data, mesh, viewInputs[ view ]! );
+		const projection = createViewProjection( data.bounds, mesh, viewInputs[ view ]!, excludedIndexRanges );
 
 		for ( const group of mesh.groups ) {
 
@@ -400,6 +428,8 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 			const texture = part.texture === null ? null : data.textures[ part.texture ] ?? null;
 
 			for ( let i = group.start; i < group.start + group.count; i += 3 ) {
+
+				if ( isIndexInRanges( i, part.impostorBakeExcludeIndexRanges ) ) continue;
 
 				rasterizeTriangle( data, mesh, i, size, width, view, projection, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
 
