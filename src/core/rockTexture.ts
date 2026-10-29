@@ -6,7 +6,8 @@ import { createGradientNoise3D, createNoise3D } from './noise';
 type NoiseSampler = ( u: number, v: number ) => number;
 
 interface NoiseField extends NoiseSampler {
-	atPixel( x: number, y: number ): number;
+	fillPixelRow( y: number, output: Float64Array ): void;
+	sampleUnit( u: number, v: number ): number;
 }
 
 interface PixelAxisSamples {
@@ -187,29 +188,41 @@ function getMeshTextureKey( mesh: MeshData ): string {
 function rasterizeRockSurfaceNormals( mesh: MeshData, size: number, normals: Float32Array ): void {
 
 	const covered = new Uint8Array( size * size );
-	const counts = new Uint8Array( size * size );
 
 	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
 
-		const vertices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
-		const uvs = vertices.map( ( vertex ) => [ mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! ] as [ number, number ] );
-		const minimumU = Math.min( ...uvs.map( ( uv ) => uv[ 0 ] ) );
-		const maximumU = Math.max( ...uvs.map( ( uv ) => uv[ 0 ] ) );
+		const firstVertex = mesh.indices[ offset ]!;
+		const secondVertex = mesh.indices[ offset + 1 ]!;
+		const thirdVertex = mesh.indices[ offset + 2 ]!;
+		let firstU = mesh.uvs[ firstVertex * 2 ]!;
+		const firstV = mesh.uvs[ firstVertex * 2 + 1 ]!;
+		let secondU = mesh.uvs[ secondVertex * 2 ]!;
+		const secondV = mesh.uvs[ secondVertex * 2 + 1 ]!;
+		let thirdU = mesh.uvs[ thirdVertex * 2 ]!;
+		const thirdV = mesh.uvs[ thirdVertex * 2 + 1 ]!;
+		const minimumU = Math.min( firstU, secondU, thirdU );
+		const maximumU = Math.max( firstU, secondU, thirdU );
 
 		if ( maximumU - minimumU > 0.5 ) {
-			for ( const uv of uvs ) if ( uv[ 0 ] <= 0.5 ) uv[ 0 ] += 1;
+			if ( firstU <= 0.5 ) firstU += 1;
+			if ( secondU <= 0.5 ) secondU += 1;
+			if ( thirdU <= 0.5 ) thirdU += 1;
 		}
 
-		const first = uvs[ 0 ]!;
-		const second = uvs[ 1 ]!;
-		const third = uvs[ 2 ]!;
-		const determinant = ( second[ 1 ] - third[ 1 ] ) * ( first[ 0 ] - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( first[ 1 ] - third[ 1 ] );
+		const determinant = ( secondV - thirdV ) * ( firstU - thirdU ) + ( thirdU - secondU ) * ( firstV - thirdV );
 		if ( Math.abs( determinant ) < 1e-10 ) continue;
 
-		const minimumX = Math.floor( Math.min( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
-		const maximumX = Math.ceil( Math.max( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
-		const minimumY = Math.max( 0, Math.floor( Math.min( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
-		const maximumY = Math.min( size - 1, Math.ceil( Math.max( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
+		const minimumX = Math.floor( Math.min( firstU, secondU, thirdU ) * size );
+		const maximumX = Math.ceil( Math.max( firstU, secondU, thirdU ) * size );
+		const minimumY = Math.max( 0, Math.floor( Math.min( firstV, secondV, thirdV ) * size ) );
+		const maximumY = Math.min( size - 1, Math.ceil( Math.max( firstV, secondV, thirdV ) * size ) );
+		const secondVMinusThirdV = secondV - thirdV;
+		const thirdUMinusSecondU = thirdU - secondU;
+		const thirdVMinusFirstV = thirdV - firstV;
+		const firstUMinusThirdU = firstU - thirdU;
+		const firstNormal = firstVertex * 3;
+		const secondNormal = secondVertex * 3;
+		const thirdNormal = thirdVertex * 3;
 
 		for ( let y = minimumY; y <= maximumY; y ++ ) {
 
@@ -218,43 +231,40 @@ function rasterizeRockSurfaceNormals( mesh: MeshData, size: number, normals: Flo
 			for ( let x = minimumX; x <= maximumX; x ++ ) {
 
 				const u = ( x + 0.5 ) / size;
-				const firstWeight = ( ( second[ 1 ] - third[ 1 ] ) * ( u - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
-				const secondWeight = ( ( third[ 1 ] - first[ 1 ] ) * ( u - third[ 0 ] ) + ( first[ 0 ] - third[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
+				const firstWeight = ( secondVMinusThirdV * ( u - thirdU ) + thirdUMinusSecondU * ( v - thirdV ) ) / determinant;
+				const secondWeight = ( thirdVMinusFirstV * ( u - thirdU ) + firstUMinusThirdU * ( v - thirdV ) ) / determinant;
 				const thirdWeight = 1 - firstWeight - secondWeight;
 				if ( firstWeight < - 0.001 || secondWeight < - 0.001 || thirdWeight < - 0.001 ) continue;
 
-				const normal: Vec3 = [ 0, 0, 0 ];
-
-				for ( let corner = 0; corner < 3; corner ++ ) {
-
-					const vertex = vertices[ corner ]! * 3;
-					const weight = corner === 0 ? firstWeight : corner === 1 ? secondWeight : thirdWeight;
-					normal[ 0 ] += mesh.normals[ vertex ]! * weight;
-					normal[ 1 ] += mesh.normals[ vertex + 1 ]! * weight;
-					normal[ 2 ] += mesh.normals[ vertex + 2 ]! * weight;
-
-				}
-
-				const length = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) || 1;
+				let normalX = 0;
+				let normalY = 0;
+				let normalZ = 0;
+				normalX += mesh.normals[ firstNormal ]! * firstWeight;
+				normalY += mesh.normals[ firstNormal + 1 ]! * firstWeight;
+				normalZ += mesh.normals[ firstNormal + 2 ]! * firstWeight;
+				normalX += mesh.normals[ secondNormal ]! * secondWeight;
+				normalY += mesh.normals[ secondNormal + 1 ]! * secondWeight;
+				normalZ += mesh.normals[ secondNormal + 2 ]! * secondWeight;
+				normalX += mesh.normals[ thirdNormal ]! * thirdWeight;
+				normalY += mesh.normals[ thirdNormal + 1 ]! * thirdWeight;
+				normalZ += mesh.normals[ thirdNormal + 2 ]! * thirdWeight;
+				const length = Math.hypot( normalX, normalY, normalZ ) || 1;
 				const pixelX = ( ( x % size ) + size ) % size;
 				const pixel = y * size + pixelX;
 				const normalOffset = pixel * 3;
 
 				if ( covered[ pixel ] === 0 ) {
 
-					normals[ normalOffset ] = normal[ 0 ] / length;
-					normals[ normalOffset + 1 ] = normal[ 1 ] / length;
-					normals[ normalOffset + 2 ] = normal[ 2 ] / length;
+					normals[ normalOffset ] = normalX / length;
+					normals[ normalOffset + 1 ] = normalY / length;
+					normals[ normalOffset + 2 ] = normalZ / length;
 					covered[ pixel ] = 1;
-					counts[ pixel ] = 1;
 
 				} else {
 
-					const count = counts[ pixel ]!;
-					normals[ normalOffset ] = normals[ normalOffset ]! + normal[ 0 ] / length;
-					normals[ normalOffset + 1 ] = normals[ normalOffset + 1 ]! + normal[ 1 ] / length;
-					normals[ normalOffset + 2 ] = normals[ normalOffset + 2 ]! + normal[ 2 ] / length;
-					counts[ pixel ] = Math.min( count + 1, 255 );
+					normals[ normalOffset ] = normals[ normalOffset ]! + normalX / length;
+					normals[ normalOffset + 1 ] = normals[ normalOffset + 1 ]! + normalY / length;
+					normals[ normalOffset + 2 ] = normals[ normalOffset + 2 ]! + normalZ / length;
 
 				}
 
@@ -264,51 +274,69 @@ function rasterizeRockSurfaceNormals( mesh: MeshData, size: number, normals: Flo
 
 	}
 
+	let unfilledPixels: number[] = [];
+	for ( let pixel = 0; pixel < covered.length; pixel ++ ) {
+		if ( covered[ pixel ] === 0 ) unfilledPixels.push( pixel );
+	}
+
 	for ( let pass = 0; pass < 3; pass ++ ) {
 
 		const previousCoverage = covered.slice();
-		const filled: { pixel: number; normal: Vec3 }[] = [];
+		const nextUnfilledPixels: number[] = [];
 
-		for ( let y = 0; y < size; y ++ ) {
+		for ( const pixel of unfilledPixels ) {
 
-			for ( let x = 0; x < size; x ++ ) {
-
-				const pixel = y * size + x;
-				if ( previousCoverage[ pixel ] !== 0 ) continue;
-				const adjacent = [
-					y > 0 ? pixel - size : - 1,
-					y + 1 < size ? pixel + size : - 1,
-					y * size + ( x === 0 ? size - 1 : x - 1 ),
-					y * size + ( x + 1 === size ? 0 : x + 1 ),
-				].filter( ( neighbor ) => neighbor >= 0 && previousCoverage[ neighbor ] !== 0 );
-
-				if ( adjacent.length === 0 ) continue;
-				const normal: Vec3 = [ 0, 0, 0 ];
-
-				for ( const neighbor of adjacent ) {
-
-					normal[ 0 ] += normals[ neighbor * 3 ]! / adjacent.length;
-					normal[ 1 ] += normals[ neighbor * 3 + 1 ]! / adjacent.length;
-					normal[ 2 ] += normals[ neighbor * 3 + 2 ]! / adjacent.length;
-
-				}
-
-				const length = Math.hypot( normal[ 0 ], normal[ 1 ], normal[ 2 ] ) || 1;
-				filled.push( { pixel, normal: [ normal[ 0 ] / length, normal[ 1 ] / length, normal[ 2 ] / length ] } );
-
+			if ( previousCoverage[ pixel ] !== 0 ) continue;
+			const y = Math.floor( pixel / size );
+			const x = pixel - y * size;
+			const above = y > 0 ? pixel - size : - 1;
+			const below = y + 1 < size ? pixel + size : - 1;
+			const left = y * size + ( x === 0 ? size - 1 : x - 1 );
+			const right = y * size + ( x + 1 === size ? 0 : x + 1 );
+			let adjacentCount = 0;
+			if ( above >= 0 && previousCoverage[ above ] !== 0 ) adjacentCount ++;
+			if ( below >= 0 && previousCoverage[ below ] !== 0 ) adjacentCount ++;
+			if ( previousCoverage[ left ] !== 0 ) adjacentCount ++;
+			if ( previousCoverage[ right ] !== 0 ) adjacentCount ++;
+			if ( adjacentCount === 0 ) {
+				nextUnfilledPixels.push( pixel );
+				continue;
 			}
 
-		}
+			let normalX = 0;
+			let normalY = 0;
+			let normalZ = 0;
+			if ( above >= 0 && previousCoverage[ above ] !== 0 ) {
+				normalX += normals[ above * 3 ]! / adjacentCount;
+				normalY += normals[ above * 3 + 1 ]! / adjacentCount;
+				normalZ += normals[ above * 3 + 2 ]! / adjacentCount;
+			}
+			if ( below >= 0 && previousCoverage[ below ] !== 0 ) {
+				normalX += normals[ below * 3 ]! / adjacentCount;
+				normalY += normals[ below * 3 + 1 ]! / adjacentCount;
+				normalZ += normals[ below * 3 + 2 ]! / adjacentCount;
+			}
+			if ( previousCoverage[ left ] !== 0 ) {
+				normalX += normals[ left * 3 ]! / adjacentCount;
+				normalY += normals[ left * 3 + 1 ]! / adjacentCount;
+				normalZ += normals[ left * 3 + 2 ]! / adjacentCount;
+			}
+			if ( previousCoverage[ right ] !== 0 ) {
+				normalX += normals[ right * 3 ]! / adjacentCount;
+				normalY += normals[ right * 3 + 1 ]! / adjacentCount;
+				normalZ += normals[ right * 3 + 2 ]! / adjacentCount;
+			}
 
-		for ( const { pixel, normal } of filled ) {
-
-			normals[ pixel * 3 ] = normal[ 0 ];
-			normals[ pixel * 3 + 1 ] = normal[ 1 ];
-			normals[ pixel * 3 + 2 ] = normal[ 2 ];
+			const length = Math.hypot( normalX, normalY, normalZ ) || 1;
+			const offset = pixel * 3;
+			normals[ offset ] = normalX / length;
+			normals[ offset + 1 ] = normalY / length;
+			normals[ offset + 2 ] = normalZ / length;
 			covered[ pixel ] = 1;
 
 		}
 
+		unfilledPixels = nextUnfilledPixels;
 	}
 
 	for ( let pixel = 0; pixel < covered.length; pixel ++ ) {
@@ -408,25 +436,38 @@ function rasterizeRockMossSurface( mesh: MeshData, size: number, positions: Floa
 
 	for ( let offset = 0; offset < mesh.indices.length; offset += 3 ) {
 
-		const vertices = [ mesh.indices[ offset ]!, mesh.indices[ offset + 1 ]!, mesh.indices[ offset + 2 ]! ];
-		const uvs = vertices.map( ( vertex ) => [ mesh.uvs[ vertex * 2 ]!, mesh.uvs[ vertex * 2 + 1 ]! ] as [ number, number ] );
-		const minimumU = Math.min( ...uvs.map( ( uv ) => uv[ 0 ] ) );
-		const maximumU = Math.max( ...uvs.map( ( uv ) => uv[ 0 ] ) );
+		const firstVertex = mesh.indices[ offset ]!;
+		const secondVertex = mesh.indices[ offset + 1 ]!;
+		const thirdVertex = mesh.indices[ offset + 2 ]!;
+		let firstU = mesh.uvs[ firstVertex * 2 ]!;
+		const firstV = mesh.uvs[ firstVertex * 2 + 1 ]!;
+		let secondU = mesh.uvs[ secondVertex * 2 ]!;
+		const secondV = mesh.uvs[ secondVertex * 2 + 1 ]!;
+		let thirdU = mesh.uvs[ thirdVertex * 2 ]!;
+		const thirdV = mesh.uvs[ thirdVertex * 2 + 1 ]!;
+		const minimumU = Math.min( firstU, secondU, thirdU );
+		const maximumU = Math.max( firstU, secondU, thirdU );
 
 		if ( maximumU - minimumU > 0.5 ) {
-			for ( const uv of uvs ) if ( uv[ 0 ] <= 0.5 ) uv[ 0 ] += 1;
+			if ( firstU <= 0.5 ) firstU += 1;
+			if ( secondU <= 0.5 ) secondU += 1;
+			if ( thirdU <= 0.5 ) thirdU += 1;
 		}
 
-		const first = uvs[ 0 ]!;
-		const second = uvs[ 1 ]!;
-		const third = uvs[ 2 ]!;
-		const determinant = ( second[ 1 ] - third[ 1 ] ) * ( first[ 0 ] - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( first[ 1 ] - third[ 1 ] );
+		const determinant = ( secondV - thirdV ) * ( firstU - thirdU ) + ( thirdU - secondU ) * ( firstV - thirdV );
 		if ( Math.abs( determinant ) < 1e-10 ) continue;
 
-		const minimumX = Math.floor( Math.min( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
-		const maximumX = Math.ceil( Math.max( first[ 0 ], second[ 0 ], third[ 0 ] ) * size );
-		const minimumV = Math.max( 0, Math.floor( Math.min( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
-		const maximumV = Math.min( size - 1, Math.ceil( Math.max( first[ 1 ], second[ 1 ], third[ 1 ] ) * size ) );
+		const minimumX = Math.floor( Math.min( firstU, secondU, thirdU ) * size );
+		const maximumX = Math.ceil( Math.max( firstU, secondU, thirdU ) * size );
+		const minimumV = Math.max( 0, Math.floor( Math.min( firstV, secondV, thirdV ) * size ) );
+		const maximumV = Math.min( size - 1, Math.ceil( Math.max( firstV, secondV, thirdV ) * size ) );
+		const secondVMinusThirdV = secondV - thirdV;
+		const thirdUMinusSecondU = thirdU - secondU;
+		const thirdVMinusFirstV = thirdV - firstV;
+		const firstUMinusThirdU = firstU - thirdU;
+		const firstOffset = firstVertex * 3;
+		const secondOffset = secondVertex * 3;
+		const thirdOffset = thirdVertex * 3;
 
 		for ( let y = minimumV; y <= maximumV; y ++ ) {
 
@@ -434,8 +475,8 @@ function rasterizeRockMossSurface( mesh: MeshData, size: number, positions: Floa
 			for ( let x = minimumX; x <= maximumX; x ++ ) {
 
 				const u = ( x + 0.5 ) / size;
-				const firstWeight = ( ( second[ 1 ] - third[ 1 ] ) * ( u - third[ 0 ] ) + ( third[ 0 ] - second[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
-				const secondWeight = ( ( third[ 1 ] - first[ 1 ] ) * ( u - third[ 0 ] ) + ( first[ 0 ] - third[ 0 ] ) * ( v - third[ 1 ] ) ) / determinant;
+				const firstWeight = ( secondVMinusThirdV * ( u - thirdU ) + thirdUMinusSecondU * ( v - thirdV ) ) / determinant;
+				const secondWeight = ( thirdVMinusFirstV * ( u - thirdU ) + firstUMinusThirdU * ( v - thirdV ) ) / determinant;
 				const thirdWeight = 1 - firstWeight - secondWeight;
 				if ( firstWeight < - 0.001 || secondWeight < - 0.001 || thirdWeight < - 0.001 ) continue;
 
@@ -452,22 +493,33 @@ function rasterizeRockMossSurface( mesh: MeshData, size: number, positions: Floa
 				let facingX = 0;
 				let facingY = 0;
 				let facingZ = 0;
-				for ( let corner = 0; corner < 3; corner ++ ) {
-
-					const vertex = vertices[ corner ]!;
-					const weight = corner === 0 ? firstWeight : corner === 1 ? secondWeight : thirdWeight;
-					const vertexOffset = vertex * 3;
-					positionX += mesh.positions[ vertexOffset ]! * weight;
-					positionY += mesh.positions[ vertexOffset + 1 ]! * weight;
-					positionZ += mesh.positions[ vertexOffset + 2 ]! * weight;
-					normalX += mesh.normals[ vertexOffset ]! * weight;
-					normalY += mesh.normals[ vertexOffset + 1 ]! * weight;
-					normalZ += mesh.normals[ vertexOffset + 2 ]! * weight;
-					facingX += smoothNormals[ vertexOffset ]! * weight;
-					facingY += smoothNormals[ vertexOffset + 1 ]! * weight;
-					facingZ += smoothNormals[ vertexOffset + 2 ]! * weight;
-
-				}
+				positionX += mesh.positions[ firstOffset ]! * firstWeight;
+				positionY += mesh.positions[ firstOffset + 1 ]! * firstWeight;
+				positionZ += mesh.positions[ firstOffset + 2 ]! * firstWeight;
+				normalX += mesh.normals[ firstOffset ]! * firstWeight;
+				normalY += mesh.normals[ firstOffset + 1 ]! * firstWeight;
+				normalZ += mesh.normals[ firstOffset + 2 ]! * firstWeight;
+				facingX += smoothNormals[ firstOffset ]! * firstWeight;
+				facingY += smoothNormals[ firstOffset + 1 ]! * firstWeight;
+				facingZ += smoothNormals[ firstOffset + 2 ]! * firstWeight;
+				positionX += mesh.positions[ secondOffset ]! * secondWeight;
+				positionY += mesh.positions[ secondOffset + 1 ]! * secondWeight;
+				positionZ += mesh.positions[ secondOffset + 2 ]! * secondWeight;
+				normalX += mesh.normals[ secondOffset ]! * secondWeight;
+				normalY += mesh.normals[ secondOffset + 1 ]! * secondWeight;
+				normalZ += mesh.normals[ secondOffset + 2 ]! * secondWeight;
+				facingX += smoothNormals[ secondOffset ]! * secondWeight;
+				facingY += smoothNormals[ secondOffset + 1 ]! * secondWeight;
+				facingZ += smoothNormals[ secondOffset + 2 ]! * secondWeight;
+				positionX += mesh.positions[ thirdOffset ]! * thirdWeight;
+				positionY += mesh.positions[ thirdOffset + 1 ]! * thirdWeight;
+				positionZ += mesh.positions[ thirdOffset + 2 ]! * thirdWeight;
+				normalX += mesh.normals[ thirdOffset ]! * thirdWeight;
+				normalY += mesh.normals[ thirdOffset + 1 ]! * thirdWeight;
+				normalZ += mesh.normals[ thirdOffset + 2 ]! * thirdWeight;
+				facingX += smoothNormals[ thirdOffset ]! * thirdWeight;
+				facingY += smoothNormals[ thirdOffset + 1 ]! * thirdWeight;
+				facingZ += smoothNormals[ thirdOffset + 2 ]! * thirdWeight;
 
 				const normalLength = Math.hypot( normalX, normalY, normalZ ) || 1;
 				const facingLength = Math.hypot( facingX, facingY, facingZ ) || 1;
@@ -785,24 +837,44 @@ function createPeriodicNoise( seed: number, columns: number, rows: number, size:
 		return top * ( 1 - amountY ) + bottom * amountY;
 
 	};
-	const { x0, x1, tx, y0, y1, ty } = getPixelAxisSamples( columns, rows, size );
+	const sampleUnit = ( u: number, v: number ): number => {
 
-	const atPixel = ( x: number, y: number ): number => {
-
-		const topOffset = y0[ y ]! * columns;
-		const bottomOffset = y1[ y ]! * columns;
-		const firstX = x0[ x ]!;
-		const secondX = x1[ x ]!;
-		const amountX = tx[ x ]!;
-		const amountY = ty[ y ]!;
-		const top = values[ topOffset + firstX ]! * ( 1 - amountX ) + values[ topOffset + secondX ]! * amountX;
-		const bottom = values[ bottomOffset + firstX ]! * ( 1 - amountX ) + values[ bottomOffset + secondX ]! * amountX;
+		const gridX = u * columns;
+		const gridY = v * rows;
+		const x = Math.floor( gridX );
+		const y = Math.floor( gridY );
+		const nextX = x + 1 === columns ? 0 : x + 1;
+		const nextY = y + 1 === rows ? 0 : y + 1;
+		const amountX = smoothstep( 0, 1, gridX - x );
+		const amountY = smoothstep( 0, 1, gridY - y );
+		const top = values[ y * columns + x ]! * ( 1 - amountX ) + values[ y * columns + nextX ]! * amountX;
+		const bottom = values[ nextY * columns + x ]! * ( 1 - amountX ) + values[ nextY * columns + nextX ]! * amountX;
 
 		return top * ( 1 - amountY ) + bottom * amountY;
 
 	};
+	const { x0, x1, tx, y0, y1, ty } = getPixelAxisSamples( columns, rows, size );
+	const fillPixelRow = ( y: number, output: Float64Array ): void => {
 
-	return Object.assign( sample, { atPixel } );
+		const topOffset = y0[ y ]! * columns;
+		const bottomOffset = y1[ y ]! * columns;
+		const amountY = ty[ y ]!;
+
+		for ( let x = 0; x < size; x ++ ) {
+
+			const firstX = x0[ x ]!;
+			const secondX = x1[ x ]!;
+			const amountX = tx[ x ]!;
+			const top = values[ topOffset + firstX ]! * ( 1 - amountX ) + values[ topOffset + secondX ]! * amountX;
+			const bottom = values[ bottomOffset + firstX ]! * ( 1 - amountX ) + values[ bottomOffset + secondX ]! * amountX;
+
+			output[ x ] = top * ( 1 - amountY ) + bottom * amountY;
+
+		}
+
+	};
+
+	return Object.assign( sample, { fillPixelRow, sampleUnit } );
 
 }
 
@@ -1154,6 +1226,14 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	const detailMaskNoise = createPeriodicNoise( seedOffset + 113, 3, 3, size );
 	const streakNoise = createPeriodicNoise( seedOffset + 127, 12, 48, size );
 	const facetNormals = [ ...getTextureFacetNormals( shapeSeed, shapeMesh, scoopShape?.shape, scoopShape?.verticalOffset ), [ 0, - 1, 0 ] as Vec3 ];
+	const facetNormalX: number[] = [];
+	const facetNormalY: number[] = [];
+	const facetNormalZ: number[] = [];
+	for ( const normal of facetNormals ) {
+		facetNormalX.push( normal[ 0 ] );
+		facetNormalY.push( normal[ 1 ] );
+		facetNormalZ.push( normal[ 2 ] );
+	}
 	const facetValues: Vec3[] = [];
 	const facetHues: [ number, number, number ][] = [];
 	const facetBrushes: [ number, number ][] = [];
@@ -1175,7 +1255,8 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 		radiusX: 0.016 + chipRandom() * 0.007,
 		radiusY: 0.011 + chipRandom() * 0.005,
 		angle: chipRandom() * Math.PI,
-	} ) );
+	} ) ).map( ( chip ) => ( { ...chip, cosine: Math.cos( chip.angle ), sine: Math.sin( chip.angle ), reach: Math.max( chip.radiusX, chip.radiusY ) * 1.3 } ) );
+	const chipsByRow = Array.from( { length: size }, ( _, y ) => chips.filter( ( chip ) => Math.abs( y / size - chip.v ) <= chip.reach ) );
 	const detailMask = ( u: number, v: number ): number => smoothstep( - 0.25, 0.5, detailMaskNoise( u, v ) + 1 );
 	const frontUv = findRockFrontUv( shapeMesh );
 	const cracks = createRockCrackPaths( seed, dominantAngle, detailMask, frontUv );
@@ -1226,12 +1307,21 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 	const heightMap = new Float32Array( size * size );
 	const albedoData = new Uint8Array( size * size * 4 );
 	const normalData = new Uint8Array( size * size * 4 );
+	const warpNoiseRow = new Float64Array( size );
+	const broadNoiseRow = new Float64Array( size );
+	const mediumNoiseRow = new Float64Array( size );
+	const detailMaskNoiseRow = new Float64Array( size );
 
 	for ( let y = 0; y < size; y ++ ) {
 
 		const v = y / size;
 		const poleFade = smoothstep( 0, 0.075, v ) * smoothstep( 0, 0.075, 1 - v );
 		const rowOffset = y * size;
+		const rowChips = chipsByRow[ y ]!;
+		warpNoise.fillPixelRow( y, warpNoiseRow );
+		broadNoise.fillPixelRow( y, broadNoiseRow );
+		mediumNoise.fillPixelRow( y, mediumNoiseRow );
+		detailMaskNoise.fillPixelRow( y, detailMaskNoiseRow );
 
 		for ( let x = 0; x < size; x ++ ) {
 
@@ -1247,8 +1337,7 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 
 			for ( let facet = 0; facet < facetNormals.length; facet ++ ) {
 
-				const normal = facetNormals[ facet ]!;
-				const dot = normalX * normal[ 0 ] + normalY * normal[ 1 ] + normalZ * normal[ 2 ];
+				const dot = normalX * facetNormalX[ facet ]! + normalY * facetNormalY[ facet ]! + normalZ * facetNormalZ[ facet ]!;
 
 				if ( dot > firstDot ) {
 
@@ -1270,20 +1359,26 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			const facetBlend = smoothstep( 0.0005, 0.009, facetGap );
 			const firstValue = facetValues[ firstFacet ]!;
 			const secondValue = facetValues[ secondFacet ]!;
-			const facetValue = [ 0, 1, 2 ].map( ( channel ) => secondValue[ channel ]! + ( firstValue[ channel ]! - secondValue[ channel ]! ) * facetBlend );
-			const hue = [ 0, 1, 2 ].map( ( channel ) => facetHues[ secondFacet ]![ channel ]! + ( facetHues[ firstFacet ]![ channel ]! - facetHues[ secondFacet ]![ channel ]! ) * facetBlend );
+			const firstHue = facetHues[ firstFacet ]!;
+			const secondHue = facetHues[ secondFacet ]!;
+			const facetValue0 = secondValue[ 0 ] + ( firstValue[ 0 ] - secondValue[ 0 ] ) * facetBlend;
+			const facetValue1 = secondValue[ 1 ] + ( firstValue[ 1 ] - secondValue[ 1 ] ) * facetBlend;
+			const facetValue2 = secondValue[ 2 ] + ( firstValue[ 2 ] - secondValue[ 2 ] ) * facetBlend;
+			const hue0 = secondHue[ 0 ] + ( firstHue[ 0 ] - secondHue[ 0 ] ) * facetBlend;
+			const hue1 = secondHue[ 1 ] + ( firstHue[ 1 ] - secondHue[ 1 ] ) * facetBlend;
+			const hue2 = secondHue[ 2 ] + ( firstHue[ 2 ] - secondHue[ 2 ] ) * facetBlend;
 			const edgeHighlight = edgeHighlightMap[ rowOffset + x ]!;
-			const warp = warpNoise.atPixel( x, y );
+			const warp = warpNoiseRow[ x ]!;
 			const brushDirection = facetBrushes[ firstFacet ]!;
 			const phase = fract( ( brushDirection[ 0 ] * u + brushDirection[ 1 ] * v ) * bandCount + warp * 0.09 );
 			const strata = bandNoise( phase ) * 0.82 + fineBandNoise( fract( phase * 3 + warp * 0.24 ) ) * 0.18;
-			const broad = broadNoise.atPixel( x, y );
-			const medium = mediumNoise.atPixel( x, y );
-			const detail = smoothstep( - 0.25, 0.5, detailMaskNoise.atPixel( x, y ) + 1 );
+			const broad = broadNoiseRow[ x ]!;
+			const medium = mediumNoiseRow[ x ]!;
+			const detail = smoothstep( - 0.25, 0.5, detailMaskNoiseRow[ x ]! + 1 );
 			const localizedStrata = strata * ( 0.25 + detail * 0.75 );
 			const along = fract( brushDirection[ 0 ] * u + brushDirection[ 1 ] * v + warp * 0.015 );
 			const across = fract( - brushDirection[ 1 ] * u + brushDirection[ 0 ] * v + warp * 0.02 );
-			const fineStreak = ( 1 - smoothstep( 0.18, 0.75, streakNoise( along, across ) + 1 ) ) * detail;
+			const fineStreak = ( 1 - smoothstep( 0.18, 0.75, streakNoise.sampleUnit( along, across ) + 1 ) ) * detail;
 			const crackIndex = rowOffset + x;
 			const crackDistance = Math.sqrt( crackDistances.distances[ crackIndex ]! );
 			const crackCore = 1 - smoothstep( 0.12, 0.78, crackDistance );
@@ -1297,13 +1392,14 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			let chipCore = 0;
 			let chipRim = 0;
 
-			for ( const chip of chips ) {
+			for ( const chip of rowChips ) {
 
+				const deltaV = v - chip.v;
 				const rawDeltaU = Math.abs( u - chip.u );
 				const deltaU = Math.min( rawDeltaU, 1 - rawDeltaU );
-				const deltaV = v - chip.v;
-				const cosine = Math.cos( chip.angle );
-				const sine = Math.sin( chip.angle );
+				if ( deltaU > chip.reach ) continue;
+				const cosine = chip.cosine;
+				const sine = chip.sine;
 				const chipX = ( deltaU * cosine + deltaV * sine ) / chip.radiusX;
 				const chipY = ( - deltaU * sine + deltaV * cosine ) / chip.radiusY;
 				const chipDistance = Math.hypot( chipX, chipY );
@@ -1319,9 +1415,9 @@ export function createRockTextures( seed: number, size = 1024, shapeSeed = seed,
 			const index = crackIndex;
 
 			heightMap[ index ] = broad * 0.014 + medium * 0.008 - fineStreak * 0.0003 - chipCore * 0.004 + chipRim * 0.001 - fineCrack * 0.014 - fineCrackEdge * 0.002 + fineCrackRim * 0.006;
-			albedoData[ index * 4 ] = Math.round( clamp( facetValue[ 0 ]! * ( 1 + edgeHighlight * 0.14 ) + textureVariation + hue[ 0 ]!, 0, 255 ) );
-			albedoData[ index * 4 + 1 ] = Math.round( clamp( facetValue[ 1 ]! * ( 1 + edgeHighlight * 0.14 ) + textureVariation + hue[ 1 ]!, 0, 255 ) );
-			albedoData[ index * 4 + 2 ] = Math.round( clamp( facetValue[ 2 ]! * ( 1 + edgeHighlight * 0.14 ) + textureVariation + hue[ 2 ]!, 0, 255 ) );
+			albedoData[ index * 4 ] = Math.round( clamp( facetValue0 * ( 1 + edgeHighlight * 0.14 ) + textureVariation + hue0, 0, 255 ) );
+			albedoData[ index * 4 + 1 ] = Math.round( clamp( facetValue1 * ( 1 + edgeHighlight * 0.14 ) + textureVariation + hue1, 0, 255 ) );
+			albedoData[ index * 4 + 2 ] = Math.round( clamp( facetValue2 * ( 1 + edgeHighlight * 0.14 ) + textureVariation + hue2, 0, 255 ) );
 			albedoData[ index * 4 + 3 ] = 255;
 
 		}
