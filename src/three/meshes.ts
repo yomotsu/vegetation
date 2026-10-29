@@ -11,7 +11,7 @@ import { generatePebblesData } from '../core/generators/pebbles';
 import type { GrassOptions } from '../core/generators/grass';
 import { DEFAULT_BLADE_COLOR, generateGrassData } from '../core/generators/grass';
 import type { FlowersOptions } from '../core/generators/flowers';
-import { DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_PETAL_COLOR, generateFlowersData } from '../core/generators/flowers';
+import { DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_BLUEBELL_CENTER_COLOR, DEFAULT_BLUEBELL_COUNT, DEFAULT_BLUEBELL_HEIGHT, DEFAULT_BLUEBELL_PETAL_COLOR, DEFAULT_BLUEBELL_SPREAD, DEFAULT_CALLA_CENTER_COLOR, DEFAULT_CALLA_COUNT, DEFAULT_CALLA_HEIGHT, DEFAULT_CALLA_PETAL_COLOR, DEFAULT_CALLA_SPREAD, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_FLOWERS_COUNT, DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_POPPY_CENTER_COLOR, DEFAULT_POPPY_COUNT, DEFAULT_POPPY_HEIGHT, DEFAULT_POPPY_PETAL_COLOR, DEFAULT_POPPY_SPREAD, DEFAULT_PRIMROSE_CENTER_COLOR, DEFAULT_PRIMROSE_COUNT, DEFAULT_PRIMROSE_HEIGHT, DEFAULT_PRIMROSE_PETAL_COLOR, DEFAULT_PRIMROSE_SPREAD, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_COUNT, DEFAULT_TULIP_PETAL_COLOR, generateFlowersData } from '../core/generators/flowers';
 import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
 import { DEFAULT_MOSS_COLOR } from '../core/rockTexture';
 import { DEFAULT_BARK_COLOR } from '../core/barkTexture';
@@ -127,14 +127,17 @@ function normalizeGrassOptions( options: GrassMeshOptions ): ReturnType<typeof n
 function normalizeFlowersOptions( options: FlowersMeshOptions ): ReturnType<typeof normalizeFlowersGenerationOptions> {
 
 	const variety = options.variety ?? 'allium';
-	const defaultPetalColor = variety === 'allium' ? DEFAULT_ALLIUM_PETAL_COLOR : variety === 'daisy' ? DEFAULT_DAISY_PETAL_COLOR : DEFAULT_TULIP_PETAL_COLOR;
-	const defaultCenterColor = variety === 'allium' ? DEFAULT_ALLIUM_CENTER_COLOR : variety === 'daisy' ? DEFAULT_DAISY_CENTER_COLOR : DEFAULT_TULIP_CENTER_COLOR;
+	const count = options.count ?? ( variety === 'allium' || variety === 'daisy' ? DEFAULT_FLOWERS_COUNT : variety === 'tulip' ? DEFAULT_TULIP_COUNT : variety === 'poppy' ? DEFAULT_POPPY_COUNT : variety === 'bluebell' ? DEFAULT_BLUEBELL_COUNT : variety === 'calla' ? DEFAULT_CALLA_COUNT : DEFAULT_PRIMROSE_COUNT );
+	const spread = options.spread ?? ( variety === 'allium' ? 0.29 : variety === 'daisy' ? 0.37 : variety === 'tulip' ? 0.3 : variety === 'poppy' ? DEFAULT_POPPY_SPREAD : variety === 'bluebell' ? DEFAULT_BLUEBELL_SPREAD : variety === 'calla' ? DEFAULT_CALLA_SPREAD : DEFAULT_PRIMROSE_SPREAD );
+	const height = options.height ?? ( variety === 'allium' ? 0.37 : variety === 'daisy' ? 0.285 : variety === 'tulip' ? 0.36 : variety === 'poppy' ? DEFAULT_POPPY_HEIGHT : variety === 'bluebell' ? DEFAULT_BLUEBELL_HEIGHT : variety === 'calla' ? DEFAULT_CALLA_HEIGHT : DEFAULT_PRIMROSE_HEIGHT );
+	const defaultPetalColor = variety === 'allium' ? DEFAULT_ALLIUM_PETAL_COLOR : variety === 'daisy' ? DEFAULT_DAISY_PETAL_COLOR : variety === 'tulip' ? DEFAULT_TULIP_PETAL_COLOR : variety === 'poppy' ? DEFAULT_POPPY_PETAL_COLOR : variety === 'bluebell' ? DEFAULT_BLUEBELL_PETAL_COLOR : variety === 'calla' ? DEFAULT_CALLA_PETAL_COLOR : DEFAULT_PRIMROSE_PETAL_COLOR;
+	const defaultCenterColor = variety === 'allium' ? DEFAULT_ALLIUM_CENTER_COLOR : variety === 'daisy' ? DEFAULT_DAISY_CENTER_COLOR : variety === 'tulip' ? DEFAULT_TULIP_CENTER_COLOR : variety === 'poppy' ? DEFAULT_POPPY_CENTER_COLOR : variety === 'bluebell' ? DEFAULT_BLUEBELL_CENTER_COLOR : variety === 'calla' ? DEFAULT_CALLA_CENTER_COLOR : DEFAULT_PRIMROSE_CENTER_COLOR;
 	return normalizeFlowersGenerationOptions( {
 		seed: options.seed,
 		variety,
-		count: options.count,
-		spread: options.spread,
-		height: options.height,
+		count,
+		spread,
+		height,
 		petalColor: colorHex( options.petalColor, defaultPetalColor ),
 		centerColor: colorHex( options.centerColor, defaultCenterColor ),
 		stemColor: colorHex( options.stemColor, DEFAULT_FLOWERS_STEM_COLOR ),
@@ -365,7 +368,8 @@ export class FlowersMesh extends VegetationMesh {
 
 	static createLOD( options: FlowersMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
-		const defaultHeight = options.height ?? ( options.variety === 'daisy' ? 0.285 : options.variety === 'tulip' ? 0.36 : 0.37 );
+		const variety = options.variety ?? 'allium';
+		const defaultHeight = options.height ?? ( variety === 'daisy' ? 0.285 : variety === 'tulip' ? 0.36 : variety === 'poppy' ? DEFAULT_POPPY_HEIGHT : variety === 'bluebell' ? DEFAULT_BLUEBELL_HEIGHT : variety === 'calla' ? DEFAULT_CALLA_HEIGHT : variety === 'primrose' ? DEFAULT_PRIMROSE_HEIGHT : 0.37 );
 		const distancesForHeight = [ 0, 1, 2, 4, 8 ].map( ( distance ) => distance * defaultHeight / 0.43 );
 		return VegetationMesh.fromAsset( generateFlowers( options ), distances ?? distancesForHeight, true );
 
