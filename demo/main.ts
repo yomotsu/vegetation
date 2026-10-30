@@ -101,7 +101,7 @@ scene.add( root );
 const state: DemoState = {
 	kind: kinds[ 0 ]!.name,
 	mode: 'compare',
-	compression: false,
+	compression: true,
 	lod: 0,
 	wireframe: false,
 	collider: false,
@@ -815,7 +815,7 @@ function createGui(): void {
 		void rebuildAsset();
 
 	} );
-	gui.add( state, 'compression' ).name( 'UASTC textures' ).onChange( () => void rebuildAsset() );
+	const compressionController = gui.add( state, 'compression' ).name( 'UASTC textures' ).onChange( () => void rebuildAsset() );
 	const lodController = gui.add( state, 'lod', 0, 4, 1 ).name( 'LOD' ).onChange( () => {
 
 		if ( state.mode === 'single' ) {
@@ -855,6 +855,8 @@ function createGui(): void {
 	const updateViewControls = (): void => {
 
 		lodController.show( state.mode === 'single' );
+		// compression 表示は左右とも固定（左 RGBA / 右 UASTC）なので、切り替えを隠す。
+		compressionController.show( state.mode !== 'compression' );
 		scatterCountController.show( state.mode === 'scatter' && activeKind.name !== 'Grass' );
 		seedVariantsController.show( state.mode === 'scatter' );
 
