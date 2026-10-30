@@ -880,14 +880,14 @@ describe( 'flowers core generator', () => {
 		const firstStemGroup = lod0!.groups.find( ( group ) => group.partIndex === 1 )!;
 		const firstStemVertex = Math.min( ...lod0!.indices.slice( firstStemGroup.start, firstStemGroup.start + firstStemGroup.count ) );
 		const firstStemBase = cardRowCenter( lod0!, firstStemVertex, 0 );
-		const firstStemTop = cardRowCenter( lod0!, firstStemVertex, 2 );
+		const firstStemTop = cardRowCenter( lod0!, firstStemVertex, 3 );
 		const hookDirection = [ firstStemTop[ 0 ] - firstStemBase[ 0 ], firstStemTop[ 2 ] - firstStemBase[ 2 ] ];
 		const directionDot = ( firstCardDirection[ 0 ]! * hookDirection[ 0 ]! + firstCardDirection[ 1 ]! * hookDirection[ 1 ]! ) / ( Math.hypot( ...firstCardDirection ) * Math.hypot( ...hookDirection ) );
 		expect( Math.abs( directionDot ) ).toBeGreaterThan( 0.99 );
 
 		const prepared = prepareVegetationAsset( data, {}, 128 );
 		expect( prepared.data.textures.plantCard!.mipmaps!.length ).toBeGreaterThan( 0 );
-		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.width ).toBe( 64 );
+		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.width ).toBe( 128 );
 		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.height ).toBe( 256 );
 
 	} );
