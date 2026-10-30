@@ -5,7 +5,7 @@ import type { Random } from '../random';
 import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 import type { NormalizedVegetationGeneration } from '../vegetationGeneration';
 import { createLeafSprayTextures, createStylizedBarkTextures, LEAF_SPRAY_TEXTURE_SIZE } from './stylizedTextures';
-import { addFoliageLobeCards, addStylizedLimb, addVec3, cloneMeshData, createRootFlaredTrunkSpine, getMeshBoundsRadius, getStylizedRootDepth, normalizeVec3, scaleVec3, subtractVec3 } from './stylized';
+import { addFoliageLobeCards, addStylizedLimb, addVec3, buildStylizedImpostorLods, createRootFlaredTrunkSpine, createStylizedImpostorParts, getMeshBoundsRadius, getMeshTop, getStylizedRootDepth, normalizeVec3, scaleMeshPositions, scaleVec3, subtractVec3 } from './stylized';
 import type { FoliageLobe } from './stylized';
 
 export interface BroadleafTreeOptions {
@@ -21,8 +21,6 @@ export const DEFAULT_BROADLEAF_TREE_BARK_COLOR = 0x8a7350;
 
 const barkPartIndex = 0;
 const leafPartIndex = 1;
-const innerCardCount = 50;
-const outerCardCount = 56;
 
 // 樹冠は数個の球（ローブ）の集まり。頂上に 1 個、残りはその周りに少し低く並べる。
 function createLobes( random: Random, height: number, crownCenter: Vec3, splitY: number ): FoliageLobe[] {
@@ -67,7 +65,7 @@ function limbCurveToLobe( random: Random, base: Vec3, lobe: FoliageLobe ): Vec3[
  * ほかの枝は分かれ目の少し下で幹の中から細めに生やし、幹に沿って少し立ち上がってから外へ出す。
  * 幹の外へ自然に分かれて見え、管同士の重なりは付け根の短い区間だけになる。
  */
-function addTrunkAndLimbs( builder: MeshBuilder, random: Random, trunk: { spine: Vec3[]; radii: number[] }, lobes: readonly FoliageLobe[], height: number ): void {
+function addTrunkAndLimbs( builder: MeshBuilder, random: Random, trunk: { spine: Vec3[]; radii: number[] }, lobes: readonly FoliageLobe[], height: number, detail: BroadleafDetail ): void {
 
 	const top = trunk.spine[ trunk.spine.length - 1 ]!;
 	const lower = trunk.spine[ trunk.spine.length - 2 ]!;
@@ -75,7 +73,7 @@ function addTrunkAndLimbs( builder: MeshBuilder, random: Random, trunk: { spine:
 	const trunkUp = normalizeVec3( subtractVec3( top, lower ) );
 	const tipRadius = height * 0.008;
 	const leader = limbCurveToLobe( random, top, lobes[ 0 ]! );
-	addStylizedLimb( builder, [ ...trunk.spine, ...leader ], [ ...trunk.radii, topRadius * 0.8, topRadius * 0.55, tipRadius ], 7, barkPartIndex, ( t ) => t * 0.5, 2 );
+	addStylizedLimb( builder, [ ...trunk.spine, ...leader ], [ ...trunk.radii, topRadius * 0.8, topRadius * 0.55, tipRadius ], detail.trunkSides, barkPartIndex, ( t ) => t * 0.5, detail.samples );
 
 	for ( const lobe of lobes.slice( 1 ) ) {
 
@@ -85,7 +83,7 @@ function addTrunkAndLimbs( builder: MeshBuilder, random: Random, trunk: { spine:
 		const radius = topRadius * random.range( 0.6, 0.7 );
 		const curve = limbCurveToLobe( random, emerge, lobe );
 		// 外へ出た後の曲がりは 1 点で足りる（頂点数の節約）。
-		addStylizedLimb( builder, [ base, emerge, curve[ 1 ]!, curve[ 2 ]! ], [ radius, radius * 0.95, radius * 0.55, tipRadius ], 5, barkPartIndex, ( t ) => 0.15 + t * 0.5, 2 );
+		addStylizedLimb( builder, [ base, emerge, curve[ 1 ]!, curve[ 2 ]! ], [ radius, radius * 0.95, radius * 0.55, tipRadius ], detail.limbSides, barkPartIndex, ( t ) => 0.15 + t * 0.5, detail.samples );
 
 	}
 
@@ -105,16 +103,26 @@ function buildCollider( spine: readonly Vec3[], radii: readonly number[] ): Coll
 
 }
 
-export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ): VegetationData {
+interface BroadleafDetail {
+	trunkSides: number;
+	limbSides: number;
+	// 枝の点の間の分割数。
+	samples: number;
+	// 内側の房 4 つのカードと表面の房 1 つのカードの枚数・大きさ（ローブ半径に対する比）。
+	innerCards: number;
+	innerSize: number;
+	outerCards: number;
+	outerSize: number;
+}
 
-	const seed = options.seed ?? 1;
-	const height = options.height ?? DEFAULT_BROADLEAF_TREE_HEIGHT;
-	const leafColor = options.leafColor ?? DEFAULT_BROADLEAF_TREE_LEAF_COLOR;
-	const barkColor = options.barkColor ?? DEFAULT_BROADLEAF_TREE_BARK_COLOR;
+// LOD1 / LOD2 は枚数を減らした分だけカードを大きくし、樹冠を覆う量を保つ。LOD2 は大きなカードだけ。
+const lodDetails: BroadleafDetail[] = [
+	{ trunkSides: 7, limbSides: 5, samples: 2, innerCards: 50, innerSize: 2.3, outerCards: 56, outerSize: 1.15 },
+	{ trunkSides: 5, limbSides: 4, samples: 1, innerCards: 34, innerSize: 2.6, outerCards: 26, outerSize: 1.45 },
+	{ trunkSides: 4, limbSides: 3, samples: 1, innerCards: 28, innerSize: 3.1, outerCards: 0, outerSize: 0 },
+];
 
-	if ( ! Number.isFinite( height ) || height <= 0 ) {
-		throw new RangeError( 'Tree height must be a positive finite number' );
-	}
+function buildBroadleafMesh( seed: number, height: number, detail: BroadleafDetail ): { mesh: MeshData; trunk: { spine: Vec3[]; radii: number[] } } {
 
 	const random = createRandom( seed );
 	const splitY = height * random.range( 0.36, 0.44 );
@@ -127,7 +135,7 @@ export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ):
 	const crownCenter: Vec3 = [ trunkTop[ 0 ] * 1.3, height * 0.68, trunkTop[ 2 ] * 1.3 ];
 	const crownRadius = height * 0.42;
 	const lobes = createLobes( random, height, crownCenter, splitY );
-	addTrunkAndLimbs( builder, random, trunk, lobes, height );
+	addTrunkAndLimbs( builder, random, trunk, lobes, height, detail );
 
 	builder.beginGroup( leafPartIndex );
 	// 木全体のカード枚数を一定にし、ローブの大きさ（半径の 2 乗）に応じて配分する。
@@ -138,19 +146,34 @@ export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ):
 	for ( const lobe of lobes ) {
 
 		const share = lobe.radius * lobe.radius / totalWeight;
-		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( innerCardCount * share ), lobe.radius * 2.3, { depth: [ 0.35, 0.8 ], jitter: 0.35 } );
-		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( outerCardCount * share ), lobe.radius * 1.15, { depth: [ 0.8, 1 ], quadrant: true, jitter: 0.4 } );
+		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( detail.innerCards * share ), lobe.radius * detail.innerSize, { depth: [ 0.35, 0.8 ], jitter: 0.35 } );
+		if ( detail.outerCards > 0 ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( detail.outerCards * share ), lobe.radius * detail.outerSize, { depth: [ 0.8, 1 ], quadrant: true, jitter: 0.4 } );
 
 	}
 
-	const lod0 = builder.build();
-	const collider = buildCollider( trunk.spine, trunk.radii );
+	return { mesh: builder.build(), trunk };
+
+}
+
+export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ): VegetationData {
+
+	const seed = options.seed ?? 1;
+	const height = options.height ?? DEFAULT_BROADLEAF_TREE_HEIGHT;
+	const leafColor = options.leafColor ?? DEFAULT_BROADLEAF_TREE_LEAF_COLOR;
+	const barkColor = options.barkColor ?? DEFAULT_BROADLEAF_TREE_BARK_COLOR;
+
+	if ( ! Number.isFinite( height ) || height <= 0 ) {
+		throw new RangeError( 'Tree height must be a positive finite number' );
+	}
+
+	// LOD0〜2 は同じ骨格（同じ乱数の並び）から、分割数と葉の枚数だけ変えて作る。高さ合わせの倍率は LOD0 に合わせて共通にする。
+	const built = lodDetails.map( ( detail ) => buildBroadleafMesh( seed, height, detail ) );
+	const lod0 = built[ 0 ]!.mesh;
+	const collider = buildCollider( built[ 0 ]!.trunk.spine, built[ 0 ]!.trunk.radii );
 	// 葉カードの角が樹高を超えるので、全体を一様に縮めて上端を height に合わせる。
-	let top = 0;
-	for ( let index = 1; index < lod0.positions.length; index += 3 ) top = Math.max( top, lod0.positions[ index ]! );
-	const fit = height / top;
-	for ( let index = 0; index < lod0.positions.length; index ++ ) lod0.positions[ index ]! *= fit;
-	for ( let index = 0; index < collider.positions.length; index ++ ) collider.positions[ index ]! *= fit;
+	const fit = height / getMeshTop( lod0 );
+	for ( const { mesh } of built ) scaleMeshPositions( mesh.positions, fit );
+	scaleMeshPositions( collider.positions, fit );
 	const bounds = { radius: getMeshBoundsRadius( lod0 ), height };
 	const bark = createStylizedBarkTextures( seed );
 	const leaf = createLeafSprayTextures( seed, LEAF_SPRAY_TEXTURE_SIZE, 4 );
@@ -177,9 +200,10 @@ export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ):
 			doubleSided: false,
 			flatShading: false,
 		},
+		...createStylizedImpostorParts(),
 	];
-	// LOD0 の形が決まるまで、LOD1〜4 は LOD0 の複製にしておく。
-	const lods: MeshData[] = [ lod0, cloneMeshData( lod0 ), cloneMeshData( lod0 ), cloneMeshData( lod0 ), cloneMeshData( lod0 ) ];
+	// LOD3 / LOD4 はモミと同じインポスター。水平板は樹冠の中ほどの高さに置く。
+	const lods: MeshData[] = [ lod0, built[ 1 ]!.mesh, built[ 2 ]!.mesh, ...buildStylizedImpostorLods( lod0, height, height * 0.55 ) ];
 
 	return {
 		kind: 'broadleaf-tree',

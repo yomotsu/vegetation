@@ -67,7 +67,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 ### stylized な木（2026-10-30〜）
 - 参考: CGTrader「Simple Trees Pack」と、ユーザーの Blender 素材 `~/Library/CloudStorage/Dropbox/works/_material/3d/models/vegitation-mountain/`（Forest の Tree01〜03 / Bush01、Leaf01 / Trunk01 テクスチャ）。フォルダの一覧は TCC で拒否されるが、ファイルはパス指定で読める（Blender は `/Applications/Blender.app/Contents/MacOS/Blender -b` で調べられる）
 - 葉は大きな正方形カードに房テクスチャを丸ごと貼り、法線は塊の中心から外向き（カードの向きではない）。`upNormalCards: true`
-- LOD0 が採用されるまで LOD1〜4 は作らない（LOD0 の複製を入れる）。4 種とも LOD0 採用済み（2026-10-30）。次は LOD1〜4
+- LOD1/2 は同じ骨格から分割数と葉の枚数だけ落とす（`*Detail` の表）。LOD3/4 はモミと同じインポスター（`buildStylizedImpostorLods`、板は `upNormalCards`）
 - 頂点数の目標: broadleaf ≤ 800、pine ≤ 1000、willow ≤ 900（bush 約 450）。葉カードは木全体の枚数を固定して塊の大きさで配分する。broadleaf / bush は房 4 つの大カード（内側）＋房 1 つの小カード（表面）
 - willow の葉は枝先に置く釣り鐘形の殻にシェブロンの垂れ枝テクスチャを巻く（YouTube「Stylized Willow Tree Tutorial」の方式）。主枝は 2 方向にまとめる
 
@@ -84,6 +84,8 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - Codex（`codex exec`）のサンドボックス内では `npx vitest run` の全体実行が 1 時間止まる。対象ファイルだけ実行させ、全体はこちらで回す。ブラウザ操作もさせない（ループして止まった）
 
 ## 未解決の課題
+
+- 焼き込み（`bakeImpostor`）がテクスチャの繰り返し（wrap / wrapS / wrapT）を無視して UV を切り詰める。willow の葉の殻と岩に影響。直すと岩のインポスターが約 2% 変わるのでユーザー判断待ち
 
 - インスタンス用の `orientBillboardInstances( mesh, camera )` は影もカメラ向きのまま（影がオービットで動く）
 - 利用者が `getParts()` で自前の `InstancedMesh` を作ると `upNormalCards` の部品の裏が黒くなる（デモの scatter は対処済み。公開の手段はまだない）

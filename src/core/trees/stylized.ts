@@ -1,7 +1,8 @@
+import { buildBillboard, buildSixPlaneImpostor, impostorLod3Part, impostorPart } from '../impostor';
 import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import type { Random } from '../random';
-import type { Color3, MeshData, Vec3 } from '../types';
+import type { Color3, MeshData, PartDef, Vec3 } from '../types';
 
 export function addVec3( a: Vec3, b: Vec3 ): Vec3 {
 
@@ -332,17 +333,46 @@ export function getMeshBoundsRadius( mesh: MeshData ): number {
 
 }
 
-export function cloneMeshData( mesh: MeshData ): MeshData {
+// 頂点の高さの最大。
+export function getMeshTop( mesh: MeshData ): number {
 
-	return {
-		positions: mesh.positions.slice(),
-		normals: mesh.normals.slice(),
-		uvs: mesh.uvs.slice(),
-		colors: mesh.colors.slice(),
-		windWeight: mesh.windWeight.slice(),
-		impostorCard: mesh.impostorCard.slice(),
-		indices: mesh.indices.slice(),
-		groups: mesh.groups.map( ( group ) => ( { ...group } ) ),
-	};
+	let top = - Infinity;
+	for ( let index = 1; index < mesh.positions.length; index += 3 ) top = Math.max( top, mesh.positions[ index ]! );
+	return top;
+
+}
+
+export function scaleMeshPositions( positions: Float32Array, scale: number ): void {
+
+	for ( let index = 0; index < positions.length; index ++ ) positions[ index ]! *= scale;
+
+}
+
+// stylized な木のパーツの並び: 0 樹皮、1 葉、2 LOD3 のインポスター、3 LOD4 のインポスター。
+export const STYLIZED_IMPOSTOR_LOD3_PART_INDEX = 2;
+export const STYLIZED_IMPOSTOR_PART_INDEX = 3;
+
+// モミ（tree）と同じく、視線の角度によるディザの切り替えはせず全カードを常に描く。
+// 板は裏向きの三角形を足して表として描く（upNormalCards）。両面描画だと裏から見た板の法線が下を向き、真っ黒になった。
+export function createStylizedImpostorParts(): PartDef[] {
+
+	return [
+		{ ...impostorLod3Part(), impostorFade: false, upNormalCards: true, doubleSided: false },
+		{ ...impostorPart(), impostorFade: false, upNormalCards: true, doubleSided: false },
+	];
+
+}
+
+/**
+ * LOD3 / LOD4 のインポスター（モミと同じ作り）。LOD3 は 6 方向の縦板＋真上の水平板、LOD4 は視線を向く縦板 1 枚＋真上の水平板。
+ * 水平板は topHeight の高さに、そこでの LOD0 の広がりの大きさで置く。どちらも LOD0 から焼く。
+ */
+export function buildStylizedImpostorLods( lod0: MeshData, height: number, topHeight: number ): [ MeshData, MeshData ] {
+
+	const radius = getMeshBoundsRadius( lod0 );
+	return [
+		buildSixPlaneImpostor( height, radius, STYLIZED_IMPOSTOR_LOD3_PART_INDEX, lod0, topHeight ),
+		buildBillboard( { radius, height }, STYLIZED_IMPOSTOR_PART_INDEX, lod0, topHeight ),
+	];
 
 }

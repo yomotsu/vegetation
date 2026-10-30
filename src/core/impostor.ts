@@ -439,20 +439,40 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 		const excludesBakeRanges = resolveImpostorView( viewInputs[ view ]! ).excludesBakeRanges === true;
 		const projection = createViewProjection( data.bounds, mesh, viewInputs[ view ]!, excludesBakeRanges ? excludedIndexRanges : [] );
 
-		for ( const group of mesh.groups ) {
+		// 手前の三角形から塗り、奥の画素を深度テストで先に弾く（重なった葉の板が多いと塗る量が大きく減る）。
+		const triangles: { start: number; group: number; depth: number }[] = [];
 
-			const partIndex = group.partIndex;
-			const part = data.parts[ partIndex ]!;
-			const materialColor = colors[ partIndex ]!;
-			const texture = part.texture === null ? null : data.textures[ part.texture ] ?? null;
+		for ( let groupIndex = 0; groupIndex < mesh.groups.length; groupIndex ++ ) {
+
+			const group = mesh.groups[ groupIndex ]!;
+			const part = data.parts[ group.partIndex ]!;
 
 			for ( let i = group.start; i < group.start + group.count; i += 3 ) {
 
 				if ( excludesBakeRanges && isIndexInRanges( i, part.impostorBakeExcludeIndexRanges ) ) continue;
+				let depth = - Infinity;
 
-				rasterizeTriangle( data, mesh, i, rasterSize, width, tileGrid.columns, view, projection, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
+				for ( let corner = 0; corner < 3; corner ++ ) {
+
+					const offset = mesh.indices[ i + corner ]! * 3;
+					depth = Math.max( depth, mesh.positions[ offset ]! * projection.direction[ 0 ] + mesh.positions[ offset + 1 ]! * projection.direction[ 1 ] + mesh.positions[ offset + 2 ]! * projection.direction[ 2 ] );
+
+				}
+
+				triangles.push( { start: i, group: groupIndex, depth } );
 
 			}
+
+		}
+
+		triangles.sort( ( a, b ) => b.depth - a.depth );
+
+		for ( const triangle of triangles ) {
+
+			const partIndex = mesh.groups[ triangle.group ]!.partIndex;
+			const part = data.parts[ partIndex ]!;
+			const texture = part.texture === null ? null : data.textures[ part.texture ] ?? null;
+			rasterizeTriangle( data, mesh, triangle.start, rasterSize, width, tileGrid.columns, view, projection, image, depthBuffer, colors[ partIndex ]!, part.alphaTest, texture, lightX, lightY, lightZ );
 
 		}
 
@@ -587,12 +607,37 @@ function rasterizeTriangle(
 	const inverseDenominator = 1 / denominator;
 	const viewOffset = Math.floor( view / tileColumns ) * size * imageWidth + ( view % tileColumns ) * size;
 
+	// 重心座標は行ごとに pixelX の 1 次式（a * pixelX + b）。3 つとも 0 以上になる範囲だけを回し、
+	// 外接矩形のうち三角形の外の画素を飛ばす。範囲は 1 画素ずつ広めに取り、画素ごとの判定と計算は従来と同じ式のままにする（結果は変わらない）。
+	const slope0 = ( y1 - y2 ) * inverseDenominator;
+	const slope1 = ( y2 - y0 ) * inverseDenominator;
+	const slope2 = - slope0 - slope1;
+
 	for ( let y = minY; y <= maxY; y ++ ) {
 
-		for ( let x = minX; x <= maxX; x ++ ) {
+		const rowY = y + 0.5;
+		const offset0 = ( ( x2 - x1 ) * ( rowY - y2 ) - ( y1 - y2 ) * x2 ) * inverseDenominator;
+		const offset1 = ( ( x0 - x2 ) * ( rowY - y2 ) - ( y2 - y0 ) * x2 ) * inverseDenominator;
+		const offset2 = 1 - offset0 - offset1;
+		let low = - Infinity;
+		let high = Infinity;
+		if ( slope0 > 0 ) low = - offset0 / slope0;
+		else if ( slope0 < 0 ) high = - offset0 / slope0;
+		else if ( offset0 < - 1e-9 ) continue;
+		if ( slope1 > 0 ) low = Math.max( low, - offset1 / slope1 );
+		else if ( slope1 < 0 ) high = Math.min( high, - offset1 / slope1 );
+		else if ( offset1 < - 1e-9 ) continue;
+		if ( slope2 > 0 ) low = Math.max( low, - offset2 / slope2 );
+		else if ( slope2 < 0 ) high = Math.min( high, - offset2 / slope2 );
+		else if ( offset2 < - 1e-9 ) continue;
+		if ( low > high + 2 ) continue;
+		const startX = Math.max( minX, Number.isFinite( low ) ? Math.ceil( low - 0.5 ) - 1 : minX );
+		const endX = Math.min( maxX, Number.isFinite( high ) ? Math.floor( high - 0.5 ) + 1 : maxX );
+
+		for ( let x = startX; x <= endX; x ++ ) {
 
 			const pixelX = x + 0.5;
-			const pixelY = y + 0.5;
+			const pixelY = rowY;
 			const weight0 = ( ( y1 - y2 ) * ( pixelX - x2 ) + ( x2 - x1 ) * ( pixelY - y2 ) ) * inverseDenominator;
 			const weight1 = ( ( y2 - y0 ) * ( pixelX - x2 ) + ( x0 - x2 ) * ( pixelY - y2 ) ) * inverseDenominator;
 			const weight2 = 1 - weight0 - weight1;

@@ -277,7 +277,14 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 - 参考: CGTrader「Simple Trees Pack」（広葉樹・低木・モミ・マツ・ヤナギ）と、ユーザー提供の Blender 素材（Forest の Tree01〜03 / Bush01、Leaf01 / Trunk01 テクスチャ）。モミは既存の `TreeMesh` を使い、追加は broadleaf / bush / pine / willow の 4 種
 - **種類ごとに別クラス**（ユーザー要望: 使わない種類は tree shaking で落とす）。core は `generateBroadleafTreeData` / `generateBushData` / `generatePineTreeData` / `generateWillowTreeData`、three は `BroadleafTreeMesh` / `BushMesh` / `PineTreeMesh` / `WillowTreeMesh` と `generate*` / `generate*Async`。種類のモジュール同士は import しない（共通部品は `src/core/trees/stylized.ts` と `stylizedTextures.ts`）。既定値は各モジュールに置く
 - Worker は kind ごとに generator と normalize を動的 import し、kind ごとの chunk にする（全 kind 共通。花も後で種類ごとに分ける予定）
-- **LOD0 が決まるまで LOD1〜4 は作らない**（ユーザー指示）。LOD1〜4 は LOD0 の複製を入れておき、インポスターのパーツも焼き込みも持たない
+- **LOD1〜4（2026-10-31）**:
+  - LOD1 / LOD2 は同じ seed から同じ骨格（枝・ローブ・殻の位置。乱数の並びも同じ）を作り、分割数と葉の枚数だけ減らす。減らした枚数の分だけカードを大きくして覆う量を保つ。高さ合わせの倍率は LOD0 と共通。目安は LOD1 ≈ LOD0 の 50〜57%、LOD2 ≈ 17〜33%
+    - broadleaf / bush: LOD1 は大小カードとも減らして大きく、LOD2 は房 4 つの大カードだけ（bush は茎もなし）
+    - pine: カード 154 → 80 → 46 枚（半径 × 2.1 → 2.7 → 3.3）。LOD2 は葉に隠れる枝と枝の跡を描かない
+    - willow: 殻の数・位置は LOD0 と同じで、周 × 縦の分割を 8×5 → 6×4 → 5×3。LOD2 は小枝を描かない。殻の半径の揺らぎは常に 8 個引いて乱数の並びをそろえる
+  - LOD3 / LOD4 はモミと同じインポスター（`buildSixPlaneImpostor` / `buildBillboard`、`impostorFade: false`）。水平板の高さは樹冠の中ほど（broadleaf 0.55、bush 0.45、pine 0.65、willow 0.5 × 樹高）
+  - インポスターの板は `upNormalCards: true`。両面描画だと裏から見た板の法線が下を向き、半分が真っ黒になった
+  - 焼き込みは塗る面積で時間が決まる（元を LOD1/2 にしても 1〜2 割しか速くならない）。焼き込み込みの生成は 33〜46 ms
 - **頂点数の目標**（ユーザー指定）: broadleaf 800 以下、pine 1000 以下、willow 900 以下。bush は同じ方法で削って約 450。テストで seed 1〜12 を確認している
 - 共通の作り（参考 Blender 素材と同じ）:
   - 葉は大きな正方形カードに房テクスチャを丸ごと貼る。**法線はカードの向きではなく、塊（ローブ）の中心と樹冠中心から外向き**。頂点色は内側ほど暗い

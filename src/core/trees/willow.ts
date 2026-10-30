@@ -5,7 +5,7 @@ import type { Random } from '../random';
 import type { Color3, ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 import type { NormalizedVegetationGeneration } from '../vegetationGeneration';
 import { createStylizedBarkTextures, createWillowCanopyTextures } from './stylizedTextures';
-import { addStylizedLimb, addVec3, cloneMeshData, getMeshBoundsRadius, getStylizedRootDepth, normalizeVec3, scaleVec3, subtractVec3 } from './stylized';
+import { addStylizedLimb, addVec3, buildStylizedImpostorLods, createStylizedImpostorParts, getMeshBoundsRadius, getMeshTop, getStylizedRootDepth, normalizeVec3, scaleMeshPositions, scaleVec3, subtractVec3 } from './stylized';
 
 export interface WillowTreeOptions {
 	seed?: number;
@@ -20,20 +20,45 @@ export const DEFAULT_WILLOW_TREE_BARK_COLOR = 0x6f6a45;
 
 const barkPartIndex = 0;
 const leafPartIndex = 1;
-// 木全体の頂点数の上限。葉の殻（釣り鐘形）は周 bellSegments 分割 × bellRows 行。
+// LOD0 の頂点数の上限。葉の殻（釣り鐘形）の数はこれで決め、LOD1 / LOD2 も同じ数・同じ位置に置く。
 const maxVertexCount = 900;
-const bellSegments = 8;
-const bellRows = 5;
-const bellVertexCount = ( bellSegments + 1 ) * bellRows - 1;
+// 殻の縦の行（頂点、半球の途中、赤道、筒の途中、裾）のうち、使うもの。
+const bellProfileRows = [ 0, 1, 2, 3, 4 ];
+// 殻の列ごとの半径の揺らぎの数（LOD で周の分割を減らしても乱数の並びを変えないよう、常にこの数だけ引く）。
+const bellWobbleCount = 8;
 
 interface Branch {
 	points: Vec3[];
 	radii: number[];
-	// 主枝か小枝か（葉の殻の大きさと置く順に使う）。
+	// 幹の続きの主枝・ほかの主枝・小枝（管の分割数、葉の殻の大きさと置く順に使う）。
+	kind: 'trunk' | 'limb' | 'twig';
 	main: boolean;
-	// 管の周の分割数と、点の間の分割数。
-	sides: number;
+}
+
+interface WillowDetail {
+	// 管の周の分割数（0 なら描かない）と、点の間の分割数。
+	trunkSides: number;
+	limbSides: number;
+	twigSides: number;
 	samples: number;
+	twigSamples: number;
+	// 殻の周の分割数と、使う縦の行。
+	bellSegments: number;
+	bellRows: readonly number[];
+}
+
+// LOD1 / LOD2 は殻の数と位置を LOD0 と同じにして、周と縦の分割だけ減らす。LOD2 は葉に隠れる小枝を描かない。
+const lodDetails: WillowDetail[] = [
+	{ trunkSides: 7, limbSides: 5, twigSides: 4, samples: 2, twigSamples: 1, bellSegments: 8, bellRows: bellProfileRows },
+	{ trunkSides: 5, limbSides: 4, twigSides: 3, samples: 1, twigSamples: 1, bellSegments: 6, bellRows: [ 0, 1, 2, 4 ] },
+	{ trunkSides: 4, limbSides: 3, twigSides: 0, samples: 1, twigSamples: 1, bellSegments: 5, bellRows: [ 0, 2, 4 ] },
+];
+
+function bellVertexCount( detail: WillowDetail ): number {
+
+	// 頂点の行は扇の要なので継ぎ目の重複列がない。
+	return ( detail.bellSegments + 1 ) * detail.bellRows.length - 1;
+
 }
 
 function lerpVec3( a: Vec3, b: Vec3, t: number ): Vec3 {
@@ -144,8 +169,8 @@ function createBranches( random: Random, height: number, trunk: { spine: Vec3[];
 
 		}
 
-		// 幹の続きの枝は太いので周の分割を多めにする。
-		branches.push( { points, radii, main: true, sides: limb === 0 ? 7 : 5, samples: 2 } );
+		// 幹の続きの枝は太いので、周の分割を WillowDetail.trunkSides で多めにする。
+		branches.push( { points, radii, kind: limb === 0 ? 'trunk' : 'limb', main: true } );
 
 		// 主枝の途中から出る小枝。主枝より立ってから外へ倒れる。
 		const twigCount = random.int( 1, 2 );
@@ -161,9 +186,8 @@ function createBranches( random: Random, height: number, trunk: { spine: Vec3[];
 			branches.push( {
 				points: twigPoints,
 				radii: twigPoints.map( ( _, point ) => baseRadius * ( 1 - 0.75 * point / ( twigPoints.length - 1 ) ) ),
+				kind: 'twig',
 				main: false,
-				sides: 4,
-				samples: 1,
 			} );
 
 		}
@@ -178,17 +202,20 @@ function createBranches( random: Random, height: number, trunk: { spine: Vec3[];
  * 釣り鐘形の葉の殻。頂上は少し平たい半球、そこから下は少し裾の広がる筒で、底は開いている。
  * 垂れ枝の画像を周りに巻き（周に repeats 回）、頂上から裾へ貼る。法線は殻の中心と樹冠の中心から外向き（球から転写した形）。
  */
-function addCanopyBell( builder: MeshBuilder, random: Random, center: Vec3, radius: number, sideHeight: number, crownCenter: Vec3, crownRadius: number ): void {
+function addCanopyBell( builder: MeshBuilder, random: Random, center: Vec3, radius: number, sideHeight: number, crownCenter: Vec3, crownRadius: number, detail: WillowDetail ): void {
 
 	const domeHeight = radius * 0.8;
 	// 行: 頂点、半球の途中、赤道、筒の途中、裾。
-	const profile: [ number, number ][] = [
+	const fullProfile: [ number, number ][] = [
 		[ 0, domeHeight ],
 		[ Math.sin( Math.PI / 4 ) * radius, Math.cos( Math.PI / 4 ) * domeHeight ],
 		[ radius, 0 ],
 		[ radius * 1.06, - sideHeight * 0.5 ],
 		[ radius * 1.14, - sideHeight ],
 	];
+	const profile = detail.bellRows.map( ( row ) => fullProfile[ row ]! );
+	const bellRows = profile.length;
+	const bellSegments = detail.bellSegments;
 	const along = [ 0 ];
 	for ( let row = 1; row < bellRows; row ++ ) along.push( along[ row - 1 ]! + Math.hypot( profile[ row ]![ 0 ] - profile[ row - 1 ]![ 0 ], profile[ row ]![ 1 ] - profile[ row - 1 ]![ 1 ] ) );
 	const meridian = along[ bellRows - 1 ]!;
@@ -197,7 +224,7 @@ function addCanopyBell( builder: MeshBuilder, random: Random, center: Vec3, radi
 	const startAngle = random.range( 0, Math.PI * 2 );
 	// 列ごとに半径を少し揺らして、まん丸に見えないようにする。
 	const wobble: number[] = [];
-	for ( let column = 0; column < bellSegments; column ++ ) wobble.push( random.range( 0.92, 1.08 ) );
+	for ( let column = 0; column < bellWobbleCount; column ++ ) wobble.push( random.range( 0.92, 1.08 ) );
 	const rows: number[][] = [];
 
 	for ( let row = 0; row < bellRows; row ++ ) {
@@ -212,7 +239,7 @@ function addCanopyBell( builder: MeshBuilder, random: Random, center: Vec3, radi
 		for ( let column = 0; column <= ( row === 0 ? bellSegments - 1 : bellSegments ); column ++ ) {
 
 			const angle = startAngle + column / bellSegments * Math.PI * 2;
-			const scale = row === 0 ? 1 : wobble[ column % bellSegments ]!;
+			const scale = row === 0 ? 1 : wobble[ Math.floor( ( column % bellSegments ) * bellWobbleCount / bellSegments ) ]!;
 			const position: Vec3 = [ center[ 0 ] + Math.cos( angle ) * ringRadius * scale, center[ 1 ] + y, center[ 2 ] + Math.sin( angle ) * ringRadius * scale ];
 			const fromBell: Vec3 = [ Math.cos( angle ) * ringRadius / radius, Math.max( y / domeHeight, - 0.2 ), Math.sin( angle ) * ringRadius / radius ];
 			const fromCrown = scaleVec3( subtractVec3( position, crownCenter ), 1 / crownRadius );
@@ -264,16 +291,7 @@ function buildCollider( spine: readonly Vec3[], radii: readonly number[] ): Coll
 
 }
 
-export function generateWillowTreeData( options: WillowTreeOptions = {} ): VegetationData {
-
-	const seed = options.seed ?? 1;
-	const height = options.height ?? DEFAULT_WILLOW_TREE_HEIGHT;
-	const leafColor = options.leafColor ?? DEFAULT_WILLOW_TREE_LEAF_COLOR;
-	const barkColor = options.barkColor ?? DEFAULT_WILLOW_TREE_BARK_COLOR;
-
-	if ( ! Number.isFinite( height ) || height <= 0 ) {
-		throw new RangeError( 'Willow tree height must be a positive finite number' );
-	}
+function buildWillowMesh( seed: number, height: number, detail: WillowDetail, bellCount: number ): { mesh: MeshData; trunk: { spine: Vec3[]; radii: number[] }; bellCount: number } {
 
 	const random = createRandom( seed );
 	const splitY = height * random.range( 0.22, 0.34 );
@@ -284,15 +302,21 @@ export function generateWillowTreeData( options: WillowTreeOptions = {} ): Veget
 	builder.beginGroup( barkPartIndex );
 	// 幹は最初の主枝と 1 本の管になる。
 	const branches = createBranches( random, height, trunk );
-	for ( const branch of branches ) addStylizedLimb( builder, branch.points, branch.radii, branch.sides, barkPartIndex, ( t ) => t * 0.5, branch.samples );
+
+	for ( const branch of branches ) {
+
+		const sides = branch.kind === 'trunk' ? detail.trunkSides : branch.kind === 'limb' ? detail.limbSides : detail.twigSides;
+		if ( sides > 0 ) addStylizedLimb( builder, branch.points, branch.radii, sides, barkPartIndex, ( t ) => t * 0.5, branch.kind === 'twig' ? detail.twigSamples : detail.samples );
+
+	}
 
 	const axis = trunk.spine[ trunk.spine.length - 1 ]!;
 	let crownRadius = 0;
 	for ( const branch of branches ) for ( const point of branch.points ) crownRadius = Math.max( crownRadius, Math.hypot( point[ 0 ] - axis[ 0 ], point[ 2 ] - axis[ 2 ] ) );
 	const crownCenter: Vec3 = [ axis[ 0 ], height * 0.65, axis[ 2 ] ];
 	builder.beginGroup( leafPartIndex );
-	// 葉の殻（釣り鐘）を、主枝の先 → 小枝の先 → 主枝の途中の順に置く。木全体の頂点数が maxVertexCount に収まる数だけ。
-	const bellCount = Math.floor( ( maxVertexCount - builder.vertexCount ) / bellVertexCount );
+	// 葉の殻（釣り鐘）を、主枝の先 → 小枝の先 → 主枝の途中の順に置く。LOD0 では頂点数が maxVertexCount に収まる数だけ（bellCount < 0 のとき）。
+	const count = bellCount >= 0 ? bellCount : Math.floor( ( maxVertexCount - builder.vertexCount ) / bellVertexCount( detail ) );
 	const mains = branches.filter( ( branch ) => branch.main );
 	const places: { center: Vec3; radius: number }[] = [];
 
@@ -316,23 +340,38 @@ export function generateWillowTreeData( options: WillowTreeOptions = {} ): Veget
 
 	}
 
-	for ( const { center, radius } of places.slice( 0, bellCount ) ) {
+	for ( const { center, radius } of places.slice( 0, count ) ) {
 
 		// 裾は地面から樹高の 1〜4 割の高さ。短すぎる殻にはしない。
 		const sideHeight = Math.max( radius * 0.8, center[ 1 ] - height * random.range( 0.1, 0.4 ) );
-		addCanopyBell( builder, random, center, radius, sideHeight, crownCenter, crownRadius );
-
+		addCanopyBell( builder, random, center, radius, sideHeight, crownCenter, crownRadius, detail );
 
 	}
 
-	const lod0 = builder.build();
-	const collider = buildCollider( trunk.spine, trunk.radii );
+	return { mesh: builder.build(), trunk, bellCount: count };
+
+}
+
+export function generateWillowTreeData( options: WillowTreeOptions = {} ): VegetationData {
+
+	const seed = options.seed ?? 1;
+	const height = options.height ?? DEFAULT_WILLOW_TREE_HEIGHT;
+	const leafColor = options.leafColor ?? DEFAULT_WILLOW_TREE_LEAF_COLOR;
+	const barkColor = options.barkColor ?? DEFAULT_WILLOW_TREE_BARK_COLOR;
+
+	if ( ! Number.isFinite( height ) || height <= 0 ) {
+		throw new RangeError( 'Willow tree height must be a positive finite number' );
+	}
+
+	// LOD0〜2 は同じ形（同じ乱数の並び）から、分割数だけ変えて作る。殻の数は LOD0 で決め、高さ合わせの倍率も LOD0 に合わせる。
+	const first = buildWillowMesh( seed, height, lodDetails[ 0 ]!, - 1 );
+	const built = [ first, ...lodDetails.slice( 1 ).map( ( detail ) => buildWillowMesh( seed, height, detail, first.bellCount ) ) ];
+	const lod0 = first.mesh;
+	const collider = buildCollider( first.trunk.spine, first.trunk.radii );
 	// 上端を height に合わせる。
-	let top = 0;
-	for ( let index = 1; index < lod0.positions.length; index += 3 ) top = Math.max( top, lod0.positions[ index ]! );
-	const fit = height / top;
-	for ( let index = 0; index < lod0.positions.length; index ++ ) lod0.positions[ index ]! *= fit;
-	for ( let index = 0; index < collider.positions.length; index ++ ) collider.positions[ index ]! *= fit;
+	const fit = height / getMeshTop( lod0 );
+	for ( const { mesh } of built ) scaleMeshPositions( mesh.positions, fit );
+	scaleMeshPositions( collider.positions, fit );
 
 	const bark = createStylizedBarkTextures( seed );
 	const leaf = createWillowCanopyTextures( seed );
@@ -359,9 +398,10 @@ export function generateWillowTreeData( options: WillowTreeOptions = {} ): Veget
 			doubleSided: false,
 			flatShading: false,
 		},
+		...createStylizedImpostorParts(),
 	];
-	// LOD0 の形が決まるまで、LOD1〜4 は LOD0 の複製にしておく。
-	const lods: MeshData[] = [ lod0, cloneMeshData( lod0 ), cloneMeshData( lod0 ), cloneMeshData( lod0 ), cloneMeshData( lod0 ) ];
+	// LOD3 / LOD4 はモミと同じインポスター。水平板は樹冠の中ほどの高さに置く。
+	const lods: MeshData[] = [ lod0, built[ 1 ]!.mesh, built[ 2 ]!.mesh, ...buildStylizedImpostorLods( lod0, height, height * 0.5 ) ];
 
 	return {
 		kind: 'willow-tree',

@@ -6,10 +6,10 @@ import { generateWillowTreeData } from '../../src/core/trees/willow';
 import { validateMeshData } from '../helpers/validateMeshData';
 
 const trees = [
-	{ name: 'broadleaf', generate: generateBroadleafTreeData, kind: 'broadleaf-tree', height: 6, bark: 0x8a7350, leaf: 0x4f9a2a, parts: [ 'bark', 'leaf' ], maxVertices: 800, collider: true },
-	{ name: 'bush', generate: generateBushData, kind: 'bush', height: 1.3, bark: 0x6e5a40, leaf: 0x55a02e, parts: [ 'bark', 'leaf' ], maxVertices: 500, collider: false },
-	{ name: 'pine', generate: generatePineTreeData, kind: 'pine-tree', height: 9, bark: 0xb8653a, leaf: 0x3f8a4c, parts: [ 'bark', 'leaf' ], maxVertices: 1000, collider: true },
-	{ name: 'willow', generate: generateWillowTreeData, kind: 'willow-tree', height: 7, bark: 0x6f6a45, leaf: 0x6cad3a, parts: [ 'bark', 'leaf' ], maxVertices: 900, collider: true },
+	{ name: 'broadleaf', generate: generateBroadleafTreeData, kind: 'broadleaf-tree', height: 6, bark: 0x8a7350, leaf: 0x4f9a2a, parts: [ 'bark', 'leaf', 'impostor-lod3', 'impostor' ], maxVertices: 800, collider: true },
+	{ name: 'bush', generate: generateBushData, kind: 'bush', height: 1.3, bark: 0x6e5a40, leaf: 0x55a02e, parts: [ 'bark', 'leaf', 'impostor-lod3', 'impostor' ], maxVertices: 500, collider: false },
+	{ name: 'pine', generate: generatePineTreeData, kind: 'pine-tree', height: 9, bark: 0xb8653a, leaf: 0x3f8a4c, parts: [ 'bark', 'leaf', 'impostor-lod3', 'impostor' ], maxVertices: 1000, collider: true },
+	{ name: 'willow', generate: generateWillowTreeData, kind: 'willow-tree', height: 7, bark: 0x6f6a45, leaf: 0x6cad3a, parts: [ 'bark', 'leaf', 'impostor-lod3', 'impostor' ], maxVertices: 900, collider: true },
 ];
 
 describe( 'stylized trees', () => {
@@ -33,6 +33,31 @@ describe( 'stylized trees', () => {
 		expect( maximumY ).toBeLessThan( data.bounds.height * 1.02 );
 
 		for ( const lod of data.lods ) validateMeshData( lod );
+
+	} );
+
+	it.each( trees )( 'reduces the $name detail through LOD1 and LOD2 and ends in fir-style impostors', ( tree ) => {
+
+		const data = tree.generate( { seed: 11 } );
+		const counts = data.lods.map( ( lod ) => lod.positions.length / 3 );
+		expect( counts[ 1 ]! ).toBeLessThan( counts[ 0 ]! * 0.65 );
+		expect( counts[ 2 ]! ).toBeLessThan( counts[ 1 ]! * 0.75 );
+		// LOD3: 6 方向の縦板 + 真上の水平板、LOD4: 縦板 1 枚 + 真上の水平板（モミと同じ）。
+		expect( counts[ 3 ] ).toBe( 28 );
+		expect( counts[ 4 ] ).toBe( 8 );
+		expect( data.lods[ 3 ]!.groups.map( ( group ) => data.parts[ group.partIndex ]!.name ) ).toEqual( [ 'impostor-lod3' ] );
+		expect( data.lods[ 4 ]!.groups.map( ( group ) => data.parts[ group.partIndex ]!.name ) ).toEqual( [ 'impostor' ] );
+
+		for ( const part of data.parts.slice( 2 ) ) {
+
+			expect( part.impostorFade ).toBe( false );
+			// 裏から見た板が黒くならないよう、裏向きの三角形を足して表として描く。
+			expect( part.upNormalCards ).toBe( true );
+
+		}
+
+		// LOD1 / LOD2 も LOD0 と同じ樹皮と葉のパーツで描く。
+		for ( const lod of data.lods.slice( 1, 3 ) ) expect( lod.groups.every( ( group ) => group.partIndex < 2 ) ).toBe( true );
 
 	} );
 

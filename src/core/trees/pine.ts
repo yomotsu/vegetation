@@ -5,7 +5,7 @@ import type { Random } from '../random';
 import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 import type { NormalizedVegetationGeneration } from '../vegetationGeneration';
 import { createNeedleSprayTextures, createStylizedBarkTextures } from './stylizedTextures';
-import { addFoliageLobeCards, addStylizedLimb, addVec3, cloneMeshData, getMeshBoundsRadius, getStylizedRootDepth } from './stylized';
+import { addFoliageLobeCards, addStylizedLimb, addVec3, buildStylizedImpostorLods, createStylizedImpostorParts, getMeshBoundsRadius, getMeshTop, getStylizedRootDepth, scaleMeshPositions } from './stylized';
 import type { FoliageLobe } from './stylized';
 
 export interface PineTreeOptions {
@@ -22,7 +22,6 @@ export const DEFAULT_PINE_TREE_BARK_COLOR = 0xb8653a;
 const barkPartIndex = 0;
 const leafPartIndex = 1;
 const needleTextureSize = 256;
-const leafCardCount = 154;
 
 interface Branch {
 	base: Vec3;
@@ -116,7 +115,7 @@ function createBranches( random: Random, height: number, spine: readonly Vec3[],
 }
 
 // 幹の下の方に残る折れた枝の跡。
-function addStubs( builder: MeshBuilder, random: Random, height: number, spine: readonly Vec3[], radii: readonly number[] ): void {
+function addStubs( builder: MeshBuilder, random: Random, height: number, spine: readonly Vec3[], radii: readonly number[], sides: number ): void {
 
 	const count = random.int( 2, 4 );
 
@@ -128,7 +127,8 @@ function addStubs( builder: MeshBuilder, random: Random, height: number, spine: 
 		const length = height * random.range( 0.04, 0.08 );
 		const radius = radii[ Math.max( 0, spineIndex - 1 ) ]! * random.range( 0.3, 0.4 );
 		const tip: Vec3 = [ point[ 0 ] + Math.cos( angle ) * length, y + length * random.range( 0.2, 0.8 ), point[ 2 ] + Math.sin( angle ) * length ];
-		addStylizedLimb( builder, [ point, lerpVec3( point, tip, 0.5 ), tip ], [ radius, radius * 0.8, radius * 0.45 ], 4, barkPartIndex, () => 0, 1 );
+		// sides が 0 なら描かない（乱数は同じだけ使う）。
+		if ( sides > 0 ) addStylizedLimb( builder, [ point, lerpVec3( point, tip, 0.5 ), tip ], [ radius, radius * 0.8, radius * 0.45 ], sides, barkPartIndex, () => 0, 1 );
 
 	}
 
@@ -148,6 +148,56 @@ function buildCollider( spine: readonly Vec3[], radii: readonly number[] ): Coll
 
 }
 
+interface PineDetail {
+	trunkSides: number;
+	trunkSamples: number;
+	// 枝と折れた枝の跡の周の分割数（0 なら描かない）。
+	branchSides: number;
+	stubSides: number;
+	// 葉カードの枚数と大きさ（塊の半径に対する比）。
+	cards: number;
+	cardSize: number;
+}
+
+// LOD1 / LOD2 は枚数を減らした分だけカードを大きくし、覆う量を保つ。LOD2 は葉に隠れる枝を描かない。
+const lodDetails: PineDetail[] = [
+	{ trunkSides: 7, trunkSamples: 2, branchSides: 4, stubSides: 4, cards: 154, cardSize: 2.1 },
+	{ trunkSides: 5, trunkSamples: 1, branchSides: 3, stubSides: 3, cards: 80, cardSize: 2.7 },
+	{ trunkSides: 4, trunkSamples: 1, branchSides: 0, stubSides: 0, cards: 46, cardSize: 3.3 },
+];
+
+function buildPineMesh( seed: number, height: number, detail: PineDetail ): { mesh: MeshData; trunk: { spine: Vec3[]; radii: number[] } } {
+
+	const random = createRandom( seed );
+	const trunk = createTrunk( random, height );
+	const builder = new MeshBuilder();
+	builder.beginGroup( barkPartIndex );
+	addStylizedLimb( builder, trunk.spine, trunk.radii, detail.trunkSides, barkPartIndex, ( t ) => t * 0.1, detail.trunkSamples );
+	addStubs( builder, random, height, trunk.spine, trunk.radii, detail.stubSides );
+	const branches = createBranches( random, height, trunk.spine, trunk.radii );
+
+	for ( const branch of detail.branchSides > 0 ? branches.slice( 0, - 1 ) : [] ) {
+
+		const middle = lerpVec3( branch.base, branch.tip, 0.5 );
+		middle[ 1 ] -= ( branch.tip[ 1 ] - branch.base[ 1 ] ) * 0.25;
+		// 枝は葉にほぼ隠れるので、周の分割は少なく、曲線の分割なしで足りる。
+		addStylizedLimb( builder, [ branch.base, middle, branch.tip ], [ branch.radius, branch.radius * 0.7, branch.radius * 0.35 ], detail.branchSides, barkPartIndex, ( t ) => 0.2 + t * 0.6, 1 );
+
+	}
+
+	const crownCenter: Vec3 = [ trunk.spine[ 5 ]![ 0 ], height * 0.72, trunk.spine[ 5 ]![ 2 ] ];
+	const crownRadius = height * 0.3;
+	builder.beginGroup( leafPartIndex );
+	// 木全体のカード枚数を一定にし、塊の大きさ（半径の 2 乗）に応じて配分する。1 枚を大きくして覆う面積を保つ。
+	const lobes = branches.flatMap( ( branch ) => branch.lobes );
+	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
+	// カードは塊の面に沿う向きに寄せて少し内側に置く。真横を向いたカードの角が塊の外へ飛び出すと板の集まりに見える。
+	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( detail.cards * lobe.radius * lobe.radius / totalWeight ), lobe.radius * detail.cardSize, { depth: [ 0.55, 0.95 ], jitter: 0.4 } );
+
+	return { mesh: builder.build(), trunk };
+
+}
+
 export function generatePineTreeData( options: PineTreeOptions = {} ): VegetationData {
 
 	const seed = options.seed ?? 1;
@@ -159,40 +209,14 @@ export function generatePineTreeData( options: PineTreeOptions = {} ): Vegetatio
 		throw new RangeError( 'Pine tree height must be a positive finite number' );
 	}
 
-	const random = createRandom( seed );
-	const trunk = createTrunk( random, height );
-	const builder = new MeshBuilder();
-	builder.beginGroup( barkPartIndex );
-	addStylizedLimb( builder, trunk.spine, trunk.radii, 7, barkPartIndex, ( t ) => t * 0.1, 2 );
-	addStubs( builder, random, height, trunk.spine, trunk.radii );
-	const branches = createBranches( random, height, trunk.spine, trunk.radii );
-
-	for ( const branch of branches.slice( 0, - 1 ) ) {
-
-		const middle = lerpVec3( branch.base, branch.tip, 0.5 );
-		middle[ 1 ] -= ( branch.tip[ 1 ] - branch.base[ 1 ] ) * 0.25;
-		// 枝は葉にほぼ隠れるので、周 4 分割・曲線の分割なしで足りる。
-		addStylizedLimb( builder, [ branch.base, middle, branch.tip ], [ branch.radius, branch.radius * 0.7, branch.radius * 0.35 ], 4, barkPartIndex, ( t ) => 0.2 + t * 0.6, 1 );
-
-	}
-
-	const crownCenter: Vec3 = [ trunk.spine[ 5 ]![ 0 ], height * 0.72, trunk.spine[ 5 ]![ 2 ] ];
-	const crownRadius = height * 0.3;
-	builder.beginGroup( leafPartIndex );
-	// 木全体のカード枚数を一定にし、塊の大きさ（半径の 2 乗）に応じて配分する。1 枚を大きくして覆う面積を保つ。
-	const lobes = branches.flatMap( ( branch ) => branch.lobes );
-	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
-	// カードは塊の面に沿う向きに寄せて少し内側に置く。真横を向いたカードの角が塊の外へ飛び出すと板の集まりに見える。
-	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( leafCardCount * lobe.radius * lobe.radius / totalWeight ), lobe.radius * 2.1, { depth: [ 0.55, 0.95 ], jitter: 0.4 } );
-
-	const lod0 = builder.build();
-	const collider = buildCollider( trunk.spine, trunk.radii );
+	// LOD0〜2 は同じ形（同じ乱数の並び）から、分割数と葉の枚数だけ変えて作る。高さ合わせの倍率は LOD0 に合わせて共通にする。
+	const built = lodDetails.map( ( detail ) => buildPineMesh( seed, height, detail ) );
+	const lod0 = built[ 0 ]!.mesh;
+	const collider = buildCollider( built[ 0 ]!.trunk.spine, built[ 0 ]!.trunk.radii );
 	// 葉カードの角が樹高を超えるので、全体を一様に縮めて上端を height に合わせる。
-	let top = 0;
-	for ( let index = 1; index < lod0.positions.length; index += 3 ) top = Math.max( top, lod0.positions[ index ]! );
-	const fit = height / top;
-	for ( let index = 0; index < lod0.positions.length; index ++ ) lod0.positions[ index ]! *= fit;
-	for ( let index = 0; index < collider.positions.length; index ++ ) collider.positions[ index ]! *= fit;
+	const fit = height / getMeshTop( lod0 );
+	for ( const { mesh } of built ) scaleMeshPositions( mesh.positions, fit );
+	scaleMeshPositions( collider.positions, fit );
 
 	const bark = createStylizedBarkTextures( seed );
 	const leaf = createNeedleSprayTextures( seed, needleTextureSize );
@@ -219,9 +243,10 @@ export function generatePineTreeData( options: PineTreeOptions = {} ): Vegetatio
 			doubleSided: false,
 			flatShading: false,
 		},
+		...createStylizedImpostorParts(),
 	];
-	// LOD0 の形が決まるまで、LOD1〜4 は LOD0 の複製にしておく。
-	const lods: MeshData[] = [ lod0, cloneMeshData( lod0 ), cloneMeshData( lod0 ), cloneMeshData( lod0 ), cloneMeshData( lod0 ) ];
+	// LOD3 / LOD4 はモミと同じインポスター。水平板は樹冠の中ほどの高さに置く。
+	const lods: MeshData[] = [ lod0, built[ 1 ]!.mesh, built[ 2 ]!.mesh, ...buildStylizedImpostorLods( lod0, height, height * 0.65 ) ];
 
 	return {
 		kind: 'pine-tree',
