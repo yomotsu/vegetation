@@ -54,10 +54,12 @@ describe( 'generated texture mipmaps', () => {
 	it( 'preserves level-zero alpha coverage on flower plant cards, tree leaves, and grass blades', () => {
 
 		const flower = prepareVegetationAsset( generateFlowersData( { seed: 3, variety: 'allium' } ) );
+		const bluebell = prepareVegetationAsset( generateFlowersData( { seed: 3, variety: 'bluebell' } ) );
 		const tree = prepareVegetationAsset( generateTreeData( { seed: 3 } ) );
 		const grass = prepareVegetationAsset( generateGrassData( { seed: 3 } ) );
 		const fixtures = [
 			{ data: flower.data, texture: 'plantCard' },
+			{ data: bluebell.data, texture: 'plantCard' },
 			{ data: tree.data, texture: 'leaf' },
 			{ data: grass.data, texture: 'blade' },
 		];

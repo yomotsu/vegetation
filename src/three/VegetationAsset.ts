@@ -306,7 +306,7 @@ export class VegetationAsset {
 
 		let plantCardTextureChanged = false;
 		const plantCardGenerator = this.data.textureGenerators?.plantCard;
-		if ( plantCardGenerator?.type === 'flowers-allium-plant-card' || plantCardGenerator?.type === 'flowers-tulip-plant-card' || plantCardGenerator?.type === 'flowers-calla-plant-card' ) {
+		if ( plantCardGenerator?.type === 'flowers-allium-plant-card' || plantCardGenerator?.type === 'flowers-tulip-plant-card' || plantCardGenerator?.type === 'flowers-calla-plant-card' || plantCardGenerator?.type === 'flowers-bluebell-plant-card' ) {
 			const updatedGenerator = { ...plantCardGenerator };
 			let regeneratePlantCard = false;
 			for ( const { part, color } of changes ) {

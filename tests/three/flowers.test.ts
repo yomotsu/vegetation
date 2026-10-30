@@ -134,7 +134,7 @@ describe( 'flowers three.js API', () => {
 
 		const mesh = new FlowersMesh( { seed: 5, variety: 'bluebell', lod: 3 } );
 		const [ vertical ] = mesh.parts;
-		const definition = mesh.asset.data.parts[ 2]!;
+		const definition = mesh.asset.data.parts[ 3]!;
 		const source = mesh.asset.geometries[ 3 ]!.getIndex()!;
 
 		expect( mesh.parts ).toHaveLength( 1 );
@@ -146,6 +146,28 @@ describe( 'flowers three.js API', () => {
 		expect( vertical!.geometry.getIndex()!.count ).toBe( source.count * 2 );
 		expect( new Set( vertical!.geometry.getAttribute( 'impostorCard' ).array ) ).toEqual( new Set( [ 0 ] ) );
 		expect( vertical!.material.map!.image as { width: number; height: number } ).toMatchObject( { width: 256, height: 128 } );
+		mesh.dispose();
+
+	} );
+
+	it( 'updates bluebell plant cards and baked impostors when petal or stem colors change', () => {
+
+		const mesh = new FlowersMesh( { seed: 5, variety: 'bluebell', lod: 1 } );
+		const plantCard = mesh.asset.materials[ 2 ]!.map!;
+		const originalCard = ( plantCard.image as { data: Uint8Array } ).data.slice();
+		const originalLod3 = ( mesh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		const originalLod4 = ( mesh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data.slice();
+		mesh.setColor( 'petal', '#a98bd6' );
+		const petalChangedCard = ( plantCard.image as { data: Uint8Array } ).data.slice();
+		mesh.setColor( 'stem', '#81603d' );
+		const fresh = new FlowersMesh( { seed: 5, variety: 'bluebell', petalColor: '#a98bd6', stemColor: '#81603d', lod: 1 } );
+
+		expect( areByteIdentical( petalChangedCard, originalCard ) ).toBe( false );
+		expect( areByteIdentical( ( plantCard.image as { data: Uint8Array } ).data, fresh.asset.data.textures.plantCard!.data ) ).toBe( true );
+		expect( areByteIdentical( ( mesh.asset.materials[ 3 ]!.map!.image as { data: Uint8Array } ).data, originalLod3 ) ).toBe( false );
+		expect( areByteIdentical( ( mesh.asset.materials[ 4 ]!.map!.image as { data: Uint8Array } ).data, originalLod4 ) ).toBe( false );
+		expect( mesh.parts ).toHaveLength( 2 );
+		fresh.dispose();
 		mesh.dispose();
 
 	} );

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateFlowersData, regenerateFlowersPetalTexture, regenerateFlowersStemTexture } from '../../src/core/generators/flowers';
 import { CALLA_FLOWER_LENGTH, CALLA_PLANT_CARD_FLOWER_HEIGHT, CALLA_PLANT_CARD_FLOWER_Y, CALLA_PLANT_CARD_FOLIAGE_HEIGHT, CALLA_PLANT_CARD_FOLIAGE_WIDTH, CALLA_PLANT_CARD_TEXTURE_HEIGHT, CALLA_PLANT_CARD_TEXTURE_WIDTH, CALLA_PLANT_CARD_WIDTH } from '../../src/core/flowers/calla';
+import { BLUEBELL_PLANT_CARD_TEXTURE_HEIGHT, BLUEBELL_PLANT_CARD_WIDTH } from '../../src/core/flowers/bluebell';
 import { ALLIUM_HEAD_RISE, ALLIUM_HEAD_SIZE, ALLIUM_PLANT_CARD_TEXTURE_WIDTH, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT, createFlowersPetalTexture } from '../../src/core/flowersTexture';
 import { hexToLinear } from '../../src/core/color';
 import { bakeImpostor, getImpostorProjectionWindow, impostorViewsForPart, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
@@ -842,8 +843,9 @@ describe( 'flowers core generator', () => {
 			for ( let lod = 0; lod < 5; lod ++ ) {
 				validateMeshData( first.lods[ lod ]! );
 				expect( areStructurallyByteIdentical( first.lods[ lod ]!, second.lods[ lod ]! ) ).toBe( true );
-				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThan( variety === 'bluebell' ? 170 : 151 );
-				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : variety === 'bluebell' ? 150 : 78 );
+				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThan( variety === 'bluebell' ? 180 : 151 );
+				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : variety === 'bluebell' ? 75 : 78 );
+				if ( lod === 2 && variety === 'bluebell' ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( 50 );
 			}
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
 			expect( areByteIdentical( first.textures.petal!.data, second.textures.petal!.data ) ).toBe( true );
@@ -853,30 +855,40 @@ describe( 'flowers core generator', () => {
 
 	}
 
-	it( 'keeps the captured bluebell LOD0 byte-for-byte as LOD1', async () => {
+	it( 'builds compact bluebell plant cards with full and low-poly leaf fans', () => {
 
 		const data = generateFlowersData( { seed: 1, variety: 'bluebell' } );
-		const hash = async ( bytes: ArrayBufferView ) => {
-			const source = new Uint8Array( bytes.buffer, bytes.byteOffset, bytes.byteLength );
-			const digest = await globalThis.crypto.subtle.digest( 'SHA-256', Uint8Array.from( source ) );
-			return Array.from( new Uint8Array( digest ), ( value ) => value.toString( 16 ).padStart( 2, '0' ) ).join( '' );
-		};
-		const expectedMesh = {
-			positions: '086941e4f92ec0d1540ca5ebc72cbd059c200808cb95b338376214e6fe6c1f75',
-			normals: 'cba4e76064d6adda28439decc52b63f562c496bdea2cc18e87e70227a3cd0804',
-			uvs: '2793eb2df9ce8f1f4d514b07baa788972b577a2c2a72f70c655457bdc2ec9d24',
-			colors: '0ea47d33ef3e8d0d7838045b87de63fbfe65ce211faf6d5802fe7a7384718d7f',
-			windWeight: 'f16f07186490db5bd100c063ea125d1e8be481377d221f01e8319395af4fc705',
-			impostorCard: '1a0295f4bf5986c5f74eca9153a6a4cb10b073a01a76ba4a457fd862c78966a4',
-			indices: 'd780f3f6b368b1e9fc08f5b4f30290e795b3ec1fdfa7f1959ea83f2fe28452b8',
-		};
-		const lod1 = data.lods[ 1]!;
-		for ( const [ field, expected ] of Object.entries( expectedMesh ) as [ keyof typeof expectedMesh, string ][] ) expect( await hash( lod1[ field ] ) ).toBe( expected );
-		expect( lod1.groups ).toEqual( [ { start: 0, count: 90, partIndex: 0 }, { start: 90, count: 162, partIndex: 1 } ] );
-		expect( await hash( data.textures.petal!.data ) ).toBe( 'b8f9fd6d61a46f5e6433a7b76f933e4801007589b71a91bdeca9d19ed5e58d5b' );
-		expect( await hash( data.textures.stem!.data ) ).toBe( '2107c4a996a6437f7bdc891781e8f25e84c7e51ff4f2aa0d932e864a25d93288' );
-		expect( [ data.textures.petal!.width, data.textures.petal!.height ] ).toEqual( [ 128, 128 ] );
-		expect( [ data.textures.stem!.width, data.textures.stem!.height ] ).toEqual( [ 128, 256 ] );
+		const [ lod0, lod1, lod2 ] = data.lods;
+		const texture = data.textures.plantCard!;
+		const trianglesByPart = ( mesh: MeshData, partIndex: number ) => mesh.groups.filter( ( group ) => group.partIndex === partIndex ).reduce( ( sum, group ) => sum + group.count / 3, 0 );
+
+		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'petal', 'stem', 'plantCard', 'impostor-lod3', 'impostor' ] );
+		expect( [ lod0!, lod1!, lod2! ].map( vertexCount ) ).toEqual( [ 174, 72, 48 ] );
+		expect( [ lod0!, lod1!, lod2!, data.lods[ 3]!, data.lods[ 4]! ].map( triangleCount ) ).toEqual( [ 144, 42, 27, 8, 2 ] );
+		expect( [ texture.width, texture.height ] ).toEqual( [ 256, BLUEBELL_PLANT_CARD_TEXTURE_HEIGHT ] );
+		expect( texture.wrap ).toBe( 'clamp' );
+		expect( data.parts[ 1 ] ).toMatchObject( { name: 'stem', doubleSided: true } );
+		expect( data.parts[ 2 ] ).toMatchObject( { texture: 'plantCard', alphaTest: 0.5, upNormalCards: true, doubleSided: true } );
+		expect( trianglesByPart( lod1!, 2 ) ).toBe( 24 );
+		expect( trianglesByPart( lod1!, 1 ) ).toBe( 18 );
+		expect( trianglesByPart( lod2!, 2 ) ).toBe( 12 );
+		expect( trianglesByPart( lod2!, 1 ) ).toBe( 15 );
+
+		const firstCardWidth = Math.hypot( lod1!.positions[ 0 ]! - lod1!.positions[ 3 ]!, lod1!.positions[ 2 ]! - lod1!.positions[ 5 ]! );
+		expect( firstCardWidth ).toBeCloseTo( BLUEBELL_PLANT_CARD_WIDTH, 6 );
+		const firstCardDirection = [ lod1!.positions[ 3 ]! - lod1!.positions[ 0 ]!, lod1!.positions[ 5 ]! - lod1!.positions[ 2 ]! ];
+		const firstStemGroup = lod0!.groups.find( ( group ) => group.partIndex === 1 )!;
+		const firstStemVertex = Math.min( ...lod0!.indices.slice( firstStemGroup.start, firstStemGroup.start + firstStemGroup.count ) );
+		const firstStemBase = cardRowCenter( lod0!, firstStemVertex, 0 );
+		const firstStemTop = cardRowCenter( lod0!, firstStemVertex, 2 );
+		const hookDirection = [ firstStemTop[ 0 ] - firstStemBase[ 0 ], firstStemTop[ 2 ] - firstStemBase[ 2 ] ];
+		const directionDot = ( firstCardDirection[ 0 ]! * hookDirection[ 0 ]! + firstCardDirection[ 1 ]! * hookDirection[ 1 ]! ) / ( Math.hypot( ...firstCardDirection ) * Math.hypot( ...hookDirection ) );
+		expect( Math.abs( directionDot ) ).toBeGreaterThan( 0.99 );
+
+		const prepared = prepareVegetationAsset( data, {}, 128 );
+		expect( prepared.data.textures.plantCard!.mipmaps!.length ).toBeGreaterThan( 0 );
+		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.width ).toBe( 64 );
+		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.height ).toBe( 256 );
 
 	} );
 
@@ -884,28 +896,29 @@ describe( 'flowers core generator', () => {
 
 		const defaultData = generateFlowersData( { seed: 1, variety: 'bluebell' } );
 		const defaultTriangles = defaultData.lods.map( triangleCount );
-		expect( defaultTriangles ).toEqual( [ 132, 84, 81, 8, 2 ] );
-		// LOD0 は頂点 170 未満（既定 3 株）に収めるため、三角形は LOD1 の 1.5 倍強。
-		expect( defaultTriangles[ 0 ] ).toBeGreaterThan( defaultTriangles[ 1 ]! * 1.5 );
+		expect( defaultTriangles ).toEqual( [ 144, 42, 27, 8, 2 ] );
 		for ( let count = 1; count <= 6; count ++ ) {
 			const triangles = generateFlowersData( { seed: 1, variety: 'bluebell', count } ).lods.map( triangleCount );
-			expect( triangles ).toEqual( [ 44 * count, 28 * count, 27 * count, 8, 2 ] );
+			expect( triangles ).toEqual( [ 48 * count, 14 * count, 9 * count, 8, 2 ] );
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
 		}
 
 	} );
 
-	it( 'keeps the bluebell LOD2 silhouette close to the new LOD0 from front and side', () => {
+	it( 'keeps bluebell LOD1/2 silhouettes close to LOD0 from front and side', () => {
 
 		const data = generateFlowersData( { seed: 5, variety: 'bluebell', count: 1 } );
 		const lod0 = data.lods[ 0]!;
+		const lod1 = data.lods[ 1]!;
 		const lod2 = data.lods[ 2]!;
-		// 細い茎と小さな釣り鐘が主なので IoU の絶対値は低い。
 		for ( const angle of [ 0, Math.PI / 2 ] ) {
-			const bounds = projectedFlowerBounds( [ lod0, lod2 ], angle );
+			const bounds = projectedFlowerBounds( [ lod0, lod1, lod2 ], angle );
 			const lod0Mask = projectedFlowerSilhouette( data, lod0, angle, bounds );
+			const lod1Mask = projectedFlowerSilhouette( data, lod1, angle, bounds );
 			const lod2Mask = projectedFlowerSilhouette( data, lod2, angle, bounds );
+			const lod1Iou = projectedFlowerIou( lod0Mask, lod1Mask );
 			const lod2Iou = projectedFlowerIou( lod0Mask, lod2Mask );
+			expect( lod1Iou ).toBeGreaterThan( 0.4 );
 			expect( lod2Iou ).toBeGreaterThan( 0.3 );
 		}
 
@@ -916,7 +929,7 @@ describe( 'flowers core generator', () => {
 		const data = generateFlowersData( { seed: 5, variety: 'bluebell' } );
 		const lod3 = data.lods[ 3]!;
 		const lod4 = data.lods[ 4]!;
-		const [ lod3Part, lod4Part ] = data.parts.slice( 2 );
+		const [ lod3Part, lod4Part ] = data.parts.slice( 3 );
 		expect( triangleCount( lod3 ) ).toBe( 8 );
 		expect( lod3.impostorCard.every( ( card ) => card === 0 ) ).toBe( true );
 		expect( lod3.positions.length / 3 ).toBe( 12 );
@@ -952,6 +965,9 @@ describe( 'flowers core generator', () => {
 		expect( areByteIdentical( center.textures.petal!.data, defaults.textures.petal!.data ) ).toBe( false );
 		expect( areByteIdentical( stem.textures.stem!.data, defaults.textures.stem!.data ) ).toBe( false );
 		expect( areByteIdentical( stem.textures.petal!.data, defaults.textures.petal!.data ) ).toBe( true );
+		expect( areByteIdentical( petal.textures.plantCard!.data, defaults.textures.plantCard!.data ) ).toBe( false );
+		expect( areByteIdentical( center.textures.plantCard!.data, defaults.textures.plantCard!.data ) ).toBe( false );
+		expect( areByteIdentical( stem.textures.plantCard!.data, defaults.textures.plantCard!.data ) ).toBe( false );
 
 	} );
 
@@ -1141,7 +1157,7 @@ describe( 'flowers core generator', () => {
 
 		const cases = [
 			{ variety: 'poppy' as const, segments: 3 },
-			{ variety: 'bluebell' as const, segments: 2 },
+			{ variety: 'bluebell' as const, segments: 3 },
 			{ variety: 'calla' as const, segments: 1 },
 			{ variety: 'primrose' as const, segments: 1 },
 		];
