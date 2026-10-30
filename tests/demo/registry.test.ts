@@ -59,8 +59,8 @@ describe( 'demo registry', () => {
 		expect( kinds[ 4 ]!.name ).toBe( 'Flowers' );
 		expect( kinds[ 4 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
 		expect( kinds[ 4 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
-		expect( kinds[ 4 ]!.defaultColors ).toEqual( { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#8a9670' } );
-		expect( kinds[ 4 ]!.textureColors ).toEqual( { centerColor: '#8a9670' } );
+		expect( kinds[ 4 ]!.defaultColors ).toEqual( { petal: '#8b5fbf', stem: '#2f6f1e', centerColor: '#5c3d7a' } );
+		expect( kinds[ 4 ]!.textureColors ).toEqual( { centerColor: '#5c3d7a' } );
 		expect( kinds[ 4 ]!.options ).toEqual( { seed: 1, variety: 'allium', count: 6, spread: 0.29, height: 0.37 } );
 
 	} );
@@ -74,7 +74,7 @@ describe( 'demo registry', () => {
 	it( 'provides the requested flower petal presets', () => {
 
 		expect( flowerPetalColorPresets ).toEqual( {
-			allium: { white: '#f1efe8', lavender: '#a98bd6', pink: '#e889b5', orange: '#d2600c' },
+			allium: { purple: '#8b5fbf', white: '#f1efe8', lavender: '#a98bd6', pink: '#e889b5', orange: '#d2600c' },
 			daisy: { orange: '#d2600c', yellow: '#f2c230', red: '#c8352a', white: '#f1efe8' },
 			tulip: { red: '#d8322a', yellow: '#f2c230', pink: '#ef7fa8', white: '#f4f1ea', orange: '#f07a28' },
 			poppy: { red: '#d8281e', orange: '#f08a24', white: '#f4f1ea', pink: '#ef8fb0' },
@@ -88,7 +88,7 @@ describe( 'demo registry', () => {
 	it( 'resets flower variety controls to their documented defaults', () => {
 
 		expect( flowerVarietyDefaults ).toEqual( {
-			allium: { count: 6, spread: 0.29, height: 0.37, petal: '#f1efe8', centerColor: '#8a9670' },
+			allium: { count: 6, spread: 0.29, height: 0.37, petal: '#8b5fbf', centerColor: '#5c3d7a' },
 			daisy: { count: 6, spread: 0.37, height: 0.285, petal: '#d2600c', centerColor: '#8a7414' },
 			tulip: { count: 4, spread: 0.3, height: 0.36, petal: '#d8322a', centerColor: '#000000' },
 			poppy: { count: 3, spread: 0.28, height: 0.42, petal: '#d8281e', centerColor: '#1e1a18' },

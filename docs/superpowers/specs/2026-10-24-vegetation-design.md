@@ -385,7 +385,7 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 - 参考は terrain-gen `assets/vegetation/Flowers01_*`（allium）と `Flowers02_*`（daisy）。`variety: 'allium' | 'daisy'`
 - 比較ページ `demo/_ref/flowers.html`（git 管理外）: 参考と自作を LOD・視点・seed を変えて並べる
 - パーツは `petal`（花）と `stem`（茎と葉）。`petalColor` / `stemColor` はテクスチャだけ作り直す。`centerColor` は生成時に焼く
-  - 既定色: allium 花 `#f1efe8` 芯 `#8a9670`、daisy 花 `#d2600c` 芯 `#8a7414`、茎 `#2f6f1e`
+  - 既定色: allium 花 `#8b5fbf`（紫、2026-10-30 ユーザー指定。以前は白 `#f1efe8`）芯 `#5c3d7a`、daisy 花 `#d2600c` 芯 `#8a7414`、茎 `#2f6f1e`
 - 1 株 = 交差した縦の茎カード 2 枚 ＋ 花。allium は交差した花房カード 2 枚、daisy は上向きの花カード 1 枚
 - 法線はすべて上向き。裏面は `upNormalCards` で表と同じ法線のまま描く（grass と共通）
 - 参考の実測に合わせた値

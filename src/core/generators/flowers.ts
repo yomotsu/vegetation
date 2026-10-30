@@ -13,8 +13,9 @@ import { buildPrimroseDomePart, buildPrimrosePart, createPrimrosePetalTexture, c
 import type { FlowerPlacement } from '../flowers/common';
 
 export const DEFAULT_FLOWERS_STEM_COLOR = 0x2f6f1e;
-export const DEFAULT_ALLIUM_PETAL_COLOR = 0xf1efe8;
-export const DEFAULT_ALLIUM_CENTER_COLOR = 0x8a9670;
+// allium の既定は紫（ギガンチウムなどの赤みの紫）。芯は濃い紫。
+export const DEFAULT_ALLIUM_PETAL_COLOR = 0x8b5fbf;
+export const DEFAULT_ALLIUM_CENTER_COLOR = 0x5c3d7a;
 export const DEFAULT_DAISY_PETAL_COLOR = 0xd2600c;
 export const DEFAULT_DAISY_CENTER_COLOR = 0x8a7414;
 export const DEFAULT_FLOWERS_COUNT = 6;

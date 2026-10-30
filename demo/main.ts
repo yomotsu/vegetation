@@ -82,7 +82,7 @@ const state: DemoState = {
 	seedVariants: 4,
 	leafPreset: 'green',
 	grassPreset: 'green',
-	flowerPetalPreset: 'white',
+	flowerPetalPreset: 'purple',
 	options: { ...kinds[ 0 ]!.options },
 	colors: { ...kinds[ 0 ]!.defaultColors },
 };

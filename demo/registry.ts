@@ -26,7 +26,7 @@ export const grassColorPresets = {
 };
 
 export const flowerPetalColorPresets = {
-	allium: { white: '#f1efe8', lavender: '#a98bd6', pink: '#e889b5', orange: '#d2600c' },
+	allium: { purple: '#8b5fbf', white: '#f1efe8', lavender: '#a98bd6', pink: '#e889b5', orange: '#d2600c' },
 	daisy: { orange: '#d2600c', yellow: '#f2c230', red: '#c8352a', white: '#f1efe8' },
 	tulip: { red: '#d8322a', yellow: '#f2c230', pink: '#ef7fa8', white: '#f4f1ea', orange: '#f07a28' },
 	poppy: { red: '#d8281e', orange: '#f08a24', white: '#f4f1ea', pink: '#ef8fb0' },
@@ -36,7 +36,7 @@ export const flowerPetalColorPresets = {
 };
 
 export const flowerVarietyDefaults = {
-	allium: { count: 6, spread: 0.29, height: 0.37, petal: '#f1efe8', centerColor: '#8a9670' },
+	allium: { count: 6, spread: 0.29, height: 0.37, petal: '#8b5fbf', centerColor: '#5c3d7a' },
 	daisy: { count: 6, spread: 0.37, height: 0.285, petal: '#d2600c', centerColor: '#8a7414' },
 	tulip: { count: 4, spread: 0.3, height: 0.36, petal: '#d8322a', centerColor: '#000000' },
 	poppy: { count: 3, spread: 0.28, height: 0.42, petal: '#d8281e', centerColor: '#1e1a18' },
@@ -114,8 +114,8 @@ export const kinds: VegetationKind[] = [
 		createAsync: ( opts ) => generateFlowersAsync( opts as FlowersMeshOptions ),
 		colorParts: [ 'petal', 'stem' ],
 		colorOptions: { petal: 'petalColor', stem: 'stemColor' },
-		defaultColors: { petal: '#f1efe8', stem: '#2f6f1e', centerColor: '#8a9670' },
-		textureColors: { centerColor: '#8a9670' },
+		defaultColors: { petal: '#8b5fbf', stem: '#2f6f1e', centerColor: '#5c3d7a' },
+		textureColors: { centerColor: '#5c3d7a' },
 		options: {
 			seed: 1,
 			variety: 'allium',
