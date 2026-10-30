@@ -5,6 +5,8 @@ import { generateFlowers, generateGrass, generateTree } from '../../src/index';
 import { createScatter } from '../../demo/scatter';
 import { GRASS_BLUE_NOISE_RANKS } from '../../demo/grassBlueNoise';
 import type { VegetationAsset } from '../../src/index';
+import { generateFlowersData } from '../../src/core/generators/flowers';
+import { VegetationAsset as Asset } from '../../src/three/VegetationAsset';
 
 describe( 'scatter preview', () => {
 
@@ -67,7 +69,9 @@ describe( 'scatter preview', () => {
 
 	it( 'uses bidirectional front-side geometry and retains fade for flowers that use it', () => {
 
-		const asset = generateFlowers( { seed: 7, variety: 'bluebell' } );
+		// 花はすべて切り替えなしになったので、切り替え付きインポスターの確認用に impostorFade を既定へ戻す。
+		const data = generateFlowersData( { seed: 7, variety: 'bluebell' } );
+		const asset = new Asset( { ...data, parts: data.parts.map( ( part ) => part.impostorViews === undefined ? part : { ...part, impostorFade: undefined } ) } );
 		const scatter = createScatter( asset, 1, 23 );
 		const meshes = scatter.group.children as InstancedMesh[];
 
@@ -79,9 +83,8 @@ describe( 'scatter preview', () => {
 			expect( ( mesh.material as Material ).side ).toBe( FrontSide );
 		}
 
-		// bluebell の LOD3 は交差 2 枚で常時描画。切り替えが残るのは LOD4 だけ。
-		for ( const lod of [ 4 ] ) {
-			const partName = 'impostor';
+		for ( const lod of [ 3, 4 ] ) {
+			const partName = lod === 3 ? 'impostor-lod3' : 'impostor';
 			const mesh = meshes.find( ( candidate ) => candidate.userData.lod === lod && candidate.userData.part === partName )!;
 			const material = mesh.material as Material;
 			expect( material.customProgramCacheKey() ).toContain( 'vegetation-impostor-view-fade-v1' );

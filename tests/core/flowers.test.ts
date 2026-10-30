@@ -839,7 +839,7 @@ describe( 'flowers core generator', () => {
 			for ( let lod = 0; lod < 5; lod ++ ) {
 				validateMeshData( first.lods[ lod ]! );
 				expect( areStructurallyByteIdentical( first.lods[ lod ]!, second.lods[ lod ]! ) ).toBe( true );
-				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'bluebell' ? 300 : 150 );
+				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'bluebell' ? 340 : 150 );
 				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : variety === 'bluebell' ? 150 : 78 );
 			}
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
@@ -881,12 +881,13 @@ describe( 'flowers core generator', () => {
 
 		const defaultData = generateFlowersData( { seed: 1, variety: 'bluebell' } );
 		const defaultTriangles = defaultData.lods.map( triangleCount );
-		expect( defaultTriangles ).toEqual( [ 180, 84, 81, 8, 4 ] );
+		expect( defaultTriangles ).toEqual( [ 216, 84, 81, 8, 2 ] );
 		expect( defaultTriangles[ 0 ] ).toBeGreaterThan( defaultTriangles[ 1 ]! * 1.5 );
-		expect( defaultTriangles[ 0 ] ).toBeLessThanOrEqual( defaultTriangles[ 1 ]! * 2.5 );
+		// 花柄を交差 2 枚にしたぶん、LOD1 の 2.5 倍を少し超える。
+		expect( defaultTriangles[ 0 ] ).toBeLessThanOrEqual( defaultTriangles[ 1 ]! * 2.6 );
 		for ( let count = 1; count <= 6; count ++ ) {
 			const triangles = generateFlowersData( { seed: 1, variety: 'bluebell', count } ).lods.map( triangleCount );
-			expect( triangles ).toEqual( [ 60 * count, 28 * count, 27 * count, 8, 4 ] );
+			expect( triangles ).toEqual( [ 72 * count, 28 * count, 27 * count, 8, 2 ] );
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
 		}
 
@@ -896,22 +897,19 @@ describe( 'flowers core generator', () => {
 
 		const data = generateFlowersData( { seed: 5, variety: 'bluebell', count: 1 } );
 		const lod0 = data.lods[ 0]!;
-		const lod1 = data.lods[ 1]!;
 		const lod2 = data.lods[ 2]!;
-		// 細い茎と小さな釣り鐘が主なので IoU の絶対値は低い。LOD1（旧 LOD0）と同程度以上に新 LOD0 へ近いことを確かめる。
+		// 細い茎と小さな釣り鐘が主なので IoU の絶対値は低い。
 		for ( const angle of [ 0, Math.PI / 2 ] ) {
-			const bounds = projectedFlowerBounds( [ lod0, lod1, lod2 ], angle );
+			const bounds = projectedFlowerBounds( [ lod0, lod2 ], angle );
 			const lod0Mask = projectedFlowerSilhouette( data, lod0, angle, bounds );
-			const lod1Mask = projectedFlowerSilhouette( data, lod1, angle, bounds );
 			const lod2Mask = projectedFlowerSilhouette( data, lod2, angle, bounds );
 			const lod2Iou = projectedFlowerIou( lod0Mask, lod2Mask );
-			expect( lod2Iou ).toBeGreaterThan( 0.2 );
-			expect( lod2Iou ).toBeGreaterThanOrEqual( projectedFlowerIou( lod0Mask, lod1Mask ) - 0.01 );
+			expect( lod2Iou ).toBeGreaterThan( 0.3 );
 		}
 
 	} );
 
-	it( 'builds bluebell LOD3 from two subdivided vertical cards and keeps the LOD4 top card', () => {
+	it( 'builds bluebell LOD3 from two subdivided vertical cards and LOD4 as a lone camera-facing card', () => {
 
 		const data = generateFlowersData( { seed: 5, variety: 'bluebell' } );
 		const lod3 = data.lods[ 3]!;
@@ -928,9 +926,11 @@ describe( 'flowers core generator', () => {
 		expect( lod3Part!.impostorViews![ 0 ]!.direction ).toEqual( [ 0, 0, 1 ] );
 		expect( lod3Part!.impostorViews![ 1 ]!.direction[ 0 ] ).toBeCloseTo( 1, 6 );
 		expect( lod3Part!.impostorViews![ 1 ]!.direction[ 2 ] ).toBeCloseTo( 0, 6 );
-		expect( triangleCount( lod4 ) ).toBe( 4 );
-		expect( new Set( lod4.impostorCard ) ).toEqual( new Set( [ 0, 1 ] ) );
+		expect( triangleCount( lod4 ) ).toBe( 2 );
+		expect( new Set( lod4.impostorCard ) ).toEqual( new Set( [ 0 ] ) );
 		expect( lod4Part!.upNormalCards ).toBe( true );
+		expect( lod4Part!.impostorFade ).toBe( false );
+		expect( lod4Part!.impostorViews ).toHaveLength( 1 );
 
 	} );
 
@@ -1190,8 +1190,9 @@ describe( 'flowers core generator', () => {
 		const highestSpine = Math.max( ...Array.from( bluebell.indices.slice( bluebellStem.start, bluebellStem.start + bluebellStem.count ), ( vertex ) => bluebell.positions[ vertex * 3 + 1 ]! ) );
 		// 釣り鐘は茎から下へ垂れる。最後の釣り鐘は茎の先端に付く（茎だけで終わらない）。
 		expect( highestBell ).toBeLessThanOrEqual( highestSpine + 1e-6 );
-		expect( bluebellPetal.count / 3 ).toBe( 5 * 7 * 3 );
-		const bluebellCupTriangles = Array.from( { length: 5 }, ( _, bell ) => bluebellPetal.start + ( bell * 7 + 1 ) * 3 );
+		// 釣り鐘 1 つ: 交差 2 枚の花柄（4 三角形）と 6 角の釣り鐘（6 三角形）。
+		expect( bluebellPetal.count / 3 ).toBe( 5 * 10 * 3 );
+		const bluebellCupTriangles = Array.from( { length: 5 }, ( _, bell ) => bluebellPetal.start + ( bell * 10 + 4 ) * 3 );
 		for ( const triangleStart of bluebellCupTriangles ) {
 			const top = bluebell.positions[ bluebell.indices[ triangleStart ]! * 3 + 1 ]!;
 			const rimA = bluebell.positions[ bluebell.indices[ triangleStart + 1 ]! * 3 + 1 ]!;

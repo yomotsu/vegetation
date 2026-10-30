@@ -686,7 +686,7 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 			lod3Options,
 		);
 	const lod4TopHeight = variety === 'daisy' ? daisyHeadHeight : variety === 'poppy' ? poppyHeadHeight : variety === 'primrose' ? bounds.height * 0.55 : bounds.height * 0.75;
-	const includeLod4TopCard = variety !== 'allium' && variety !== 'tulip' && variety !== 'calla';
+	const includeLod4TopCard = variety !== 'allium' && variety !== 'tulip' && variety !== 'calla' && variety !== 'bluebell';
 	const lod4 = buildBillboard( bounds, lod4Index, lod0, lod4TopHeight, includeLod4TopCard, variety === 'poppy' ? poppyHeadFootprint : undefined );
 	if ( variety !== 'primrose' ) setUpNormals( lod3 );
 	setUpNormals( lod4 );
@@ -741,7 +741,8 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 			: variety === 'allium' || variety === 'tulip' || variety === 'calla'
 				? { ...impostorLod3Part( ALLIUM_LOD3_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 				: { ...impostorLod3Part(), upNormalCards: true };
-	const lod4Part = variety === 'allium' || variety === 'tulip' || variety === 'calla'
+	// bluebell も縦のビルボード 1 枚だけを常時描く（上面カードと切り替えなし）。
+	const lod4Part = variety === 'allium' || variety === 'tulip' || variety === 'calla' || variety === 'bluebell'
 		? { ...impostorPart( ALLIUM_LOD4_IMPOSTOR_VIEWS, false ), upNormalCards: true }
 		: variety === 'daisy' || variety === 'poppy' || variety === 'primrose'
 			? { ...impostorPart( variety === 'poppy' ? POPPY_LOD4_IMPOSTOR_VIEWS : LOD4_IMPOSTOR_VIEWS, false ), upNormalCards: true }

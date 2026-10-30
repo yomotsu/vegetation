@@ -6,6 +6,15 @@ import { generateFlowersData } from '../../src/core/generators/flowers';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { VegetationMesh } from '../../src/three/VegetationMesh';
 import { getImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
+import type { VegetationData } from '../../src/core/types';
+
+// 花はすべて切り替えなしになったので、切り替え付きインポスターの確認用に impostorFade を既定（true）へ戻す。
+function withImpostorFade( data: VegetationData ): VegetationData {
+
+	return { ...data, parts: data.parts.map( ( part ) => part.impostorViews === undefined && part.impostorYawAngles === undefined ? part : { ...part, impostorFade: undefined } ) };
+
+}
+
 
 describe( 'WebGPU impostor material entry', () => {
 
@@ -13,7 +22,7 @@ describe( 'WebGPU impostor material entry', () => {
 
 		expect( getImpostorMaterialFactory() ).not.toBeNull();
 
-		const data = generateFlowersData( { seed: 4, variety: 'bluebell' } );
+		const data = withImpostorFade( generateFlowersData( { seed: 4, variety: 'bluebell' } ) );
 		const asset = new VegetationAsset( data );
 		const material = asset.materials[ data.parts.findIndex( ( part ) => part.name === 'impostor' ) ]! as unknown as MeshStandardNodeMaterial;
 
@@ -29,7 +38,7 @@ describe( 'WebGPU impostor material entry', () => {
 
 	it( 'preserves physical impostor material parameters', () => {
 
-		const data = generateFlowersData( { seed: 5, variety: 'bluebell' } );
+		const data = withImpostorFade( generateFlowersData( { seed: 5, variety: 'bluebell' } ) );
 		const impostorIndex = data.parts.findIndex( ( part ) => part.name === 'impostor' );
 		data.parts[ impostorIndex ]!.specularIntensity = 0.25;
 		data.parts[ impostorIndex ]!.ior = 1.3;

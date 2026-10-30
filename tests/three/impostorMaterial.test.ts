@@ -7,12 +7,21 @@ import { generateTreeData } from '../../src/core/generators/tree';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { registerImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
 import { VegetationMesh } from '../../src/three/VegetationMesh';
+import type { VegetationData } from '../../src/core/types';
+
+// 花はすべて切り替えなしになったので、切り替え付きインポスターの確認用に impostorFade を既定（true）へ戻す。
+function withImpostorFade( data: VegetationData ): VegetationData {
+
+	return { ...data, parts: data.parts.map( ( part ) => part.impostorViews === undefined && part.impostorYawAngles === undefined ? part : { ...part, impostorFade: undefined } ) };
+
+}
+
 
 describe( 'impostor materials', () => {
 
 	it( 'adds the view-angle fade to LOD4 WebGL shader and its cache key', () => {
 
-		const asset = new VegetationAsset( generateFlowersData( { seed: 1, variety: 'bluebell' } ) );
+		const asset = new VegetationAsset( withImpostorFade( generateFlowersData( { seed: 1, variety: 'bluebell' } ) ) );
 		const material = asset.materials[ asset.data.parts.findIndex( ( part ) => part.name === 'impostor' ) ]!;
 		const shader = {
 			vertexShader: '#include <common>\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n}',
@@ -80,7 +89,7 @@ describe( 'impostor materials', () => {
 
 		try {
 
-			const asset = new VegetationAsset( generateFlowersData( { seed: 2, variety: 'bluebell' } ) );
+			const asset = new VegetationAsset( withImpostorFade( generateFlowersData( { seed: 2, variety: 'bluebell' } ) ) );
 
 			try {
 
