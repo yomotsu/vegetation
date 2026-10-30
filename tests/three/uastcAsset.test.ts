@@ -59,8 +59,8 @@ async function waitFor( predicate: () => boolean ): Promise<void> {
 	if ( ! predicate() ) throw new Error( 'Timed out waiting for UASTC texture parsing' );
 }
 
-describe( 'VegetationAsset UASTC opt-in', () => {
-	it( 'keeps RGBA textures until KTX2Loader returns a compressed texture', async () => {
+describe( 'VegetationAsset UASTC', () => {
+	it( 'keeps RGBA textures until a caller-owned KTX2Loader returns a compressed texture', async () => {
 		const descriptors: ReturnType<typeof readKtx2>[ 'dataFormatDescriptor' ] = [];
 		const loader: KTX2LoaderLike = {
 			parse( buffer, onLoad ) {

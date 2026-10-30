@@ -476,9 +476,13 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 
 ### UASTC / KTX2 圧縮（2026-10-30 ユーザー採用）
 
-- 圧縮は opt-in。呼び出し側が `KTX2Loader.detectSupport( renderer )` 済みの loader を Mesh / `generate*Async` の option に渡す。省略時は従来の RGBA `DataTexture` を使う。ASTC / BC7 / ETC2 / RGBA fallback の選択と transcoder のロードは loader 側が担う
+- 圧縮は既定 on、`compressTextures: false` で opt-out。`*Mesh` / `generate*` / `generate*Async` / `VegetationAsset` の option で指定する。利用者が `KTX2Loader` を渡した場合はそれを優先し、通常は `VegetationMesh` の初回描画時に renderer ごとの内部 loader を遅延生成して `detectSupport( renderer )` を呼ぶ。`getParts()` / `InstancedMesh` では `asset.setRenderer( renderer )` を呼ぶ
+- RGBA `DataTexture` を先に表示し、UASTC エンコードは共有 Worker pool で進める。renderer が登録されるまで KTX2 transcoding は待つ。Worker のない環境では既定圧縮を行わず RGBA を維持し、transcoder を fetch しない。初回 transcode 時に Three.js の `basis_transcoder.js` と `basis_transcoder.wasm` を取得するため、利用側 bundler / server が module 相対 URL で配信できる必要がある。配置を変える場合は `setTranscoderPath()` 済みの caller-owned loader を渡す
 - UASTC mode 5 を不透明色・法線、mode 13 を alpha-test 色に使う。coverage-preserving mip の後で各 mip の alpha を 0 / 255 にし、ETC2 EAC alpha の base は `0xff` に固定する。共有 Worker pool へテクスチャ単位で分散し、色変更・impostor の焼き直しは世代番号で古い結果を破棄する。RGBA は圧縮結果の到着まで表示する
-- Worker が使えない場合は main thread の fallback を小さく分割する（mip / alpha 処理 8 KiB、UASTC encode 16 blocks、KTX2 packing 64 KiB 単位）。計測時の最大 slice は 2.63 ms
+- Worker が使えない場合、既定圧縮は行わず RGBA のままにする。caller-owned loader を明示した場合は main thread fallback を小さく分割する（mip / alpha 処理 8 KiB、UASTC encode 16 blocks、KTX2 packing 64 KiB 単位）。計測時の最大 slice は 2.63 ms
 - alpha mask は allium / tree leaf / leafRing の全 mip で RGBA32・BC7・ETC2 とも不一致 0。alpha を二値化しても RGB PSNR の差は 0 dB（各画像 43.36 / 56.95 / 44.69 dB）。不透明テクスチャの PSNR は rock albedo が RGBA32 60.47 dB / BC7 53.16 dB、rock normal が 51.91 / 49.85 dB
 - texture ごとの main sync / Worker encode+pack 時間（ms）: rock albedo 118.89 / 122.24、rock normal 107.00 / 105.34、allium 14.89 / 16.48、tree leaf 18.01 / 17.77、tree leafRing 42.93 / 47.35。公開 async API の生成開始から圧縮 texture への swap までは rock 628.46 ms、tree 393.82 ms、allium 291.22 ms（4 Worker、Node worker_threads による測定）
 - GPU texture memory は ASTC / BC7 / ETC2 RGBA で RGBA8 の約 1/4、opaque ETC2 RGB で約 1/8、RGBA fallback では削減なし。library bundle 増分は 14,420 bytes minified / 4,228 bytes gzip
+- 既定 on 化の Vite build（Three.js external）: `dist/index.js` は 54,143 bytes / 14,974 bytes gzip level 5（Vite 表示は 54.14 kB / 15.00 kB）。bc03149 との差分は +2,095 / +513 bytes（内部 loader 管理を含む）。`KTX2Loader` 外部 import 行は 71 / 23 bytes gzip level 5。`three/**` を external にするため loader と `ktx-parse` / `zstddec` のコードは library bundle に含まれない
+- Three.js r186 の初回 transcode download: `basis_transcoder.js` 57,529 bytes / 15,101 gzip、`basis_transcoder.wasm` 527,333 / 244,594 gzip（合計 584,862 / 259,695 gzip）
+- ブラウザ確認（2026-10-30、Chrome / WebGL2 / macOS）: デモは利用者 loader を渡さず内部 loader だけで動く。transcoder は Vite 配下の `three/examples/jsm/libs/basis/` から 200 で取得。compare は 5 枚、scatter（`setRenderer` 経由の InstancedMesh）は 20 枚とも RGBA（`SRGB8_ALPHA8`）を先に描いた後 ASTC 4x4（`0x93d0`）へ差し替わる。見た目は HEAD と同じで警告なし

@@ -52,8 +52,9 @@ describe( 'public entry points', () => {
 
 	it( 'accepts the caller-owned KTX2 loader through mesh generation options', () => {
 		const loader: KTX2LoaderLike = { parse() {} };
-		const options: TreeMeshOptions = { seed: 3, ktx2Loader: loader };
+		const options: TreeMeshOptions = { seed: 3, ktx2Loader: loader, compressTextures: false };
 		expect( options.ktx2Loader ).toBe( loader );
+		expect( options.compressTextures ).toBe( false );
 	} );
 
 } );

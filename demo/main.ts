@@ -289,7 +289,7 @@ function makeAsset( kind: VegetationKind, options: Record<string, number | boole
 
 	const textureColors = Object.fromEntries( Object.keys( kind.textureColors ?? {} ).flatMap( ( key ) => colors[ key ] === undefined ? [] : [ [ key, colors[ key ]! ] ] ) );
 	const colorOptions = Object.fromEntries( Object.entries( kind.colorOptions ).flatMap( ( [ part, option ] ) => colors[ part ] === undefined ? [] : [ [ option, colors[ part ]! ] ] ) );
-	const compressionOptions = withCompression && ktx2Loader !== null ? { ktx2Loader } : {};
+	const compressionOptions = { compressTextures: withCompression };
 	return kind.createAsync( { ...options, ...textureColors, ...colorOptions, ...compressionOptions } );
 
 }

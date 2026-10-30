@@ -152,27 +152,48 @@ The `generate*` functions (and their async versions) return a `VegetationAsset`,
 
 For instanced LOD4 billboards, call `orientBillboardInstances( instancedMesh, camera )` each frame so the cards face the camera.
 
-### Optional runtime UASTC textures
+### Runtime UASTC textures
 
-UASTC texture compression is opt-in. Pass your own Three.js `KTX2Loader`, after calling `detectSupport( renderer )`, in the options for a `*Mesh`, `generate*` or `generate*Async` call. The RGBA `DataTexture`s remain visible while encoding and transcoding run; each compressed texture replaces its RGBA texture when ready. Colour changes and impostor rebakes schedule a new worker encode, and results from older requests are discarded.
+UASTC texture compression is on by default. The library starts encoding texture data in its shared worker pool and keeps the RGBA `DataTexture`s visible until a renderer is available and the compressed replacement is ready. A `VegetationMesh` registers its renderer automatically on its first render. For an asset used only through `getParts()` and `InstancedMesh`, call `asset.setRenderer( renderer )` once after the renderer is initialized. Color changes and impostor rebakes schedule a new worker encode, and results from older requests are discarded.
+
+Pass `compressTextures: false` to a `*Mesh`, `generate*`, `generate*Async`, or `VegetationAsset` constructor to keep its textures as RGBA:
+
+```js
+import { generateTreeAsync } from 'vegetation';
+
+const asset = await generateTreeAsync( { seed: 7, compressTextures: false } );
+```
+
+With the default internal compression, environments without Web Workers (including Node.js, SSR, and test environments) keep RGBA textures. A caller-owned loader can still use the sliced main-thread fallback. No transcoder files are fetched until an encoded texture is parsed by a renderer-backed `KTX2Loader`. The library creates and shares its own loader per renderer, calls `detectSupport( renderer )` automatically, and disposes those loaders from `disposeVegetationWorkers()`.
+
+```js
+import { VegetationMesh, generateTreeAsync, disposeVegetationWorkers } from 'vegetation';
+
+const asset = await generateTreeAsync( { seed: 7 } );
+scene.add( new VegetationMesh( asset ) ); // renderer is registered on the first render
+
+// For InstancedMesh parts, call this once after renderer initialization:
+asset.setRenderer( renderer );
+
+asset.dispose();
+disposeVegetationWorkers();
+```
+
+The first transcode downloads Three.js's `basis_transcoder.js` and `basis_transcoder.wasm`, resolved by `KTX2Loader` relative to its module URL. The Basis transcoder converts the universal UASTC data into the GPU format selected for the renderer. With Three.js r186 the two files total about **585 kB raw / 260 kB gzip**. Your bundler or server must make both files available at those resolved URLs. If you need to choose their location, create and pass your own loader after calling `setTranscoderPath()` and `detectSupport( renderer )`:
 
 ```js
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
-import { VegetationMesh, generateTreeAsync } from 'vegetation';
+import { generateTreeAsync } from 'vegetation';
 
-const ktx2Loader = new KTX2Loader();
-ktx2Loader.detectSupport( renderer );
-
+const ktx2Loader = new KTX2Loader()
+	.setTranscoderPath( '/assets/basis/' )
+	.detectSupport( renderer );
 const asset = await generateTreeAsync( { seed: 7, ktx2Loader } );
-scene.add( new VegetationMesh( asset, 0 ) );
-
-function disposeVegetation() {
-	asset.dispose();
-	ktx2Loader.dispose();
-}
 ```
 
-The compressed GPU texture uses about **one quarter of RGBA8 memory** with 16-byte 4×4 formats such as ASTC, BC7, and ETC2 RGBA, including mip levels. Opaque ETC2 RGB uses 8 bytes per 4×4 block (about one eighth); an RGBA8 fallback has no GPU memory reduction. The format is selected by your `KTX2Loader` based on renderer support: ASTC, BC7, ETC2, or RGBA8 fallback. UASTC encoding and KTX2 packing run as one task per texture in the existing worker pool; if workers are unavailable, mipmap and alpha preparation yield every 8 KiB, encoding yields after every 16 4×4 blocks, and KTX2 packing yields every 64 KiB. The KTX2 transcoder is loaded and owned by your `KTX2Loader`; the vegetation library does not include or import it. The RGBA `DataTexture` GPU storage is released when its compressed replacement arrives, while its CPU pixels remain available for color changes. Without `ktx2Loader`, textures remain RGBA8 `DataTexture`s.
+The loader module also imports `ktx-parse` and `zstddec` as normal Three.js modules, which your app bundler resolves or serves. This package keeps Three and those module paths external, so their code is not embedded in vegetation's published bundle. Passing your own loader takes precedence over the internal loader. Dispose a caller-owned loader yourself.
+
+The compressed GPU texture uses about **one quarter of RGBA8 memory** with 16-byte 4×4 formats such as ASTC, BC7, and ETC2 RGBA, including mip levels. Opaque ETC2 RGB uses 8 bytes per 4×4 block (about one eighth); an RGBA8 fallback has no GPU memory reduction. The format is selected by `KTX2Loader` based on renderer support: ASTC, BC7, ETC2, or RGBA8 fallback. UASTC encoding and KTX2 packing run as one task per texture in the existing worker pool; when an explicitly supplied loader is used without Workers, mipmap and alpha preparation yield every 8 KiB, encoding yields after every 16 4×4 blocks, and KTX2 packing yields every 64 KiB. The RGBA `DataTexture` GPU storage is released when its compressed replacement arrives, while its CPU pixels remain available for color changes.
 
 Opaque colour textures use UASTC mode 5; alpha-tested textures use mode 13 with a binary alpha channel. Mips retain their coverage-preserving filter, then alpha is thresholded to 0 or 255 at each level before encoding. This keeps the `alphaTest` cut-out mask exact after RGBA32, BC7 and ETC2 transcodes. Normal maps use UASTC mode 5 with a linear transfer function and `NoColorSpace`; X, Y and Z remain in RGB.
 

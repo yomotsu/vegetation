@@ -11,7 +11,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - `src/core/generators/*.ts`: 種類ごとの生成（純粋関数、`generate*Data` が `VegetationData` を返す）。花の品種ごとの形は `src/core/flowers/*.ts`、allium / daisy の花テクスチャは `src/core/flowersTexture.ts`
 - `src/core/impostor.ts`: インポスターの焼き込み（`bakeImpostor`）とカード生成。LOD3/4 は LOD0 から焼く。タイルは 2 のべき乗の格子に並べる
 - `src/core/textureMipmaps.ts`: alpha test 用の CPU ミップ（カバレッジ保持）
-- `src/core/uastc.ts` / `src/core/ktx2.ts`: 自作 UASTC エンコーダーと KTX2 書き出し（GPU 圧縮、opt-in）
+- `src/core/uastc.ts` / `src/core/ktx2.ts`: 自作 UASTC エンコーダーと KTX2 書き出し（GPU 圧縮、既定 on・opt-out）
 - `src/core/leafTexture.ts`: モミの小枝テクスチャ（`createFirSprigTexture`）と `padTextureEdges`（横一列の正方形タイルの縁埋め。アルファは変えない）
 - `src/three/VegetationAsset.ts`: マテリアル・テクスチャ・色変更・UASTC 差し替え。`VegetationMesh.ts`: LOD ごとのパーツ Mesh、LOD4 ビルボードの向き、`upNormalCards` の両向き化
 - `src/webgpu/index.ts`: WebGPU 用インポスターマテリアル（TSL）。`src/worker/*`: 非同期生成と UASTC エンコード（共有 Worker プール）
@@ -22,7 +22,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - メイン `vegetation`: `*Mesh`、`generate*` / `generate*Async`、`VegetationAsset`、`VegetationMesh`、`orientBillboardInstances`、`disposeVegetationWorkers` と型だけ。乱数・ノイズ・色変換などの部品は公開しない（デモは `../src/...` を直接 import）
 - `vegetation/core`: `generate{Tree,Rock,Pebbles,Grass,Flowers}Data` と型だけ。`vegetation/webgpu`: 読み込むと TSL マテリアルを登録
 - 公開リストは `tests/publicApi.test.ts` で固定している。export を増やしたらここも直す
-- GPU 圧縮: `*Mesh` / `generate*` / `generate*Async` のオプションに利用者の `KTX2Loader`（`detectSupport( renderer )` 済み）を渡したときだけ有効。トランスコーダーはライブラリから import しない
+- GPU 圧縮: 既定 on。`compressTextures: false` で opt-out。通常は `VegetationMesh` が最初に描画されたとき renderer に対応する共有 `KTX2Loader` を遅延生成し、`detectSupport( renderer )` を呼ぶ。`getParts()` / `InstancedMesh` では `asset.setRenderer( renderer )` を呼ぶ。利用者が loader を渡した場合はそちらを使う
 
 ## アルゴリズム・設計
 
@@ -34,8 +34,9 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - rock / pebbles の石テクスチャは 512²（`ROCK_TEXTURE_SIZE`）。1024² は 1 アセット 8MB だった
 
 ### GPU 圧縮（UASTC、2026-10-30 採用）
-- 生成した RGBA → 自作エンコーダーで UASTC（不透明色と法線はモード 5、alpha test 色はモード 13）→ メモリ上の KTX2 → 利用者の KTX2Loader が端末の形式（ASTC / BC7 / ETC2 / RGBA）へ変換
-- エンコードは共有 Worker プールでテクスチャ 1 枚ずつ。届くまで RGBA を描き、届いたら差し替え。色変更・焼き直しは再エンコードし、古い結果は捨てる。Worker がなければメインスレッドで細切れ（最大約 2.6 ms）
+- 生成した RGBA → 自作エンコーダーで UASTC（不透明色と法線はモード 5、alpha test 色はモード 13）→ メモリ上の KTX2 → renderer 対応の共有 `KTX2Loader` が端末の形式（ASTC / BC7 / ETC2 / RGBA）へ変換
+- 既定 on、`compressTextures: false` で opt-out。エンコードは共有 Worker プールでテクスチャ 1 枚ずつ始め、loader が使えるまで RGBA を描く。届いたら差し替え。色変更・焼き直しは再エンコードし、古い結果は捨てる。Worker がない環境では既定圧縮を行わず RGBA のままにする。明示的に渡した loader はメインスレッドの細切れ fallback（最大約 2.6 ms）を使える
+- 内部 loader は renderer ごとに遅延生成し、`disposeVegetationWorkers()` で dispose。`VegetationMesh` は初回描画時に renderer を登録。`getParts()` / `InstancedMesh` 利用時は `asset.setRenderer( renderer )` を一度呼ぶ
 - alpha test のテクスチャは各ミップの不透明度を 0 / 255 に 2 値化してからエンコードする（BC7 で抜きがずれたため）。全変換先で抜きのずれ 0
 - 却下: BC/ETC2 の直接エンコード（ETC2 が遅く画質も破綻）、basisu の wasm（数 MB）
 
@@ -68,6 +69,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - `bakeLod( …, solidLeafCoverage )` は `leaf` テクスチャだけ不透明化する。`leafRing` には効かない
 - vitest は console.log を表示しない。調査用の probe テストは `appendFileSync` でファイルへ書き出す
 - 処理時間のテスト（50ms / 500ms 予算）は全体並列実行だと落ちることがある。ファイル単体で再実行して判断する。三層の tree 予算は 50ms ぎりぎりなので、テクスチャ処理を足したら単体で計測する
+- `tests/three/generationBudget.test.ts`（三層 tree）は単体でも 51〜63ms で落ちる回がある（HEAD でも同程度）。変更の影響を見るときは HEAD と交互に数回回して比べる。Node にはグローバル `Worker` がないので、テストでは既定の UASTC 圧縮は走らない
 - rock の「HEAD とバイト一致」テストはパーツ定義もハッシュする（`impostorFade` は除外済み）。パーツに項目を足すとき注意
 - HEAD と見た目を比べるときは、HEAD の detached worktree（node_modules をシンボリックリンク）を別ポートで `vite --config vite.demo.config.ts --port 5180` として立てる。worktree から three の `libs/basis` を読むと Vite が 403 を返すので、`server.fs.strict: false` の一時設定で立てる
 - 見た目の変更はブラウザで確認してからコミットする（テストが通るだけでは不可）

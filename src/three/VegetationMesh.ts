@@ -1,5 +1,5 @@
 import { BufferAttribute, BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
-import type { Camera, Color, ColorRepresentation } from 'three';
+import type { Camera, Color, ColorRepresentation, WebGLRenderer } from 'three';
 import type { LodLevel } from '../core/types';
 import { createBidirectionalCardGeometry, createBidirectionalCardMaterial } from './grassCardGeometry';
 import { VegetationAsset } from './VegetationAsset';
@@ -133,6 +133,12 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 	readonly asset: VegetationAsset;
 	readonly lod: LodLevel;
 
+	override onBeforeRender( renderer: WebGLRenderer ): void {
+
+		this.asset.setRenderer( renderer );
+
+	}
+
 	constructor( asset: VegetationAsset, lod = 0, ownsAsset = false ) {
 
 		const level = Math.floor( Math.max( 0, Math.min( 4, Number.isFinite( lod ) ? lod : 0 ) ) ) as LodLevel;
@@ -205,17 +211,16 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 			billboard.castShadow = this.shadowCast;
 			billboard.receiveShadow = this.shadowReceive;
 			const inverseWorldMatrix = new Matrix4();
+			const faceCamera = ( camera: Camera ): void => {
+
+				cameraPosition.setFromMatrixPosition( camera.matrixWorld );
+				inverseWorldMatrix.copy( this.matrixWorld ).invert();
+				cameraPosition.applyMatrix4( inverseWorldMatrix );
+				billboard.rotation.set( 0, Math.atan2( cameraPosition.x, cameraPosition.z ), 0 );
+				billboard.updateMatrixWorld( true );
+
+			};
 			if ( isCameraFacingBillboard ) {
-
-				const faceCamera = ( camera: Camera ): void => {
-
-					cameraPosition.setFromMatrixPosition( camera.matrixWorld );
-					inverseWorldMatrix.copy( this.matrixWorld ).invert();
-					cameraPosition.applyMatrix4( inverseWorldMatrix );
-					billboard.rotation.set( 0, Math.atan2( cameraPosition.x, cameraPosition.z ), 0 );
-					billboard.updateMatrixWorld( true );
-
-				};
 
 				// 影は光源へ向けて落とす。視点カメラの向きのままだと、オービットに合わせて影の幅と位置が変わる。
 				// WebGL は onBeforeShadow の前に modelViewMatrix を求めるので、向きを変えた後に求め直す。
@@ -227,14 +232,16 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 
 				};
 
-				// WebGPU は影の描画でも影用カメラを渡して onBeforeRender を呼ぶ。
-				billboard.onBeforeRender = ( renderer, scene, camera ) => {
-
-					faceCamera( camera );
-
-				};
-
 			}
+
+			// 分割カードは子 Mesh が描画されるため、ここで renderer を登録する。
+			billboard.onBeforeRender = ( renderer, scene, camera ) => {
+
+				this.asset.setRenderer( renderer );
+				if ( isCameraFacingBillboard ) faceCamera( camera );
+
+			};
+
 			this.add( billboard );
 			this.partMeshes.push( billboard );
 			this.ownedGeometries.push( billboardGeometry );

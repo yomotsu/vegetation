@@ -107,6 +107,7 @@ export function createScatter( input: VegetationAsset | VegetationAsset[], reque
 				mesh.count = 0;
 				mesh.visible = false;
 				mesh.frustumCulled = false;
+				mesh.onBeforeRender = ( renderer ) => asset.setRenderer( renderer );
 				setPreviewShadowFlags( mesh );
 				mesh.instanceMatrix.setUsage( lod === 4 ? DynamicDrawUsage : StaticDrawUsage );
 				mesh.userData.lod = lod;

@@ -30,6 +30,8 @@ import { addImpostorFade } from './impostorFadeMaterial';
 import { getImpostorMaterialFactory } from './impostorMaterialFactory';
 import type { VegetationMaterial } from './impostorMaterialFactory';
 import { requestVegetationWorkerEncoding } from '../worker/workerPool';
+import { getKTX2Loader } from './ktx2Loader';
+import type { KTX2Renderer } from './ktx2Loader';
 
 async function copyBytesInSlices( source: Uint8Array, onSlice: ( durationMs: number ) => void ): Promise<Uint8Array> {
 	const data = new Uint8Array( source.length );
@@ -65,6 +67,7 @@ export interface KTX2LoaderLike {
 }
 
 export interface VegetationAssetOptions {
+	compressTextures?: boolean;
 	ktx2Loader?: KTX2LoaderLike;
 }
 
@@ -90,7 +93,10 @@ interface TextureBinding {
 	normalMap: boolean;
 	getData: () => TextureData | undefined;
 	generation: number;
-	compressed: CompressedTexture | null;
+	encoded: { buffer: ArrayBuffer; encodeTimeMs: number; encodeThread: 'worker' | 'main'; mainThreadMaxSliceMs: number } | null;
+	compressedByLoader: Map<KTX2LoaderLike, CompressedTexture>;
+	pendingParses: Map<KTX2LoaderLike, number>;
+	activeCompressed: CompressedTexture | null;
 }
 
 function createTexture( data: TextureData, normalMap = false, alphaTest = 0 ): DataTexture {
@@ -180,8 +186,9 @@ export class VegetationAsset {
 	private readonly impostorTextureData = new Map<string, TextureData>();
 	private readonly impostorViews = new Map<string, readonly ImpostorView[]>();
 	private readonly textureBindings: TextureBinding[] = [];
-	private readonly rawTextures = new Map<VegetationMaterial, { map: DataTexture | null; normalMap: DataTexture | null }>();
-	private readonly ktx2Loader: KTX2LoaderLike | undefined;
+	private readonly compressTextures: boolean;
+	private readonly explicitKtx2Loader: boolean;
+	private ktx2Loader: KTX2LoaderLike | undefined;
 	private readonly compressionReports = new Map<string, TextureCompressionReport>();
 	private readonly partIndices = new Map<string, number>();
 	private readonly partColors: Color[];
@@ -192,6 +199,8 @@ export class VegetationAsset {
 	constructor( data: VegetationData, colors?: Record<string, ColorRepresentation>, impostorSize?: number, options?: VegetationAssetOptions );
 	constructor( data: VegetationData, colors: Record<string, ColorRepresentation> = {}, impostorSize = 128, options: VegetationAssetOptions = {}, prepared?: PreparedVegetationAsset ) {
 
+		this.compressTextures = options.compressTextures ?? true;
+		this.explicitKtx2Loader = options.ktx2Loader !== undefined;
 		this.ktx2Loader = options.ktx2Loader;
 		const colorObjects = Object.fromEntries( data.parts.map( ( part ) => [ part.name, new Color( colors[ part.name ] ?? part.defaultColor ) ] ) );
 		const partColorsHex = prepared?.partColorsHex ?? Object.fromEntries( Object.entries( colorObjects ).map( ( [ name, color ] ) => [ name, color.getHex() ] ) );
@@ -270,7 +279,6 @@ export class VegetationAsset {
 				addImpostorFade( material );
 
 			}
-			this.rawTextures.set( material, { map: texture as DataTexture | null, normalMap: normalTexture as DataTexture | null } );
 			if ( texture !== null && part.texture !== null ) {
 				const source = isImpostor
 					? () => this.impostorTextureData.get( part.texture! )
@@ -284,7 +292,10 @@ export class VegetationAsset {
 					normalMap: false,
 					getData: source,
 					generation: 0,
-					compressed: null,
+					encoded: null,
+					compressedByLoader: new Map(),
+					pendingParses: new Map(),
+					activeCompressed: null,
 				} );
 			}
 			if ( normalTexture !== null && part.normalTexture !== undefined ) {
@@ -297,14 +308,17 @@ export class VegetationAsset {
 					normalMap: true,
 					getData: () => this.data.textures[ part.normalTexture! ],
 					generation: 0,
-					compressed: null,
+					encoded: null,
+					compressedByLoader: new Map(),
+					pendingParses: new Map(),
+					activeCompressed: null,
 				} );
 			}
 
 			return material;
 
 		} );
-		if ( this.ktx2Loader !== undefined ) {
+		if ( this.compressTextures && ( this.ktx2Loader !== undefined || typeof Worker !== 'undefined' ) ) {
 			for ( const binding of this.textureBindings ) this.scheduleCompression( binding );
 		}
 
@@ -345,10 +359,10 @@ export class VegetationAsset {
 		} );
 	}
 
-	private parseKtx2( buffer: ArrayBuffer ): Promise<CompressedTexture> {
+	private parseKtx2( loader: KTX2LoaderLike, buffer: ArrayBuffer ): Promise<CompressedTexture> {
 		return new Promise( ( resolve, reject ) => {
 			try {
-				this.ktx2Loader!.parse( buffer, resolve, reject );
+				loader.parse( buffer, resolve, reject );
 			} catch ( error ) {
 				reject( error );
 			}
@@ -356,17 +370,33 @@ export class VegetationAsset {
 	}
 
 	private scheduleCompression( binding: TextureBinding ): void {
-		if ( this.ktx2Loader === undefined || this.disposed ) return;
+		if ( ! this.compressTextures || this.disposed || ( this.ktx2Loader === undefined && typeof Worker === 'undefined' ) ) return;
 		const textureData = binding.getData();
 		if ( textureData === undefined ) return;
 		const generation = ++ binding.generation;
+		binding.encoded = null;
 		this.compressionReports.delete( `${ binding.name }:${ binding.slot }` );
-		void this.encodeKtx2( textureData, binding ).then( async ( result ) => {
+		void this.encodeKtx2( textureData, binding ).then( ( result ) => {
 			if ( this.disposed || binding.generation !== generation ) return;
-			const transcodeStart = performance.now();
-			const compressed = await this.parseKtx2( result.buffer );
+			binding.encoded = result;
+			if ( this.ktx2Loader !== undefined ) void this.parseEncodedTexture( binding, this.ktx2Loader, generation );
+		} ).catch( ( error: unknown ) => {
+			if ( binding.generation !== generation || this.disposed ) return;
+			console.warn( `VegetationAsset: UASTC texture conversion failed for "${ binding.name }"; keeping its RGBA texture.`, error );
+		} );
+	}
+
+	private async parseEncodedTexture( binding: TextureBinding, loader: KTX2LoaderLike, generation: number ): Promise<void> {
+		if ( binding.generation !== generation || binding.encoded === null || this.disposed ) return;
+		if ( binding.compressedByLoader.has( loader ) || binding.pendingParses.get( loader ) === generation ) return;
+		const encoded = binding.encoded;
+		binding.pendingParses.set( loader, generation );
+		const transcodeStart = performance.now();
+
+		try {
+			const compressed = await this.parseKtx2( loader, encoded.buffer.slice( 0 ) );
 			const transcodeTimeMs = performance.now() - transcodeStart;
-			if ( this.disposed || binding.generation !== generation || this.rawTexture( binding.material, binding.slot ) !== binding.raw ) {
+			if ( this.disposed || binding.generation !== generation ) {
 				compressed.dispose();
 				return;
 			}
@@ -375,30 +405,61 @@ export class VegetationAsset {
 			compressed.flipY = false;
 			compressed.colorSpace = binding.normalMap ? NoColorSpace : SRGBColorSpace;
 			compressed.name = `${ binding.name }-uastc`;
-			binding.material[ binding.slot ] = compressed;
-			binding.material.needsUpdate = true;
-			this.disposeRawTextureIfUnused( binding.raw );
-			binding.compressed?.dispose();
-			binding.compressed = compressed;
-			const reportKey = `${ binding.name }:${ binding.slot }`;
-			this.compressionReports.set( reportKey, {
-				texture: binding.name,
-				slot: binding.slot,
-				format: compressed.format,
-				encodeThread: result.encodeThread,
-				encodeTimeMs: result.encodeTimeMs,
-				mainThreadMaxSliceMs: result.mainThreadMaxSliceMs,
-				transcodeTimeMs,
-				byteLength: compressed.mipmaps.reduce( ( total, level ) => total + level.data.byteLength, 0 ),
-			} );
-		} ).catch( ( error: unknown ) => {
-			if ( binding.generation !== generation || this.disposed ) return;
-			console.warn( `VegetationAsset: UASTC texture conversion failed for "${ binding.name }"; keeping its RGBA texture.`, error );
-		} );
+			binding.compressedByLoader.set( loader, compressed );
+
+			if ( this.ktx2Loader === loader ) {
+				binding.material[ binding.slot ] = compressed;
+				binding.material.needsUpdate = true;
+				binding.activeCompressed = compressed;
+				this.disposeRawTextureIfUnused( binding.raw );
+				this.compressionReports.set( `${ binding.name }:${ binding.slot }`, {
+					texture: binding.name,
+					slot: binding.slot,
+					format: compressed.format,
+					encodeThread: encoded.encodeThread,
+					encodeTimeMs: encoded.encodeTimeMs,
+					mainThreadMaxSliceMs: encoded.mainThreadMaxSliceMs,
+					transcodeTimeMs,
+					byteLength: compressed.mipmaps.reduce( ( total, level ) => total + level.data.byteLength, 0 ),
+				} );
+			}
+		} catch ( error ) {
+			if ( binding.generation === generation && ! this.disposed ) {
+				console.warn( `VegetationAsset: UASTC texture conversion failed for "${ binding.name }"; keeping its RGBA texture.`, error );
+			}
+		} finally {
+			if ( binding.pendingParses.get( loader ) === generation ) binding.pendingParses.delete( loader );
+		}
 	}
 
-	private rawTexture( material: VegetationMaterial, slot: TextureSlot ): DataTexture | null {
-		return this.rawTextures.get( material )?.[ slot ] ?? null;
+	private useKTX2Loader( loader: KTX2LoaderLike ): void {
+		if ( ! this.compressTextures || this.disposed || this.explicitKtx2Loader || this.ktx2Loader === loader ) return;
+		this.ktx2Loader = loader;
+		for ( const binding of this.textureBindings ) {
+			this.compressionReports.delete( `${ binding.name }:${ binding.slot }` );
+			const compressed = binding.compressedByLoader.get( loader );
+			if ( compressed !== undefined ) {
+				binding.material[ binding.slot ] = compressed;
+				binding.material.needsUpdate = true;
+				binding.activeCompressed = compressed;
+				continue;
+			}
+			if ( binding.activeCompressed !== null ) {
+				binding.material[ binding.slot ] = binding.raw;
+				binding.raw.needsUpdate = true;
+				binding.material.needsUpdate = true;
+				binding.activeCompressed = null;
+			}
+			if ( binding.encoded !== null ) void this.parseEncodedTexture( binding, loader, binding.generation );
+		}
+	}
+
+	/** InstancedMesh など VegetationMesh を使わない描画では、renderer が使える時点で一度呼びます。 */
+	setRenderer( renderer: KTX2Renderer ): void {
+
+		if ( ! this.compressTextures || this.explicitKtx2Loader || this.disposed || typeof Worker === 'undefined' ) return;
+		this.useKTX2Loader( getKTX2Loader( renderer ) );
+
 	}
 
 	private disposeRawTextureIfUnused( texture: DataTexture ): void {
@@ -417,11 +478,15 @@ export class VegetationAsset {
 		}
 		for ( const binding of bindings ) {
 			binding.generation ++;
-			if ( binding.compressed !== null ) {
+			binding.encoded = null;
+			for ( const compressed of binding.compressedByLoader.values() ) compressed.dispose();
+			binding.compressedByLoader.clear();
+			binding.pendingParses.clear();
+			if ( binding.activeCompressed !== null ) {
 				binding.material[ slot ] = binding.raw;
 				binding.material.needsUpdate = true;
-				binding.compressed.dispose();
-				binding.compressed = null;
+				binding.raw.needsUpdate = true;
+				binding.activeCompressed = null;
 			}
 			updateTexture( binding.raw, data );
 			this.scheduleCompression( binding );
@@ -631,7 +696,9 @@ export class VegetationAsset {
 		for ( const binding of this.textureBindings ) {
 			binding.generation ++;
 			textures.add( binding.raw );
-			if ( binding.compressed !== null ) textures.add( binding.compressed );
+			for ( const compressed of binding.compressedByLoader.values() ) textures.add( compressed );
+			binding.compressedByLoader.clear();
+			binding.pendingParses.clear();
 		}
 
 		for ( const material of this.materials ) {
