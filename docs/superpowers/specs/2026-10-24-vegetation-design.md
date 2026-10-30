@@ -228,6 +228,8 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 
 - `src/core`: three に依存しない純データ層（型付き配列。MeshData、PartDef、VegetationData、TextureData）
   - TextureData は「行 0 = v=0（下端）」で、`flipY = false` でアップロードする
+- **透過方式（ユーザー決定）**: 植生オブジェクトでは alpha blending / transparency と alpha-to-coverage を使わない。抜き形状は alpha test（discard）のみで描画する
+- alpha test を使う色テクスチャは CPU でカバレッジを保つ mipmap を生成し、`DataTexture.mipmaps` としてアップロードする
 - `src/three`: VegetationAsset / VegetationMesh / meshes.ts（TreeMesh、RockMesh、PebblesMesh）
 - `src/webgpu`: LOD4 クロスフェードの TSL 版（`vegetation/webgpu` エントリ）
 - 色の変更:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBillboard, bakeImpostor, impostorPart, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
+import { buildBillboard, bakeImpostor, extractImpostorViews, impostorPart, LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS } from '../../src/core/impostor';
 import { MeshBuilder } from '../../src/core/meshBuilder';
 import type { MeshData, VegetationData, Vec3 } from '../../src/core/types';
 import { validateMeshData } from '../helpers/validateMeshData';
@@ -244,6 +244,20 @@ describe( 'impostor generation', () => {
 		expect( texture.width ).toBe( 64 );
 		expect( texture.height ).toBe( 32 );
 		expect( opaque ).toBeGreaterThan( 0 );
+
+	} );
+
+	it( 'reuses matching views from a larger POT impostor atlas', () => {
+
+		const data = createVegetationData( createBoxMesh() );
+		const source = bakeImpostor( data, [ white ], 32, LOD3_IMPOSTOR_VIEWS );
+		const extracted = extractImpostorViews( source, LOD3_IMPOSTOR_VIEWS, LOD4_IMPOSTOR_VIEWS );
+		const reference = bakeImpostor( data, [ white ], 32, LOD4_IMPOSTOR_VIEWS );
+
+		expect( extracted ).not.toBeNull();
+		expect( extracted!.width ).toBe( reference.width );
+		expect( extracted!.height ).toBe( reference.height );
+		expect( extracted!.data ).toEqual( reference.data );
 
 	} );
 

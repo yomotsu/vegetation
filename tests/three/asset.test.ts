@@ -166,29 +166,32 @@ describe( 'VegetationAsset', () => {
 		expect( leafTexture ).toBeInstanceOf( DataTexture );
 		expect( leafTexture.image.width ).toBe( 256 );
 		expect( leafTexture.image.height ).toBe( 256 );
-		expect( leafRingTexture.image.width ).toBe( 10 * 128 );
-		expect( leafRingTexture.image.height ).toBe( 128 );
+		expect( leafRingTexture.image.width ).toBe( 4 * 64 );
+		expect( leafRingTexture.image.height ).toBe( 4 * 64 );
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
 		expect( impostorTexture.image.width ).toBe( 128 * 2 );
 		expect( impostorTexture.image.height ).toBe( 128 );
-		expect( impostorLod3Texture.image.width ).toBe( 128 * 7 );
-		expect( impostorLod3Texture.image.height ).toBe( 128 );
+		expect( impostorLod3Texture.image.width ).toBe( 128 * 4 );
+		expect( impostorLod3Texture.image.height ).toBe( 128 * 2 );
 		expect( asset.data.parts[ 0 ]!.texture ).toBe( 'bark' );
 		expect( asset.data.parts[ 0 ]!.defaultColor ).toBe( 0x6b4c32 );
 		expect( barkMaterial.color.getHex() ).toBe( 0x6b4c32 );
 		expect( asset.getColor( 'bark' ).getHex() ).toBe( 0x6b4c32 );
 		expect( asset.data.textures.bark ).toBeDefined();
 
-		for ( const texture of [ barkTexture, leafTexture, leafRingTexture, impostorTexture, impostorLod3Texture ] ) {
+		for ( const texture of [ leafTexture, leafRingTexture, impostorTexture, impostorLod3Texture ] ) {
 
 			expect( texture.flipY ).toBe( false );
 			expect( texture.colorSpace ).toBe( SRGBColorSpace );
 			expect( texture.magFilter ).toBe( LinearFilter );
 			expect( texture.minFilter ).toBe( LinearMipmapLinearFilter );
-			expect( texture.generateMipmaps ).toBe( true );
+			expect( texture.generateMipmaps ).toBe( false );
+			expect( texture.mipmaps.length ).toBeGreaterThan( 1 );
 			expect( texture.version ).toBeGreaterThan( 0 );
 
 		}
+		expect( barkTexture.generateMipmaps ).toBe( true );
+		expect( barkTexture.mipmaps ).toHaveLength( 0 );
 		expect( barkTexture.wrapS ).toBe( RepeatWrapping );
 		expect( barkTexture.wrapT ).toBe( RepeatWrapping );
 		expect( leafTexture.wrapS ).toBe( ClampToEdgeWrapping );
@@ -267,10 +270,14 @@ describe( 'VegetationAsset', () => {
 		const leafTexture = asset.materials[ 1 ]!.map as DataTexture;
 		const impostorLod3Texture = asset.materials[ 2 ]!.map as DataTexture;
 		const impostorTexture = asset.materials[ 3 ]!.map as DataTexture;
+		const leafMipmaps = leafTexture.mipmaps as { data: Uint8Array }[];
+		const impostorMipmaps = impostorTexture.mipmaps as { data: Uint8Array }[];
 		const originalLeafPixels = leafTexture.image.data!.slice();
+		const originalLeafMip = leafMipmaps[ 1 ]!.data.slice();
 		const leafRingTexture = asset.materials[ 4 ]!.map as DataTexture;
 		const originalLeafRingPixels = leafRingTexture.image.data!.slice();
 		const originalImpostorPixels = impostorTexture.image.data!.slice();
+		const originalImpostorMip = impostorMipmaps[ 1 ]!.data.slice();
 		const originalLod3Pixels = impostorLod3Texture.image.data!.slice();
 		const positions = asset.geometries[ 0 ]!.getAttribute( 'position' ).array;
 		const originalLeafData = leafTexture.image.data;
@@ -284,11 +291,13 @@ describe( 'VegetationAsset', () => {
 		expect( asset.materials[ 1 ]!.color.getHex() ).toBe( 0xffffff );
 		expect( leafTexture.image.data ).not.toBe( originalLeafData );
 		expect( leafTexture.image.data ).not.toEqual( originalLeafPixels );
+		expect( ( leafTexture.mipmaps as { data: Uint8Array }[] )[ 1 ]!.data ).not.toEqual( originalLeafMip );
 		expect( leafRingTexture.image.data ).not.toEqual( originalLeafRingPixels );
 		expect( meanTextureColor( asset.data.textures.leaf! )[ 0 ] ).toBeGreaterThan( meanTextureColor( asset.data.textures.leaf! )[ 1 ] );
 		expect( impostorLod3Texture.image.data ).not.toEqual( originalLod3Pixels );
 		expect( lod3Impostor.material.map ).toBe( impostorLod3Texture );
 		expect( impostorTexture.image.data ).not.toEqual( originalImpostorPixels );
+		expect( ( impostorTexture.mipmaps as { data: Uint8Array }[] )[ 1 ]!.data ).not.toEqual( originalImpostorMip );
 		for ( let y = 0; y < impostorTexture.image.height && ! topTileChanged; y ++ ) {
 
 			for ( let x = impostorTexture.image.width / 2; x < impostorTexture.image.width; x ++ ) {

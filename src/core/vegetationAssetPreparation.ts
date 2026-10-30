@@ -1,6 +1,7 @@
 import { hexToLinear } from './color';
-import { bakeImpostor, impostorViewsForPart } from './impostor';
+import { bakeImpostor, extractImpostorViews, impostorViewsForPart } from './impostor';
 import { regenerateTexture } from './textureRegenerator';
+import { alphaTestForTexture, prepareTextureMipmaps, withTextureMipmaps } from './textureMipmaps';
 import type { Color3, ImpostorView, TextureData, VegetationData } from './types';
 
 export interface PreparedVegetationAsset {
@@ -60,6 +61,15 @@ export function prepareVegetationAsset(
 
 	}
 
+	const normalTextures = new Set( preparedData.parts.flatMap( ( part ) => part.normalTexture === undefined ? [] : [ part.normalTexture ] ) );
+	for ( const [ textureName, texture ] of Object.entries( preparedData.textures ) ) {
+		preparedData.textures[ textureName ] = prepareTextureMipmaps(
+			texture,
+			alphaTestForTexture( preparedData.parts, textureName ),
+			normalTextures.has( textureName ),
+		);
+	}
+
 	const materialColors = preparedData.parts.map( ( part ) => part.colorizesTexture ? [ 1, 1, 1 ] as [ number, number, number ] : linearColors[ part.name ]! );
 	const impostorTextures: Record<string, TextureData> = {};
 	const impostorViews: Record<string, readonly ImpostorView[]> = {};
@@ -70,7 +80,19 @@ export function prepareVegetationAsset(
 		if ( part.texture === null || views === undefined || impostorTextures[ part.texture ] !== undefined ) continue;
 
 		impostorViews[ part.texture ] = views;
-		impostorTextures[ part.texture ] = bakeImpostor( preparedData, materialColors, impostorSize, views );
+		let bakedTexture: TextureData | null = null;
+
+		for ( const [ sourceName, sourceTexture ] of Object.entries( impostorTextures ) ) {
+
+			bakedTexture = extractImpostorViews( sourceTexture, impostorViews[ sourceName ]!, views );
+			if ( bakedTexture !== null ) break;
+
+		}
+
+		impostorTextures[ part.texture ] = withTextureMipmaps(
+			bakedTexture ?? bakeImpostor( preparedData, materialColors, impostorSize, views ),
+			alphaTestForTexture( preparedData.parts, part.texture ),
+		);
 
 	}
 

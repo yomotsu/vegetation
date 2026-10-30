@@ -532,17 +532,19 @@ function drawSprig( data: Uint8Array, width: number, size: number, seed: number 
 
 }
 
-export function padTextureEdges( texture: TextureData ): void {
+export function padTextureEdges( texture: TextureData, tileSize = texture.height, tileCountLimit = Infinity ): void {
 
-	const tileSize = texture.height;
-	const tileCount = Math.floor( texture.width / tileSize );
+	const tileColumns = Math.floor( texture.width / tileSize );
+	const tileRows = Math.floor( texture.height / tileSize );
+	const tileCount = Math.min( tileColumns * tileRows, tileCountLimit );
 	const colorPixelIndices = texture.colorFactors === undefined ? null : [] as number[];
 	const assigned = new Uint8Array( tileSize * tileSize );
 	const queue = new Int32Array( tileSize * tileSize );
 
 	for ( let tile = 0; tile < tileCount; tile ++ ) {
 
-		const tileOffset = tile * tileSize;
+		const tileX = ( tile % tileColumns ) * tileSize;
+		const tileY = Math.floor( tile / tileColumns ) * tileSize;
 		assigned.fill( 0 );
 		let queueEnd = 0;
 
@@ -551,7 +553,7 @@ export function padTextureEdges( texture: TextureData ): void {
 			for ( let x = 0; x < tileSize; x ++ ) {
 
 				const localIndex = y * tileSize + x;
-				const textureIndex = ( y * texture.width + tileOffset + x ) * 4;
+				const textureIndex = ( ( tileY + y ) * texture.width + tileX + x ) * 4;
 
 				if ( texture.data[ textureIndex + 3 ]! > 0 ) {
 
@@ -574,7 +576,7 @@ export function padTextureEdges( texture: TextureData ): void {
 			const source = queue[ queueStart ++ ]!;
 			const sourceX = source % tileSize;
 			const sourceY = Math.floor( source / tileSize );
-			const sourceTextureIndex = ( sourceY * texture.width + tileOffset + sourceX ) * 4;
+			const sourceTextureIndex = ( ( tileY + sourceY ) * texture.width + tileX + sourceX ) * 4;
 
 			for ( let offset = 0; offset < neighborOffsets.length; offset ++ ) {
 
@@ -590,7 +592,7 @@ export function padTextureEdges( texture: TextureData ): void {
 				assigned[ neighbor ] = 1;
 				queue[ queueEnd ++ ] = neighbor;
 
-				const textureIndex = ( y * texture.width + tileOffset + x ) * 4;
+				const textureIndex = ( ( tileY + y ) * texture.width + tileX + x ) * 4;
 
 				texture.data[ textureIndex ] = texture.data[ sourceTextureIndex ]!;
 				texture.data[ textureIndex + 1 ] = texture.data[ sourceTextureIndex + 1 ]!;

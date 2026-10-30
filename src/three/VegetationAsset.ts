@@ -20,15 +20,18 @@ import type { ColorRepresentation, Texture } from 'three';
 import { bakeImpostor, impostorViewsForPart } from '../core/impostor';
 import { regenerateTexture } from '../core/textureRegenerator';
 import { prepareVegetationAsset } from '../core/vegetationAssetPreparation';
+import { alphaTestForTexture, prepareTextureMipmaps } from '../core/textureMipmaps';
 import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
 import type { ImpostorView, LodLevel, MeshData, PartDef, TextureData, VegetationData } from '../core/types';
 import { addImpostorFade } from './impostorFadeMaterial';
 import { getImpostorMaterialFactory } from './impostorMaterialFactory';
 import type { VegetationMaterial } from './impostorMaterialFactory';
 
-function createTexture( data: TextureData, normalMap = false ): DataTexture {
+function createTexture( data: TextureData, normalMap = false, alphaTest = 0 ): DataTexture {
 
 	const texture = new DataTexture( data.data, data.width, data.height, RGBAFormat, UnsignedByteType );
+	const preparedData = data.mipmaps === undefined ? prepareTextureMipmaps( data, alphaTest, normalMap ) : data;
+	texture.mipmaps = preparedData.mipmaps ?? [];
 	texture.flipY = false;
 	texture.colorSpace = normalMap ? NoColorSpace : SRGBColorSpace;
 	texture.magFilter = LinearFilter;
@@ -37,10 +40,21 @@ function createTexture( data: TextureData, normalMap = false ): DataTexture {
 	const wrapT = data.wrapT ?? data.wrap;
 	texture.wrapS = wrapS === 'repeat' ? RepeatWrapping : ClampToEdgeWrapping;
 	texture.wrapT = wrapT === 'repeat' ? RepeatWrapping : ClampToEdgeWrapping;
-	texture.generateMipmaps = true;
+	texture.generateMipmaps = preparedData.mipmaps === undefined;
 	texture.needsUpdate = true;
 
 	return texture;
+
+}
+
+function updateTexture( texture: DataTexture, data: TextureData ): void {
+
+	texture.image.data = data.data;
+	texture.image.width = data.width;
+	texture.image.height = data.height;
+	texture.mipmaps = data.mipmaps ?? [];
+	texture.generateMipmaps = data.mipmaps === undefined;
+	texture.needsUpdate = true;
 
 }
 
@@ -136,7 +150,7 @@ export class VegetationAsset {
 		}
 		for ( const [ textureName, textureData ] of Object.entries( payload.impostorTextures ) ) {
 
-			this.impostorTextures.set( textureName, createTexture( textureData ) );
+			this.impostorTextures.set( textureName, createTexture( textureData, false, alphaTestForTexture( this.data.parts, textureName ) ) );
 
 		}
 
@@ -145,7 +159,7 @@ export class VegetationAsset {
 			this.partIndices.set( part.name, index );
 
 			const isImpostor = impostorViewsForPart( part ) !== undefined;
-			const texture = isImpostor ? this.impostorTextures.get( part.texture! ) ?? null : part.texture === null ? null : this.data.textures[ part.texture ] === undefined ? null : createTexture( this.data.textures[ part.texture ]! );
+			const texture = isImpostor ? this.impostorTextures.get( part.texture! ) ?? null : part.texture === null ? null : this.data.textures[ part.texture ] === undefined ? null : createTexture( this.data.textures[ part.texture ]!, false, part.alphaTest );
 			const normalTexture = part.normalTexture === undefined ? null : this.data.textures[ part.normalTexture ] === undefined ? null : createTexture( this.data.textures[ part.normalTexture ]!, true );
 			const materialParameters = {
 				color: materialColors[ index ]!,
@@ -275,7 +289,10 @@ export class VegetationAsset {
 					throw new Error( `Vegetation part cannot regenerate its texture: ${ partName }` );
 				}
 
-				regeneratedTextures.set( part.texture, regenerateTexture( this.data, part.texture, nextColor.getHex() ) );
+				regeneratedTextures.set( part.texture, prepareTextureMipmaps(
+					regenerateTexture( this.data, part.texture, nextColor.getHex() ),
+					alphaTestForTexture( this.data.parts, part.texture ),
+				) );
 
 			}
 
@@ -304,15 +321,17 @@ export class VegetationAsset {
 			}
 			if ( regeneratePlantCard ) {
 				this.data.textureGenerators = { ...this.data.textureGenerators, plantCard: updatedGenerator };
-				const updatedTexture = regenerateTexture( this.data, 'plantCard', 0xffffff );
+				const updatedTexture = prepareTextureMipmaps(
+					regenerateTexture( this.data, 'plantCard', 0xffffff ),
+					alphaTestForTexture( this.data.parts, 'plantCard' ),
+				);
 				this.data.textures.plantCard = updatedTexture;
 				plantCardTextureChanged = true;
 				const cardPartIndex = this.partIndices.get( 'plantCard' );
 				if ( cardPartIndex !== undefined ) {
 					const texture = this.materials[ cardPartIndex ]!.map as DataTexture | null;
 					if ( texture !== null ) {
-						texture.image.data = updatedTexture.data;
-						texture.needsUpdate = true;
+						updateTexture( texture, updatedTexture );
 					}
 				}
 			}
@@ -325,8 +344,7 @@ export class VegetationAsset {
 				const updatedTexture = regeneratedTextures.get( part.texture )!;
 				this.data.textures[ part.texture ] = updatedTexture;
 				const texture = this.materials[ index ]!.map as DataTexture;
-				texture.image.data = updatedTexture.data;
-				texture.needsUpdate = true;
+				updateTexture( texture, updatedTexture );
 
 			} else {
 
@@ -349,9 +367,11 @@ export class VegetationAsset {
 		for ( const [ textureName, viewYawAngles ] of this.impostorViews ) {
 
 			const texture = this.impostorTextures.get( textureName )!;
-			const pixels = bakeImpostor( this.data, toLinearColors( materialColors ), this.impostorSize, viewYawAngles );
-			texture.image.data = pixels.data;
-			texture.needsUpdate = true;
+			const pixels = prepareTextureMipmaps(
+				bakeImpostor( this.data, toLinearColors( materialColors ), this.impostorSize, viewYawAngles ),
+				alphaTestForTexture( this.data.parts, textureName ),
+			);
+			updateTexture( texture, pixels );
 
 		}
 

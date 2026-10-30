@@ -27,6 +27,20 @@ export interface ImpostorFootprint {
 	maxZ: number;
 }
 
+function nextPowerOfTwo( value: number ): number {
+
+	return 2 ** Math.ceil( Math.log2( Math.max( 1, value ) ) );
+
+}
+
+function getTileGrid( tileCount: number ): { columns: number; rows: number } {
+
+	const capacity = nextPowerOfTwo( tileCount );
+	const columns = nextPowerOfTwo( Math.ceil( Math.sqrt( capacity ) ) );
+	return { columns, rows: capacity / columns };
+
+}
+
 const linearSrgb = new Float32Array( 256 );
 
 for ( let i = 0; i < 256; i ++ ) {
@@ -102,12 +116,10 @@ function getFootprint( mesh: MeshData | undefined, fallbackRadius: number, minim
 
 	for ( let index = 0; index < mesh.indices.length; index += 3 ) {
 
-		const triangle = [ mesh.indices[ index ]!, mesh.indices[ index + 1 ]!, mesh.indices[ index + 2 ]! ];
-
 		for ( let edge = 0; edge < 3; edge ++ ) {
 
-			const firstOffset = triangle[ edge ]! * 3;
-			const secondOffset = triangle[ ( edge + 1 ) % 3 ]! * 3;
+			const firstOffset = mesh.indices[ index + edge ]! * 3;
+			const secondOffset = mesh.indices[ index + ( edge + 1 ) % 3 ]! * 3;
 			const firstY = mesh.positions[ firstOffset + 1 ]!;
 			const secondY = mesh.positions[ secondOffset + 1 ]!;
 
@@ -147,24 +159,26 @@ export function buildBillboard( bounds: { radius: number; height: number }, impo
 	const normalWeight = Math.SQRT1_2;
 	const color: Color3 = [ 1, 1, 1 ];
 	const footprint = includeTopCard ? topFootprint ?? getFootprint( lod0, radius, topHeight ) : null;
+	const tileGrid = getTileGrid( includeTopCard ? 2 : 1 );
+	const tileRight = 1 / tileGrid.columns;
+	const tileTop = 1 / tileGrid.rows;
 
 	builder.beginGroup( impostorPartIndex );
 
 	const a0 = builder.addVertex( [ - radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 0 ], color, 0, 0 );
-	const u1 = includeTopCard ? 0.5 : 1;
-	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ u1, 0 ], color, 0, 0 );
-	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ u1, 1 ], color, 1, 0 );
-	const a3 = builder.addVertex( [ - radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0, 1 ], color, 1, 0 );
+	const a1 = builder.addVertex( [ radius, 0, 0 ], [ 0, normalWeight, normalWeight ], [ tileRight, 0 ], color, 0, 0 );
+	const a2 = builder.addVertex( [ radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ tileRight, tileTop ], color, 1, 0 );
+	const a3 = builder.addVertex( [ - radius, height, 0 ], [ 0, normalWeight, normalWeight ], [ 0, tileTop ], color, 1, 0 );
 
 	builder.addTriangle( a0, a1, a2 );
 	builder.addTriangle( a0, a2, a3 );
 
 	if ( footprint !== null ) {
 
-		const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 0.5, 0 ], color, 0, 1 );
-		const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 1, 0 ], color, 0, 1 );
-		const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 1, 1 ], color, 0, 1 );
-		const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 0.5, 1 ], color, 0, 1 );
+		const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ tileRight, 0 ], color, 0, 1 );
+		const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ 2 * tileRight, 0 ], color, 0, 1 );
+		const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ 2 * tileRight, tileTop ], color, 0, 1 );
+		const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ tileRight, tileTop ], color, 0, 1 );
 
 		builder.addTriangle( top0, top1, top2 );
 		builder.addTriangle( top0, top2, top3 );
@@ -191,6 +205,7 @@ export function buildSixPlaneImpostor(
 	const yawAngles = options.yawAngles ?? LOD3_IMPOSTOR_YAW_ANGLES;
 	const includeTopCard = options.includeTopCard ?? true;
 	const tileCount = yawAngles.length + ( includeTopCard ? 1 : 0 );
+	const tileGrid = getTileGrid( tileCount );
 	const footprint = includeTopCard ? options.topFootprint ?? getFootprint( lod0, radius, topHeight ) : null;
 	builder.beginGroup( partIndex );
 
@@ -200,12 +215,16 @@ export function buildSixPlaneImpostor(
 		const rightX = Math.cos( yaw );
 		const rightZ = - Math.sin( yaw );
 		const normal: [ number, number, number ] = [ Math.sin( yaw ) * normalWeight, normalWeight, Math.cos( yaw ) * normalWeight ];
-		const tileStart = view / tileCount;
-		const tileEnd = ( view + 1 ) / tileCount;
-		const a0 = builder.addVertex( [ - rightX * planeRadius, 0, - rightZ * planeRadius ], normal, [ tileStart, 0 ], color, 0, 0 );
-		const a1 = builder.addVertex( [ rightX * planeRadius, 0, rightZ * planeRadius ], normal, [ tileEnd, 0 ], color, 0, 0 );
-		const a2 = builder.addVertex( [ rightX * planeRadius, height, rightZ * planeRadius ], normal, [ tileEnd, 1 ], color, 1, 0 );
-		const a3 = builder.addVertex( [ - rightX * planeRadius, height, - rightZ * planeRadius ], normal, [ tileStart, 1 ], color, 1, 0 );
+		const tileX = view % tileGrid.columns;
+		const tileY = Math.floor( view / tileGrid.columns );
+		const tileStartU = tileX / tileGrid.columns;
+		const tileEndU = ( tileX + 1 ) / tileGrid.columns;
+		const tileStartV = tileY / tileGrid.rows;
+		const tileEndV = ( tileY + 1 ) / tileGrid.rows;
+		const a0 = builder.addVertex( [ - rightX * planeRadius, 0, - rightZ * planeRadius ], normal, [ tileStartU, tileStartV ], color, 0, 0 );
+		const a1 = builder.addVertex( [ rightX * planeRadius, 0, rightZ * planeRadius ], normal, [ tileEndU, tileStartV ], color, 0, 0 );
+		const a2 = builder.addVertex( [ rightX * planeRadius, height, rightZ * planeRadius ], normal, [ tileEndU, tileEndV ], color, 1, 0 );
+		const a3 = builder.addVertex( [ - rightX * planeRadius, height, - rightZ * planeRadius ], normal, [ tileStartU, tileEndV ], color, 1, 0 );
 
 		builder.addTriangle( a0, a1, a2 );
 		builder.addTriangle( a0, a2, a3 );
@@ -214,12 +233,16 @@ export function buildSixPlaneImpostor(
 
 	if ( footprint !== null ) {
 
-		const topTileStart = yawAngles.length / tileCount;
-		const topTileEnd = 1;
-		const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileStart, 0 ], color, 0, 1 );
-		const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileEnd, 0 ], color, 0, 1 );
-		const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileEnd, 1 ], color, 0, 1 );
-		const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileStart, 1 ], color, 0, 1 );
+		const topTileX = yawAngles.length % tileGrid.columns;
+		const topTileY = Math.floor( yawAngles.length / tileGrid.columns );
+		const topTileStartU = topTileX / tileGrid.columns;
+		const topTileEndU = ( topTileX + 1 ) / tileGrid.columns;
+		const topTileStartV = topTileY / tileGrid.rows;
+		const topTileEndV = ( topTileY + 1 ) / tileGrid.rows;
+		const top0 = builder.addVertex( [ footprint.minX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileStartU, topTileStartV ], color, 0, 1 );
+		const top1 = builder.addVertex( [ footprint.maxX, topHeight, footprint.maxZ ], [ 0, 1, 0 ], [ topTileEndU, topTileStartV ], color, 0, 1 );
+		const top2 = builder.addVertex( [ footprint.maxX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileEndU, topTileEndV ], color, 0, 1 );
+		const top3 = builder.addVertex( [ footprint.minX, topHeight, footprint.minZ ], [ 0, 1, 0 ], [ topTileStartU, topTileEndV ], color, 0, 1 );
 
 		builder.addTriangle( top0, top1, top2 );
 		builder.addTriangle( top0, top2, top3 );
@@ -323,19 +346,16 @@ function createViewProjection( bounds: VegetationData['bounds'], mesh: MeshData,
 
 			if ( isIndexInRanges( triangle, excludedIndexRanges ) ) continue;
 
-			const projected: [ number, number ][] = [];
-
-			for ( let corner = 0; corner < 3; corner ++ ) {
-
-				const offset = mesh.indices[ triangle + corner ]! * 3;
-				const x = mesh.positions[ offset ]!;
-				const y = mesh.positions[ offset + 1 ]!;
-				const z = mesh.positions[ offset + 2 ]!;
-				projected.push( [ x * right[ 0 ] + y * right[ 1 ] + z * right[ 2 ], x * up[ 0 ] + y * up[ 1 ] + z * up[ 2 ] ] );
-
-			}
-
-			const area = ( projected[ 1 ]![ 0 ] - projected[ 0 ]![ 0 ] ) * ( projected[ 2 ]![ 1 ] - projected[ 0 ]![ 1 ] ) - ( projected[ 1 ]![ 1 ] - projected[ 0 ]![ 1 ] ) * ( projected[ 2 ]![ 0 ] - projected[ 0 ]![ 0 ] );
+			const offset0 = mesh.indices[ triangle ]! * 3;
+			const offset1 = mesh.indices[ triangle + 1 ]! * 3;
+			const offset2 = mesh.indices[ triangle + 2 ]! * 3;
+			const right0 = mesh.positions[ offset0 ]! * right[ 0 ] + mesh.positions[ offset0 + 1 ]! * right[ 1 ] + mesh.positions[ offset0 + 2 ]! * right[ 2 ];
+			const right1 = mesh.positions[ offset1 ]! * right[ 0 ] + mesh.positions[ offset1 + 1 ]! * right[ 1 ] + mesh.positions[ offset1 + 2 ]! * right[ 2 ];
+			const right2 = mesh.positions[ offset2 ]! * right[ 0 ] + mesh.positions[ offset2 + 1 ]! * right[ 1 ] + mesh.positions[ offset2 + 2 ]! * right[ 2 ];
+			const up0 = mesh.positions[ offset0 ]! * up[ 0 ] + mesh.positions[ offset0 + 1 ]! * up[ 1 ] + mesh.positions[ offset0 + 2 ]! * up[ 2 ];
+			const up1 = mesh.positions[ offset1 ]! * up[ 0 ] + mesh.positions[ offset1 + 1 ]! * up[ 1 ] + mesh.positions[ offset1 + 2 ]! * up[ 2 ];
+			const up2 = mesh.positions[ offset2 ]! * up[ 0 ] + mesh.positions[ offset2 + 1 ]! * up[ 1 ] + mesh.positions[ offset2 + 2 ]! * up[ 2 ];
+			const area = ( right1 - right0 ) * ( up2 - up0 ) - ( up1 - up0 ) * ( right2 - right0 );
 
 			if ( Math.abs( area ) < 1e-10 ) {
 
@@ -343,14 +363,10 @@ function createViewProjection( bounds: VegetationData['bounds'], mesh: MeshData,
 
 			}
 
-			for ( const [ projectedRight, projectedUp ] of projected ) {
-
-				minRight = Math.min( minRight, projectedRight );
-				maxRight = Math.max( maxRight, projectedRight );
-				minUp = Math.min( minUp, projectedUp );
-				maxUp = Math.max( maxUp, projectedUp );
-
-			}
+			minRight = Math.min( minRight, right0, right1, right2 );
+			maxRight = Math.max( maxRight, right0, right1, right2 );
+			minUp = Math.min( minUp, up0, up1, up2 );
+			maxUp = Math.max( maxUp, up0, up1, up2 );
 
 		}
 
@@ -404,8 +420,10 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	}
 
-	const width = size * viewInputs.length;
-	const height = size;
+	const rasterSize = nextPowerOfTwo( Math.max( 4, size ) );
+	const tileGrid = getTileGrid( viewInputs.length );
+	const width = rasterSize * tileGrid.columns;
+	const height = rasterSize * tileGrid.rows;
 	const image = new Uint8Array( width * height * 4 );
 	const depthBuffer = new Float32Array( width * height );
 	const mesh = data.lods[ 0 ]!;
@@ -432,7 +450,7 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 				if ( excludesBakeRanges && isIndexInRanges( i, part.impostorBakeExcludeIndexRanges ) ) continue;
 
-				rasterizeTriangle( data, mesh, i, size, width, view, projection, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
+				rasterizeTriangle( data, mesh, i, rasterSize, width, tileGrid.columns, view, projection, image, depthBuffer, materialColor, part.alphaTest, texture, lightX, lightY, lightZ );
 
 			}
 
@@ -440,7 +458,59 @@ export function bakeImpostor( data: VegetationData, colors: Color3[], size: numb
 
 	}
 
-	dilateEdges( image, width, size, height, viewInputs.length );
+	dilateEdges( image, width, rasterSize, viewInputs.length, tileGrid.columns );
+
+	return { width, height, data: image };
+
+}
+
+export function extractImpostorViews( texture: TextureData, sourceViews: readonly ImpostorViewInput[], targetViews: readonly ImpostorViewInput[] ): TextureData | null {
+
+	if ( targetViews.length === 0 || targetViews.length > sourceViews.length ) return null;
+
+	const sourceGrid = getTileGrid( sourceViews.length );
+	const targetGrid = getTileGrid( targetViews.length );
+	const tileSize = texture.width / sourceGrid.columns;
+	if ( ! Number.isInteger( tileSize ) || texture.height !== tileSize * sourceGrid.rows ) return null;
+
+	const sourceIndices = targetViews.map( ( targetInput ) => {
+		const targetView = resolveImpostorView( targetInput );
+		return sourceViews.findIndex( ( sourceInput ) => {
+			const sourceView = resolveImpostorView( sourceInput );
+			const sourceUp = sourceView.up ?? [ 0, 1, 0 ];
+			const targetUp = targetView.up ?? [ 0, 1, 0 ];
+			return sourceView.direction[ 0 ] === targetView.direction[ 0 ] &&
+				sourceView.direction[ 1 ] === targetView.direction[ 1 ] &&
+				sourceView.direction[ 2 ] === targetView.direction[ 2 ] &&
+				sourceUp[ 0 ] === targetUp[ 0 ] &&
+				sourceUp[ 1 ] === targetUp[ 1 ] &&
+				sourceUp[ 2 ] === targetUp[ 2 ];
+		} );
+	} );
+
+	if ( sourceIndices.some( ( index ) => index < 0 ) ) return null;
+
+	const width = tileSize * targetGrid.columns;
+	const height = tileSize * targetGrid.rows;
+	const image = new Uint8Array( width * height * 4 );
+
+	for ( let targetIndex = 0; targetIndex < sourceIndices.length; targetIndex ++ ) {
+
+		const sourceIndex = sourceIndices[ targetIndex ]!;
+		const sourceX = ( sourceIndex % sourceGrid.columns ) * tileSize;
+		const sourceY = Math.floor( sourceIndex / sourceGrid.columns ) * tileSize;
+		const targetX = ( targetIndex % targetGrid.columns ) * tileSize;
+		const targetY = Math.floor( targetIndex / targetGrid.columns ) * tileSize;
+
+		for ( let y = 0; y < tileSize; y ++ ) {
+
+			const sourceOffset = ( ( sourceY + y ) * texture.width + sourceX ) * 4;
+			const targetOffset = ( ( targetY + y ) * width + targetX ) * 4;
+			image.set( texture.data.subarray( sourceOffset, sourceOffset + tileSize * 4 ), targetOffset );
+
+		}
+
+	}
 
 	return { width, height, data: image };
 
@@ -452,6 +522,7 @@ function rasterizeTriangle(
 	triangleStart: number,
 	size: number,
 	imageWidth: number,
+	tileColumns: number,
 	view: number,
 	projection: ViewProjection,
 	image: Uint8Array,
@@ -479,14 +550,12 @@ function rasterizeTriangle(
 	const xWorld2 = mesh.positions[ position2 ]!;
 	const yWorld2 = mesh.positions[ position2 + 1 ]!;
 	const zWorld2 = mesh.positions[ position2 + 2 ]!;
-	const projectRight = ( x: number, y: number, z: number ) => ( x * projection.right[ 0 ] + y * projection.right[ 1 ] + z * projection.right[ 2 ] - projection.minRight ) / ( projection.maxRight - projection.minRight ) * size;
-	const projectUp = ( x: number, y: number, z: number ) => ( x * projection.up[ 0 ] + y * projection.up[ 1 ] + z * projection.up[ 2 ] - projection.minUp ) / ( projection.maxUp - projection.minUp ) * size;
-	const x0 = projectRight( xWorld0, yWorld0, zWorld0 );
-	const x1 = projectRight( xWorld1, yWorld1, zWorld1 );
-	const x2 = projectRight( xWorld2, yWorld2, zWorld2 );
-	const y0 = projectUp( xWorld0, yWorld0, zWorld0 );
-	const y1 = projectUp( xWorld1, yWorld1, zWorld1 );
-	const y2 = projectUp( xWorld2, yWorld2, zWorld2 );
+	const x0 = ( xWorld0 * projection.right[ 0 ] + yWorld0 * projection.right[ 1 ] + zWorld0 * projection.right[ 2 ] - projection.minRight ) / ( projection.maxRight - projection.minRight ) * size;
+	const x1 = ( xWorld1 * projection.right[ 0 ] + yWorld1 * projection.right[ 1 ] + zWorld1 * projection.right[ 2 ] - projection.minRight ) / ( projection.maxRight - projection.minRight ) * size;
+	const x2 = ( xWorld2 * projection.right[ 0 ] + yWorld2 * projection.right[ 1 ] + zWorld2 * projection.right[ 2 ] - projection.minRight ) / ( projection.maxRight - projection.minRight ) * size;
+	const y0 = ( xWorld0 * projection.up[ 0 ] + yWorld0 * projection.up[ 1 ] + zWorld0 * projection.up[ 2 ] - projection.minUp ) / ( projection.maxUp - projection.minUp ) * size;
+	const y1 = ( xWorld1 * projection.up[ 0 ] + yWorld1 * projection.up[ 1 ] + zWorld1 * projection.up[ 2 ] - projection.minUp ) / ( projection.maxUp - projection.minUp ) * size;
+	const y2 = ( xWorld2 * projection.up[ 0 ] + yWorld2 * projection.up[ 1 ] + zWorld2 * projection.up[ 2 ] - projection.minUp ) / ( projection.maxUp - projection.minUp ) * size;
 	const denominator = ( y1 - y2 ) * ( x0 - x2 ) + ( x2 - x1 ) * ( y0 - y2 );
 
 	if ( denominator === 0 ) {
@@ -516,7 +585,7 @@ function rasterizeTriangle(
 	const depth1 = xWorld1 * projection.direction[ 0 ] + yWorld1 * projection.direction[ 1 ] + zWorld1 * projection.direction[ 2 ];
 	const depth2 = xWorld2 * projection.direction[ 0 ] + yWorld2 * projection.direction[ 1 ] + zWorld2 * projection.direction[ 2 ];
 	const inverseDenominator = 1 / denominator;
-	const viewOffset = view * size;
+	const viewOffset = Math.floor( view / tileColumns ) * size * imageWidth + ( view % tileColumns ) * size;
 
 	for ( let y = minY; y <= maxY; y ++ ) {
 
@@ -592,59 +661,60 @@ function rasterizeTriangle(
 
 }
 
-function dilateEdges( image: Uint8Array, width: number, size: number, height: number, viewCount: number ): void {
+function dilateEdges( image: Uint8Array, width: number, size: number, viewCount: number, tileColumns: number ): void {
 
 	for ( let view = 0; view < viewCount; view ++ ) {
 
-		for ( let y = 0; y < height; y ++ ) {
+		const viewX = ( view % tileColumns ) * size;
+		const viewY = Math.floor( view / tileColumns ) * size;
+		let minimumX = size;
+		let minimumY = size;
+		let maximumX = - 1;
+		let maximumY = - 1;
+
+		for ( let y = 0; y < size; y ++ ) {
 
 			for ( let x = 0; x < size; x ++ ) {
 
-				const pixelIndex = y * width + view * size + x;
-				const imageOffset = pixelIndex * 4;
+				const sourceIndex = ( ( viewY + y ) * width + viewX + x ) * 4;
+				if ( image[ sourceIndex + 3 ] === 0 ) continue;
+				minimumX = Math.min( minimumX, x );
+				minimumY = Math.min( minimumY, y );
+				maximumX = Math.max( maximumX, x );
+				maximumY = Math.max( maximumY, y );
 
-				if ( image[ imageOffset + 3 ] !== 0 ) {
+			}
 
-					continue;
+		}
 
-				}
+		if ( maximumX < 0 ) continue;
+		const startX = Math.max( 0, minimumX - 1 );
+		const startY = Math.max( 0, minimumY - 1 );
+		const endX = Math.min( size - 1, maximumX + 1 );
+		const endY = Math.min( size - 1, maximumY + 1 );
 
-				let copied = false;
+		for ( let y = startY; y <= endY; y ++ ) {
 
-				for ( let dy = - 1; dy <= 1 && ! copied; dy ++ ) {
+			for ( let x = startX; x <= endX; x ++ ) {
 
-					for ( let dx = - 1; dx <= 1; dx ++ ) {
+				const pixelIndex = ( ( viewY + y ) * width + viewX + x ) * 4;
+				if ( image[ pixelIndex + 3 ] !== 0 ) continue;
 
-						if ( dx === 0 && dy === 0 ) {
+				for ( let neighborY = Math.max( startY, y - 1 ); neighborY <= Math.min( endY, y + 1 ); neighborY ++ ) {
 
-							continue;
-
-						}
-
-						const neighborX = x + dx;
-						const neighborY = y + dy;
-
-						if ( neighborX < 0 || neighborX >= size || neighborY < 0 || neighborY >= height ) {
-
-							continue;
-
-						}
-
-						const neighborIndex = ( neighborY * width + view * size + neighborX ) * 4;
-
-						if ( image[ neighborIndex + 3 ] !== 255 ) {
-
-							continue;
-
-						}
-
-						image[ imageOffset ] = image[ neighborIndex ]!;
-						image[ imageOffset + 1 ] = image[ neighborIndex + 1 ]!;
-						image[ imageOffset + 2 ] = image[ neighborIndex + 2 ]!;
+					let copied = false;
+					for ( let neighborX = Math.max( startX, x - 1 ); neighborX <= Math.min( endX, x + 1 ); neighborX ++ ) {
+						if ( neighborX === x && neighborY === y ) continue;
+						const neighborIndex = ( ( viewY + neighborY ) * width + viewX + neighborX ) * 4;
+						if ( image[ neighborIndex + 3 ] === 0 ) continue;
+						image[ pixelIndex ] = image[ neighborIndex ]!;
+						image[ pixelIndex + 1 ] = image[ neighborIndex + 1 ]!;
+						image[ pixelIndex + 2 ] = image[ neighborIndex + 2 ]!;
 						copied = true;
 						break;
-
 					}
+
+					if ( copied ) break;
 
 				}
 

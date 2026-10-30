@@ -498,26 +498,43 @@ function getLeafBowlTier( layout: TreeLayout, tier: Tier, lod: 1 | 2 ): LeafBowl
 
 }
 
-function getLeafRingUv( tierIndex: number, tierCount: number, center: Vec3, radius: number, point: Vec3 ): [ number, number ] {
+function getLeafRingTileGrid( tierCount: number ): { columns: number; rows: number } {
+
+	const capacity = getLeafRingTierCapacity( tierCount );
+	const columns = 2 ** Math.ceil( Math.log2( Math.ceil( Math.sqrt( capacity ) ) ) );
+	return { columns, rows: capacity / columns };
+
+}
+
+function getLeafRingUv( tierIndex: number, tileColumns: number, tileRows: number, center: Vec3, radius: number, point: Vec3 ): [ number, number ] {
 
 	const localU = 0.5 + ( point[ 0 ] - center[ 0 ] ) / ( 2 * radius );
 	const localV = 0.5 + ( point[ 2 ] - center[ 2 ] ) / ( 2 * radius );
+	const tileX = tierIndex % tileColumns;
+	const tileY = Math.floor( tierIndex / tileColumns );
 
-	return [ ( tierIndex + localU ) / tierCount, localV ];
+	return [ ( tileX + localU ) / tileColumns, ( tileY + localV ) / tileRows ];
+
+}
+
+function getLeafRingTierCapacity( tierCount: number ): number {
+
+	return 2 ** Math.ceil( Math.log2( Math.max( 1, tierCount ) ) );
 
 }
 
 function addLeafRingLod2( builder: MeshBuilder, layout: TreeLayout ): void {
 
 	builder.beginGroup( leafRingPartIndex );
+	const tileGrid = getLeafRingTileGrid( layout.tiers.length );
 
 	for ( let tierIndex = 0; tierIndex < layout.tiers.length; tierIndex ++ ) {
 
 		const tier = layout.tiers[ tierIndex ]!;
 		const bowl = getLeafBowlTier( layout, tier, 2 );
 		const frond = bowl.fronds[ 0 ]!;
-		const centerIndex = builder.addVertex( bowl.center, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, bowl.center ), bowl.color, getFrondWind( bowl.center, frond ) );
-		const rimIndices = bowl.rimPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ Math.floor( index / 2 ) ]! ) ) );
+		const centerIndex = builder.addVertex( bowl.center, [ 0, 1, 0 ], getLeafRingUv( tierIndex, tileGrid.columns, tileGrid.rows, tier.center, bowl.rimRadius, bowl.center ), bowl.color, getFrondWind( bowl.center, frond ) );
+		const rimIndices = bowl.rimPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, tileGrid.columns, tileGrid.rows, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ Math.floor( index / 2 ) ]! ) ) );
 
 		for ( let index = 0; index < rimIndices.length; index ++ ) {
 
@@ -534,15 +551,16 @@ function addLeafRingLod2( builder: MeshBuilder, layout: TreeLayout ): void {
 function addLeafRingLod1( builder: MeshBuilder, layout: TreeLayout ): void {
 
 	builder.beginGroup( leafRingPartIndex );
+	const tileGrid = getLeafRingTileGrid( layout.tiers.length );
 
 	for ( let tierIndex = 0; tierIndex < layout.tiers.length; tierIndex ++ ) {
 
 		const tier = layout.tiers[ tierIndex ]!;
 		const bowl = getLeafBowlTier( layout, tier, 1 );
 		const frond = bowl.fronds[ 0 ]!;
-		const centerIndex = builder.addVertex( bowl.center, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, bowl.center ), bowl.color, getFrondWind( bowl.center, frond ) );
-		const midIndices = bowl.midPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ index ]! ) ) );
-		const rimIndices = bowl.rimPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, layout.tiers.length, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ Math.floor( index / 2 ) ]! ) ) );
+		const centerIndex = builder.addVertex( bowl.center, [ 0, 1, 0 ], getLeafRingUv( tierIndex, tileGrid.columns, tileGrid.rows, tier.center, bowl.rimRadius, bowl.center ), bowl.color, getFrondWind( bowl.center, frond ) );
+		const midIndices = bowl.midPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, tileGrid.columns, tileGrid.rows, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ index ]! ) ) );
+		const rimIndices = bowl.rimPoints.map( ( point, index ) => builder.addVertex( point, [ 0, 1, 0 ], getLeafRingUv( tierIndex, tileGrid.columns, tileGrid.rows, tier.center, bowl.rimRadius, point ), bowl.color, getFrondWind( point, bowl.fronds[ Math.floor( index / 2 ) ]! ) ) );
 
 		for ( let index = 0; index < midIndices.length; index ++ ) {
 
@@ -630,9 +648,9 @@ function getLeafRingCellSize( cells: number ): number {
 		throw new RangeError( 'Tree branchCount cannot exceed 4096 when creating leafRing' );
 	}
 
-	let size = 128;
+	let size = 64;
 
-	while ( cells * size > 4096 ) {
+	while ( cells * size > 4096 && size > 4 ) {
 		size /= 2;
 	}
 
@@ -659,29 +677,39 @@ function getTierRimRadius( tier: Pick<Tier, 'center' | 'fronds'>, frondMesh = cr
 function createLeafRingTexture( layout: TreeLayout, leafTexture: TextureData ): TextureData {
 
 	const cellSize = getLeafRingCellSize( layout.tiers.length );
-	const width = layout.tiers.length * cellSize;
-	const data = new Uint8Array( width * cellSize * 4 );
+	const tileGrid = getLeafRingTileGrid( layout.tiers.length );
+	const width = tileGrid.columns * cellSize;
+	const height = tileGrid.rows * cellSize;
+	const data = new Uint8Array( width * height * 4 );
 	const worldXs = new Float64Array( cellSize );
 	const worldZs = new Float64Array( cellSize );
+	const depth = new Float32Array( cellSize * cellSize );
+	const sample = new Uint8Array( 4 );
+	const leafData = leafTexture.data;
+	const leafWidth = leafTexture.width;
+	const leafHeight = leafTexture.height;
 
 	for ( let tierIndex = 0; tierIndex < layout.tiers.length; tierIndex ++ ) {
 
 		const tier = layout.tiers[ tierIndex ]!;
 		const frondMesh = tier.frondMesh;
 		const rimRadius = tier.rimRadius;
+		const tileX = ( tierIndex % tileGrid.columns ) * cellSize;
+		const tileY = Math.floor( tierIndex / tileGrid.columns ) * cellSize;
 		for ( let pixel = 0; pixel < cellSize; pixel ++ ) {
 			worldXs[ pixel ] = tier.center[ 0 ] + ( ( pixel + 0.5 ) / cellSize - 0.5 ) * 2 * rimRadius;
 			worldZs[ pixel ] = tier.center[ 2 ] + ( ( pixel + 0.5 ) / cellSize - 0.5 ) * 2 * rimRadius;
 		}
-		const depth = new Float32Array( cellSize * cellSize );
-		const sample = new Uint8Array( 4 );
 		depth.fill( - Infinity );
 
 		for ( let triangle = 0; triangle < frondMesh.indices.length; triangle += 3 ) {
 
-			const firstVertex = frondMesh.indices[ triangle ]! * 3;
-			const secondVertex = frondMesh.indices[ triangle + 1 ]! * 3;
-			const thirdVertex = frondMesh.indices[ triangle + 2 ]! * 3;
+			const firstIndex = frondMesh.indices[ triangle ]!;
+			const secondIndex = frondMesh.indices[ triangle + 1 ]!;
+			const thirdIndex = frondMesh.indices[ triangle + 2 ]!;
+			const firstVertex = firstIndex * 3;
+			const secondVertex = secondIndex * 3;
+			const thirdVertex = thirdIndex * 3;
 			const firstX = frondMesh.positions[ firstVertex ]!;
 			const firstY = frondMesh.positions[ firstVertex + 1 ]!;
 			const firstZ = frondMesh.positions[ firstVertex + 2 ]!;
@@ -691,12 +719,12 @@ function createLeafRingTexture( layout: TreeLayout, leafTexture: TextureData ): 
 			const thirdX = frondMesh.positions[ thirdVertex ]!;
 			const thirdY = frondMesh.positions[ thirdVertex + 1 ]!;
 			const thirdZ = frondMesh.positions[ thirdVertex + 2 ]!;
-			const firstU = frondMesh.uvs[ frondMesh.indices[ triangle ]! * 2 ]!;
-			const firstV = frondMesh.uvs[ frondMesh.indices[ triangle ]! * 2 + 1 ]!;
-			const secondU = frondMesh.uvs[ frondMesh.indices[ triangle + 1 ]! * 2 ]!;
-			const secondV = frondMesh.uvs[ frondMesh.indices[ triangle + 1 ]! * 2 + 1 ]!;
-			const thirdU = frondMesh.uvs[ frondMesh.indices[ triangle + 2 ]! * 2 ]!;
-			const thirdV = frondMesh.uvs[ frondMesh.indices[ triangle + 2 ]! * 2 + 1 ]!;
+			const firstU = frondMesh.uvs[ firstIndex * 2 ]!;
+			const firstV = frondMesh.uvs[ firstIndex * 2 + 1 ]!;
+			const secondU = frondMesh.uvs[ secondIndex * 2 ]!;
+			const secondV = frondMesh.uvs[ secondIndex * 2 + 1 ]!;
+			const thirdU = frondMesh.uvs[ thirdIndex * 2 ]!;
+			const thirdV = frondMesh.uvs[ thirdIndex * 2 + 1 ]!;
 			const denominator = ( secondZ - thirdZ ) * ( firstX - thirdX ) + ( thirdX - secondX ) * ( firstZ - thirdZ );
 
 			if ( Math.abs( denominator ) < 1e-10 ) continue;
@@ -711,13 +739,10 @@ function createLeafRingTexture( layout: TreeLayout, leafTexture: TextureData ): 
 			const maximumX = Math.min( cellSize - 1, Math.ceil( Math.max( firstPixelX, secondPixelX, thirdPixelX ) ) );
 			const minimumY = Math.max( 0, Math.floor( Math.min( firstPixelY, secondPixelY, thirdPixelY ) ) );
 			const maximumY = Math.min( cellSize - 1, Math.ceil( Math.max( firstPixelY, secondPixelY, thirdPixelY ) ) );
-			const leafData = leafTexture.data;
-			const leafWidth = leafTexture.width;
-			const leafHeight = leafTexture.height;
-
 			for ( let y = minimumY; y <= maximumY; y ++ ) {
 
 				const worldZ = worldZs[ y ]!;
+				const textureRowOffset = ( tileY + y ) * width + tileX;
 
 				for ( let x = minimumX; x <= maximumX; x ++ ) {
 
@@ -732,7 +757,7 @@ function createLeafRingTexture( layout: TreeLayout, leafTexture: TextureData ): 
 					const pixelIndex = y * cellSize + x;
 					const sourceU = firstWeight * firstU + secondWeight * secondU + thirdWeight * thirdU;
 					const sourceV = firstWeight * firstV + secondWeight * secondV + thirdWeight * thirdV;
-					const textureIndex = ( y * width + tierIndex * cellSize + x ) * 4;
+					const textureIndex = ( textureRowOffset + x ) * 4;
 					const textureX = clamp( clamp( sourceU, 0, 1 ) * leafWidth - 0.5, 0, leafWidth - 1 );
 					const textureY = clamp( clamp( sourceV, 0, 1 ) * leafHeight - 0.5, 0, leafHeight - 1 );
 					const textureX0 = Math.floor( textureX );
@@ -776,8 +801,8 @@ function createLeafRingTexture( layout: TreeLayout, leafTexture: TextureData ): 
 
 	}
 
-	const texture: TextureData = { width, height: cellSize, data };
-	padTextureEdges( texture );
+	const texture: TextureData = { width, height, data };
+	padTextureEdges( texture, cellSize, layout.tiers.length );
 
 	return texture;
 

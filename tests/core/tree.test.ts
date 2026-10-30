@@ -628,24 +628,27 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'bakes one transparent 128-pixel leafRing cell for each tier', () => {
+	it( 'bakes one transparent 64-pixel leafRing cell for each tier', () => {
 
 		const texture = generateTreeData( { seed: 1 } ).textures.leafRing!;
+		const tileSize = texture.width / 4;
 
-		expect( texture.width ).toBe( 10 * 128 );
-		expect( texture.height ).toBe( 128 );
+		expect( texture.width ).toBe( 4 * 64 );
+		expect( texture.height ).toBe( 4 * 64 );
 		expect( texture.data.length ).toBe( texture.width * texture.height * 4 );
 
 		for ( let tier = 0; tier < 10; tier ++ ) {
+			const tileX = ( tier % 4 ) * tileSize;
+			const tileY = Math.floor( tier / 4 ) * tileSize;
 
 			let opaquePixels = 0;
 			let transparentPixels = 0;
 
-			for ( let y = 0; y < texture.height; y ++ ) {
+			for ( let y = 0; y < tileSize; y ++ ) {
 
-				for ( let x = 0; x < texture.height; x ++ ) {
+				for ( let x = 0; x < tileSize; x ++ ) {
 
-					const alpha = texture.data[ ( y * texture.width + tier * texture.height + x ) * 4 + 3 ]!;
+					const alpha = texture.data[ ( ( tileY + y ) * texture.width + tileX + x ) * 4 + 3 ]!;
 					if ( alpha > 0 ) opaquePixels ++;
 					else transparentPixels ++;
 
@@ -659,8 +662,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		const shrunk = generateTreeData( { seed: 1, branchCount: 33 } ).textures.leafRing!;
-		expect( shrunk.width ).toBe( 33 * 64 );
-		expect( shrunk.height ).toBe( 64 );
+		expect( shrunk.width ).toBe( 8 * 64 );
+		expect( shrunk.height ).toBe( 8 * 64 );
 		expect( shrunk.width ).toBeLessThanOrEqual( 4096 );
 
 	} );
@@ -673,7 +676,7 @@ describe( 'conifer tree data', () => {
 				lod3: '15798aa00cc9ad28e55617570c26ea321c256eabf69a79af2855ebfae7421d93',
 				lod4: '0204618ff594cc70bd0a14bebaffcb7ee511da6e5a9bf8e4c10b48f9294b6c25',
 				collider: '78a4f7b0e153d7f23ab25c3d822d42976c4a0aa5611bdec2e7cf16338aaf34f0',
-				impostorLod3: '7411c1cfef6ef54bfb3344ac4b2222b62539485ce49777e03e1d01916f5f138d',
+				impostorLod3: '7ebee077075e8b2b7bc8325a1d132d778447d4bec0b58d42c93be7f85ad4dc69',
 				impostor: '5d06ca88834c6ab2bfb6e292e1f760a69c682d8dcff4083dd249ad52558f676e',
 				lod1Trunk: '4bd89243607c76683d1072f168ba4b89e1c5789f4ac0e5b53338549ac3bc9b90',
 				lod2Trunk: '4b69c6ae9ee6314ed92fe5afff9a680f2a8c5c6da1526e158ad2798154f7911c',
@@ -683,7 +686,7 @@ describe( 'conifer tree data', () => {
 				lod3: 'a52cdad68dfe796e0ee6c4ef1f9a42f51810a24f36af5fa1a8ce68465c10d881',
 				lod4: '81fdec2cd36b5c0371d4196ed3d521b44d3ba742175175e6f8849e25605188bb',
 				collider: '38d04880cebd491f1ee77bb81b10b9914bf80aaf18f065e722ab2676fdf7b1e1',
-				impostorLod3: '7b248e98dae89bd253726b0783862c83e7e7efd2b696530207563dafb7557667',
+				impostorLod3: '197a1a181620485e00e84046841235e353dec13a5426c3ba5d47ac9cd8ed9eaa',
 				impostor: '2afaa8043f91a4932bad15c36574b43dae8c38f73048be4a2714b034c1ed3c38',
 				lod1Trunk: '4e00d38a03ef40e4279c50393ab1c0a34932dfb156bfc7b88531fe274be942a2',
 				lod2Trunk: '16624011eb88652eb6f20c7fe8d3c32dd0a29640112a15411221d38cae46a038',
@@ -1393,8 +1396,8 @@ describe( 'conifer tree data', () => {
 					const localU = 0.5 + ( mesh.positions[ positionOffset ]! - center[ 0 ] ) / ( 2 * radius );
 					const localV = 0.5 + ( mesh.positions[ positionOffset + 2 ]! - center[ 2 ] ) / ( 2 * radius );
 
-					expect( mesh.uvs[ uvOffset ] ).toBeCloseTo( ( tier + localU ) / 10, 4 );
-					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( localV, 4 );
+					expect( mesh.uvs[ uvOffset ] ).toBeCloseTo( ( tier % 4 + localU ) / 4, 4 );
+					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( ( Math.floor( tier / 4 ) + localV ) / 4, 4 );
 					expect( mesh.normals[ positionOffset ] ).toBe( 0 );
 					expect( mesh.normals[ positionOffset + 1 ] ).toBe( 1 );
 					expect( mesh.normals[ positionOffset + 2 ] ).toBe( 0 );

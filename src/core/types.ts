@@ -71,6 +71,7 @@ export interface TextureData {
 	width: number;
 	height: number;
 	data: Uint8Array;
+	mipmaps?: TextureMipLevel[];
 	colorFactors?: Float32Array;
 	colorPixelIndices?: Uint32Array;
 	colorOffsets?: Float32Array;
@@ -78,6 +79,12 @@ export interface TextureData {
 	wrapS?: 'repeat' | 'clamp';
 	wrapT?: 'repeat' | 'clamp';
 } // RGBA8。色マップは sRGB、法線マップは linear。row 0 は v=0（画像下端）。
+
+export interface TextureMipLevel {
+	width: number;
+	height: number;
+	data: Uint8Array;
+}
 
 export interface ColliderData {
 	positions: Float32Array;

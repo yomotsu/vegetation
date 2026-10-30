@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { generateFlowers, generateGrass, generateRock } from '../../src/three/meshes';
 import { generateFlowersData } from '../../src/core/generators/flowers';
 import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
-import { handleVegetationWorkerMessage } from '../../src/worker/vegetationWorker';
+import { alphaTestForTexture } from '../../src/core/textureMipmaps';
+import { getPreparedTransferables, handleVegetationWorkerMessage } from '../../src/worker/vegetationWorker';
 import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteIdentical';
 
 describe( 'vegetation worker handler', () => {
@@ -21,6 +22,14 @@ describe( 'vegetation worker handler', () => {
 		expect( result ).toHaveProperty( 'prepared' );
 		if ( ! ( 'prepared' in result ) ) throw new Error( 'Expected prepared payload' );
 		expect( areStructurallyByteIdentical( result.prepared.data, sync.data ) ).toBe( true );
+		const transferables = getPreparedTransferables( result.prepared );
+		const alphaTestedTextures = Object.entries( result.prepared.data.textures )
+			.filter( ( [ name ] ) => alphaTestForTexture( result.prepared.data.parts, name ) > 0 )
+			.map( ( [ , texture ] ) => texture );
+		for ( const texture of [ ...alphaTestedTextures, ...Object.values( result.prepared.impostorTextures ) ] ) {
+			expect( texture.mipmaps?.length ).toBeGreaterThan( 1 );
+			for ( const mipmap of texture.mipmaps! ) expect( transferables ).toContain( mipmap.data.buffer );
+		}
 		for ( const [ name, texture ] of Object.entries( result.prepared.impostorTextures ) ) {
 
 			const partIndex = sync.data.parts.findIndex( ( part ) => part.texture === name && part.impostorViews !== undefined );

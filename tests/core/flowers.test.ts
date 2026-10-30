@@ -596,11 +596,14 @@ describe( 'flowers core generator', () => {
 			const views = impostorViewsForPart( part )!;
 			const withLeaves = bakeImpostor( fullBakeData, colors, 128, views );
 			// 縦カードのタイルは葉込みの焼きと一致し、最後の上面タイルだけ葉が抜ける。
+			const tileColumns = withoutLeaves.width / 128;
 			for ( let tile = 0; tile < views.length; tile ++ ) {
 				let differentPixels = 0;
 				let opaquePixels = 0;
-				for ( let y = 0; y < withoutLeaves.height; y ++ ) {
-					for ( let x = tile * 128; x < ( tile + 1 ) * 128; x ++ ) {
+				const tileX = ( tile % tileColumns ) * 128;
+				const tileY = Math.floor( tile / tileColumns ) * 128;
+				for ( let y = tileY; y < tileY + 128; y ++ ) {
+					for ( let x = tileX; x < tileX + 128; x ++ ) {
 						const pixel = ( y * withoutLeaves.width + x ) * 4;
 						if ( withoutLeaves.data[ pixel + 3 ]! > 0 ) opaquePixels ++;
 						for ( let channel = 0; channel < 4; channel ++ ) {
