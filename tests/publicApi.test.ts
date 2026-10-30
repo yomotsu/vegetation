@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { KTX2LoaderLike, TreeMeshOptions } from '../src/index';
+import type { BroadleafTreeMeshOptions, KTX2LoaderLike, TreeMeshOptions } from '../src/index';
 
 describe( 'public entry points', () => {
 
@@ -7,6 +7,7 @@ describe( 'public entry points', () => {
 
 		const exports = Object.keys( await import( '../src/index' ) ).sort();
 		expect( exports ).toEqual( [
+			'BroadleafTreeMesh',
 			'FlowersMesh',
 			'GrassMesh',
 			'PebblesMesh',
@@ -15,6 +16,8 @@ describe( 'public entry points', () => {
 			'VegetationAsset',
 			'VegetationMesh',
 			'disposeVegetationWorkers',
+			'generateBroadleafTree',
+			'generateBroadleafTreeAsync',
 			'generateFlowers',
 			'generateFlowersAsync',
 			'generateGrass',
@@ -34,6 +37,7 @@ describe( 'public entry points', () => {
 
 		const exports = Object.keys( await import( '../src/core/index' ) ).sort();
 		expect( exports ).toEqual( [
+			'generateBroadleafTreeData',
 			'generateFlowersData',
 			'generateGrassData',
 			'generatePebblesData',
@@ -55,6 +59,11 @@ describe( 'public entry points', () => {
 		const options: TreeMeshOptions = { seed: 3, ktx2Loader: loader, compressTextures: false };
 		expect( options.ktx2Loader ).toBe( loader );
 		expect( options.compressTextures ).toBe( false );
+	} );
+
+	it( 'exports a separate mesh options type for each stylized tree', () => {
+		const options: BroadleafTreeMeshOptions = { seed: 3, height: 4, leafColor: 0x336633, barkColor: 0x775533 };
+		expect( options.seed ).toBe( 3 );
 	} );
 
 } );

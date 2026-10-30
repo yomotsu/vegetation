@@ -1,10 +1,8 @@
 import { VegetationAsset } from './VegetationAsset';
-import type { KTX2LoaderLike, VegetationAssetOptions } from './VegetationAsset';
+import type { KTX2LoaderLike } from './VegetationAsset';
 import { VegetationMesh } from './VegetationMesh';
 import { Color } from 'three';
 import type { ColorRepresentation } from 'three';
-import type { TreeOptions } from '../core/generators/tree';
-import { generateTreeData } from '../core/generators/tree';
 import type { RockOptions } from '../core/generators/rock';
 import { generateRockData } from '../core/generators/rock';
 import type { PebblesOptions } from '../core/generators/pebbles';
@@ -13,22 +11,11 @@ import type { GrassOptions } from '../core/generators/grass';
 import { DEFAULT_BLADE_COLOR, generateGrassData } from '../core/generators/grass';
 import type { FlowersOptions } from '../core/generators/flowers';
 import { DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_BLUEBELL_CENTER_COLOR, DEFAULT_BLUEBELL_COUNT, DEFAULT_BLUEBELL_HEIGHT, DEFAULT_BLUEBELL_PETAL_COLOR, DEFAULT_BLUEBELL_SPREAD, DEFAULT_CALLA_CENTER_COLOR, DEFAULT_CALLA_COUNT, DEFAULT_CALLA_HEIGHT, DEFAULT_CALLA_PETAL_COLOR, DEFAULT_CALLA_SPREAD, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_FLOWERS_COUNT, DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_POPPY_CENTER_COLOR, DEFAULT_POPPY_COUNT, DEFAULT_POPPY_HEIGHT, DEFAULT_POPPY_PETAL_COLOR, DEFAULT_POPPY_SPREAD, DEFAULT_PRIMROSE_CENTER_COLOR, DEFAULT_PRIMROSE_COUNT, DEFAULT_PRIMROSE_HEIGHT, DEFAULT_PRIMROSE_PETAL_COLOR, DEFAULT_PRIMROSE_SPREAD, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_COUNT, DEFAULT_TULIP_PETAL_COLOR, generateFlowersData } from '../core/generators/flowers';
-import { DEFAULT_LEAF_COLOR } from '../core/leafTexture';
 import { DEFAULT_MOSS_COLOR } from '../core/rockTexture';
-import { DEFAULT_BARK_COLOR } from '../core/barkTexture';
-import { normalizeFlowersGenerationOptions, normalizeGrassGenerationOptions, normalizePebblesGenerationOptions, normalizeRockGenerationOptions, normalizeTreeGenerationOptions } from '../core/vegetationGeneration';
-import type { VegetationWorkerKind } from '../worker/protocol';
-import { disposeVegetationWorkers as disposeVegetationWorkerPool, requestVegetationWorker, VegetationWorkerUnavailableError } from '../worker/workerPool';
-import { disposeInternalKTX2Loaders } from './ktx2Loader';
+import { normalizeFlowersGenerationOptions, normalizeGrassGenerationOptions, normalizePebblesGenerationOptions, normalizeRockGenerationOptions } from '../core/vegetationGeneration';
+import { requestVegetationWorker, VegetationWorkerUnavailableError } from '../worker/workerPool';
 import type { LodLevel } from '../core/types';
-
-export type TreeMeshOptions = Omit<TreeOptions, 'leafColor'> & {
-	lod?: number;
-	leafColor?: ColorRepresentation;
-	barkColor?: ColorRepresentation;
-	compressTextures?: boolean;
-	ktx2Loader?: KTX2LoaderLike;
-};
+import { colorHex, vegetationAssetOptions, workerRequest } from './meshShared';
 
 export type RockMeshOptions = Omit<RockOptions, 'rockColor' | 'mossColor'> & {
 	lod?: number;
@@ -61,40 +48,6 @@ export type FlowersMeshOptions = Omit<FlowersOptions, 'petalColor' | 'centerColo
 	compressTextures?: boolean;
 	ktx2Loader?: KTX2LoaderLike;
 };
-
-function vegetationAssetOptions( options: Pick<VegetationAssetOptions, 'compressTextures' | 'ktx2Loader'> ): VegetationAssetOptions {
-
-	return { compressTextures: options.compressTextures, ktx2Loader: options.ktx2Loader };
-
-}
-
-function colorHex( color: ColorRepresentation | undefined, fallback: number ): number {
-
-	return new Color( color ?? fallback ).getHex();
-
-}
-
-function workerOptions( options: object ): Record<string, number | boolean | string> {
-
-	return Object.fromEntries( Object.entries( options ).filter( ( entry ): entry is [ string, number | boolean | string ] => typeof entry[ 1 ] === 'number' || typeof entry[ 1 ] === 'boolean' || typeof entry[ 1 ] === 'string' ) );
-
-}
-
-function normalizeTreeOptions( options: TreeMeshOptions ): ReturnType<typeof normalizeTreeGenerationOptions> {
-
-	const leafColor = colorHex( options.leafColor, DEFAULT_LEAF_COLOR );
-	return normalizeTreeGenerationOptions( {
-		seed: options.seed,
-		height: options.height,
-		crownSize: options.crownSize,
-		branchCount: options.branchCount,
-		leafColor,
-	}, {
-		leaf: leafColor,
-		bark: colorHex( options.barkColor, DEFAULT_BARK_COLOR ),
-	} );
-
-}
 
 function normalizeRockOptions( options: RockMeshOptions ): ReturnType<typeof normalizeRockGenerationOptions> {
 
@@ -159,61 +112,6 @@ function normalizeFlowersOptions( options: FlowersMeshOptions ): ReturnType<type
 		centerColor: colorHex( options.centerColor, defaultCenterColor ),
 		stemColor: colorHex( options.stemColor, DEFAULT_FLOWERS_STEM_COLOR ),
 	} );
-
-}
-
-function workerRequest(
-	kind: VegetationWorkerKind,
-	options: object,
-	colors: Record<string, number>,
-	): { kind: VegetationWorkerKind; options: Record<string, number | boolean | string>; colors: Record<string, number>; impostorSize: number } {
-
-	return { kind, options: workerOptions( options ), colors, impostorSize: 128 };
-
-}
-
-export function generateTree( options: TreeMeshOptions = {} ): VegetationAsset {
-
-	const normalized = normalizeTreeOptions( options );
-	const data = generateTreeData( normalized.options );
-	const colors = { leaf: options.leafColor ?? DEFAULT_LEAF_COLOR, ...( options.barkColor === undefined ? {} : { bark: options.barkColor } ) };
-
-	return new VegetationAsset( data, colors, 128, vegetationAssetOptions( options ) );
-
-}
-
-/** 同期 API と同じ生成結果を返します。 */
-export async function generateTreeAsync( options: TreeMeshOptions = {} ): Promise<VegetationAsset> {
-
-	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generateTree( options ) );
-
-	const normalized = normalizeTreeOptions( options );
-	const request = workerRequest( 'tree', normalized.options, normalized.colors );
-	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `tree:${ normalized.options.seed ?? 1 }` ), vegetationAssetOptions( options ) );
-	} catch ( error ) {
-		if ( error instanceof VegetationWorkerUnavailableError ) return generateTree( options );
-		throw error;
-	}
-
-}
-
-export class TreeMesh extends VegetationMesh {
-
-	constructor( options: TreeMeshOptions = {} ) {
-
-		super( generateTree( options ), options.lod, true );
-
-	}
-
-	static createLOD( options: TreeMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
-
-		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * ( options.height ?? 7.5 ) / 7.5 );
-		const asset = generateTree( options );
-
-		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances, true );
-
-	}
 
 }
 
@@ -394,12 +292,7 @@ export class FlowersMesh extends VegetationMesh {
 
 }
 
-export type { FlowersOptions, LodLevel, PebblesOptions, RockOptions, TreeOptions };
+export type { FlowersOptions, LodLevel, PebblesOptions, RockOptions };
 export type { GrassOptions };
 
-export function disposeVegetationWorkers(): void {
-
-	disposeVegetationWorkerPool();
-	disposeInternalKTX2Loaders();
-
-}
+export { disposeVegetationWorkers } from './meshShared';

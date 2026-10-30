@@ -8,9 +8,9 @@ import { areByteIdentical, areStructurallyByteIdentical } from '../helpers/byteI
 
 describe( 'vegetation worker handler', () => {
 
-	it( 'returns byte-identical generated data and impostor textures', () => {
+	it( 'returns byte-identical generated data and impostor textures', async () => {
 
-		const result = handleVegetationWorkerMessage( {
+		const result = await handleVegetationWorkerMessage( {
 			id: 1,
 			task: 'generate',
 			kind: 'rock',
@@ -44,9 +44,9 @@ describe( 'vegetation worker handler', () => {
 
 	}, 30000 );
 
-	it( 'serializes invalid option errors as RangeError', () => {
+	it( 'serializes invalid option errors as RangeError', async () => {
 
-		const result = handleVegetationWorkerMessage( {
+		const result = await handleVegetationWorkerMessage( {
 			id: 2,
 			task: 'generate',
 			kind: 'rock',
@@ -58,6 +58,34 @@ describe( 'vegetation worker handler', () => {
 		expect( result ).toEqual( { id: 2, error: { name: 'RangeError', message: 'Rock size must be a positive finite number' } } );
 
 	} );
+
+	it( 'dispatches each stylized tree kind through its matching generator', async () => {
+
+		const cases = [
+			{ kind: 'broadleaf-tree', height: 6, leafColor: 0x4f9a2a, barkColor: 0x8a7350, impostors: [] },
+		] as const;
+
+		for ( const [ index, tree ] of cases.entries() ) {
+			const result = await handleVegetationWorkerMessage( {
+				id: 4 + index,
+				task: 'generate',
+				kind: tree.kind,
+				options: { seed: 9 },
+				colors: {},
+				impostorSize: 128,
+			} );
+
+			expect( result ).toHaveProperty( 'prepared' );
+			if ( ! ( 'prepared' in result ) ) throw new Error( 'Expected prepared payload' );
+			expect( result.prepared.data.bounds.height ).toBe( tree.height );
+			expect( result.prepared.data.parts.map( ( part ) => part.name ) ).toEqual( [ 'bark', 'leaf', ...[ ...tree.impostors ].reverse() ] );
+			expect( result.prepared.data.parts[ 0 ]!.defaultColor ).toBe( tree.barkColor );
+			expect( result.prepared.data.parts[ 1 ]!.defaultColor ).toBe( tree.leafColor );
+			expect( result.prepared.data.textures.leaf!.mipmaps!.length ).toBeGreaterThan( 1 );
+			expect( Object.keys( result.prepared.impostorTextures ).sort() ).toEqual( tree.impostors );
+		}
+
+	}, 30000 );
 
 	it( 'recolors the allium plant-card texture while preparing worker data', () => {
 
@@ -74,9 +102,9 @@ describe( 'vegetation worker handler', () => {
 
 	} );
 
-	it( 'returns single-card grass data and regenerated textures byte-identical to sync generation', () => {
+	it( 'returns single-card grass data and regenerated textures byte-identical to sync generation', async () => {
 
-		const result = handleVegetationWorkerMessage( {
+		const result = await handleVegetationWorkerMessage( {
 			id: 3,
 			task: 'generate',
 			kind: 'grass',
@@ -96,7 +124,7 @@ describe( 'vegetation worker handler', () => {
 
 	}, 30000 );
 
-	it( 'returns allium and daisy geometry, colors, and impostors byte-identical to sync generation', () => {
+	it( 'returns allium and daisy geometry, colors, and impostors byte-identical to sync generation', async () => {
 
 		for ( const variety of [ 'allium', 'daisy' ] as const ) {
 			const options = {
@@ -109,7 +137,7 @@ describe( 'vegetation worker handler', () => {
 				centerColor: variety === 'allium' ? 0xb9cf6a : 0x5a4a1c,
 				stemColor: 0x81603d,
 			};
-			const result = handleVegetationWorkerMessage( {
+			const result = await handleVegetationWorkerMessage( {
 				id: 17,
 				task: 'generate',
 				kind: 'flowers',
@@ -134,7 +162,7 @@ describe( 'vegetation worker handler', () => {
 
 	}, 30000 );
 
-	it( 'returns tulip geometry, colors, and impostors byte-identical to sync generation', () => {
+	it( 'returns tulip geometry, colors, and impostors byte-identical to sync generation', async () => {
 
 		for ( const variety of [ 'tulip' ] as const ) {
 			const options = {
@@ -147,7 +175,7 @@ describe( 'vegetation worker handler', () => {
 				centerColor: 0xf4d6a0,
 				stemColor: 0x81603d,
 			};
-			const result = handleVegetationWorkerMessage( {
+			const result = await handleVegetationWorkerMessage( {
 				id: 27,
 				task: 'generate',
 				kind: 'flowers',
@@ -171,11 +199,11 @@ describe( 'vegetation worker handler', () => {
 
 	}, 30000 );
 
-	it( 'returns trial flower defaults, textures, and impostors byte-identical to sync generation', () => {
+	it( 'returns trial flower defaults, textures, and impostors byte-identical to sync generation', async () => {
 
 		for ( const variety of [ 'poppy', 'bluebell', 'calla', 'primrose' ] as const ) {
 			const options = { seed: 13, variety, petalColor: 0xa98bd6, centerColor: 0xf4d6a0, stemColor: 0x81603d };
-			const result = handleVegetationWorkerMessage( {
+			const result = await handleVegetationWorkerMessage( {
 				id: 37,
 				task: 'generate',
 				kind: 'flowers',

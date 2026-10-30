@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateTree } from '../../src/three/meshes';
+import { generateTree } from '../../src/three/trees/fir';
 
 describe( 'tree generation budget', () => {
 

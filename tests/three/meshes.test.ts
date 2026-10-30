@@ -1,6 +1,8 @@
 import { BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { RockMesh, TreeMesh, generateTree } from '../../src/three/meshes';
+import { RockMesh } from '../../src/three/meshes';
+import { TreeMesh, generateTree } from '../../src/three/trees/fir';
+import { BroadleafTreeMesh, generateBroadleafTree } from '../../src/three/trees/broadleaf';
 import { orientBillboardInstances, VegetationMesh } from '../../src/three/VegetationMesh';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 
@@ -87,6 +89,23 @@ describe( 'tree meshes', () => {
 
 		defaultTree.dispose();
 		customTree.dispose();
+
+	} );
+
+	it( 'creates separate mesh classes with their own defaults', () => {
+
+		const broadleaf = new BroadleafTreeMesh( { seed: 1 } );
+
+		expect( broadleaf.asset.data.bounds.height ).toBe( 6 );
+		expect( broadleaf.getColor( 'leaf' ).getHex() ).toBe( 0x4f9a2a );
+		expect( broadleaf.getColor( 'bark' ).getHex() ).toBe( 0x8a7350 );
+		const customBroadleaf = generateBroadleafTree( { leafColor: '#c0392b', barkColor: '#775533' } );
+		expect( customBroadleaf.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
+		expect( customBroadleaf.getColor( 'bark' ).getHex() ).toBe( 0x775533 );
+
+		broadleaf.dispose();
+		customBroadleaf.dispose();
+		customBroadleaf.dispose();
 
 	} );
 
@@ -234,6 +253,17 @@ describe( 'tree meshes', () => {
 		const disposeAsset = vi.spyOn( asset, 'dispose' );
 		( levels[ 4 ]!.object as VegetationMesh ).dispose();
 		expect( disposeAsset ).toHaveBeenCalledOnce();
+
+	} );
+
+	it( 'scales default LOD distances from each mesh height', () => {
+
+		const firLod = TreeMesh.createLOD( { height: 15 } );
+		const broadleafLod = BroadleafTreeMesh.createLOD( { height: 12 } );
+		expect( firLod.levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 30, 60, 120, 240 ] );
+		expect( broadleafLod.levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 30, 60, 120, 240 ] );
+		( firLod.levels[ 0 ]!.object as VegetationMesh ).dispose();
+		( broadleafLod.levels[ 0 ]!.object as VegetationMesh ).dispose();
 
 	} );
 

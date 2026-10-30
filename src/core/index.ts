@@ -1,5 +1,7 @@
 export { generateTreeData } from './generators/tree';
 export type { TreeOptions } from './generators/tree';
+export { generateBroadleafTreeData } from './trees/broadleaf';
+export type { BroadleafTreeOptions } from './trees/broadleaf';
 export { generateRockData } from './generators/rock';
 export type { RockOptions } from './generators/rock';
 export { generatePebblesData } from './generators/pebbles';

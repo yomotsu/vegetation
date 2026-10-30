@@ -272,6 +272,21 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
   - 516 → 276 頂点になるが、近くで見るには 1 段 512px が必要で、アトラスが木 1 種あたり約 12MB、生成が約 166ms になる
   - 段が厚いスカート状になり、枝葉ごとの区切りと中央の明るさが失われる
 
+### stylized trees（2026-10-30。broadleaf の LOD0 をユーザー採用）
+
+- 参考: CGTrader「Simple Trees Pack」（広葉樹・低木・モミ・マツ・ヤナギ）と、ユーザー提供の Blender 素材（Forest の Tree01〜03 / Bush01、Leaf01 / Trunk01 テクスチャ）。モミは既存の `TreeMesh` を使い、追加は broadleaf / bush / pine / willow の 4 種
+- **種類ごとに別クラス**（ユーザー要望: 使わない種類は tree shaking で落とす）。core は `generateBroadleafTreeData`、three は `BroadleafTreeMesh` と `generateBroadleafTree` / `generateBroadleafTreeAsync`（bush / pine / willow も同じ形で `generateBushData` / `BushMesh` などを足す予定）。種類のモジュール同士は import しない。既定値は各モジュールに置く
+- Worker は kind ごとに generator と normalize を動的 import し、kind ごとの chunk にする（全 kind 共通。花も後で種類ごとに分ける予定）
+- **LOD0 が決まるまで LOD1〜4 は作らない**（ユーザー指示）。LOD1〜4 は LOD0 の複製を入れておき、インポスターのパーツも焼き込みも持たない
+- **broadleaf の LOD0**（参考 Blender 素材と同じ作り）:
+  - 葉: 正方形の大きなカード（辺 ≈ ローブ半径 × 1.05）に葉の房テクスチャ 1 枚を丸ごと貼る。房は中心から 7 本の小枝に細長い葉（幅 ≈ 長さ × 0.44）を対生させた 512² のグレー画像＋法線マップ（主脈の折れと側脈の溝）。色はマテリアル色を乗算
+  - 樹冠: 頂上 1 個＋周囲 2〜4 個の球（ローブ）。カードは表面寄り（内側にも少し）に置き、向きは外向き寄りのランダム（真横向きのカードが輪郭から線として飛び出さないように）。**法線はカードの向きではなく、ローブ中心と樹冠中心から外向き**（参考素材のカスタム法線と同じ。塊として陰影が付く）。頂点色は内側ほど暗く
+  - カードは `upNormalCards: true`（裏向き三角形を足して FrontSide）。両面描画だと裏で法線が反転して黒い斑になった
+  - 幹: 根元が広がる幹が樹高の 36〜44% で分かれ、各ローブへ枝が伸びる。樹皮は縦に揺れる溝と細い繊維の 256×512 タイル＋法線マップ
+  - 葉カードの角が樹高を超えるので、生成後に全体を一様に縮めて上端を `height` に合わせる
+  - 既定: 高さ 6 m、葉 `#4f9a2a`、樹皮 `#8a7350`。LOD0 は 1000〜1500 頂点、生成 約 35 ms
+- 樹皮テクスチャは画素ごとに sin を回すと 128 ms かかったので、溝の中心・幅を行ごとに先に求める（約 10 ms）
+
 ### rock（2026-10-27 時点。ユーザー評価「とても良い」）
 
 - 形: 楕円体の表面にばらつかせた点群の **凸包 = 不規則な多面体**

@@ -659,7 +659,10 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 		const value = state.options[ key ];
 		if ( typeof value === 'string' ) {
-			const controller = optionFolder.add( state.options, key, key === 'variety' ? Object.keys( flowerPetalColorPresets ) : [ value ] ).name( key );
+			const choices = key === 'variety'
+				? Object.keys( flowerPetalColorPresets )
+				: [ value ];
+			const controller = optionFolder.add( state.options, key, choices ).name( key );
 			controller.onChange( ( next: string ) => {
 				if ( activeKind.name === 'Flowers' && key === 'variety' ) {
 					const defaults = flowerVarietyDefaults[ next as keyof typeof flowerVarietyDefaults ];
@@ -795,7 +798,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 function createGui(): void {
 
 	const gui = new GUI( { title: 'Vegetation', width: 285 } );
-	gui.add( state, 'kind', kinds.map( ( kind ) => kind.name ) ).name( 'species' ).onChange( ( name: string ) => {
+	gui.add( state, 'kind', kinds.map( ( kind ) => kind.name ) ).name( 'kind' ).onChange( ( name: string ) => {
 
 		activeKind = kinds.find( ( kind ) => kind.name === name )!;
 		state.options = { ...activeKind.options };

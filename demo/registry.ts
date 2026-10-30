@@ -1,5 +1,8 @@
-import { generateFlowers, generateFlowersAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
-import type { FlowersMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
+import { generateBroadleafTree, generateBroadleafTreeAsync, generateFlowers, generateFlowersAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
+import type { BroadleafTreeMeshOptions, FlowersMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
+import { DEFAULT_BARK_COLOR } from '../src/core/barkTexture';
+import { DEFAULT_LEAF_COLOR } from '../src/core/leafTexture';
+import { DEFAULT_BROADLEAF_TREE_BARK_COLOR, DEFAULT_BROADLEAF_TREE_HEIGHT, DEFAULT_BROADLEAF_TREE_LEAF_COLOR } from '../src/core/trees/broadleaf';
 
 export interface VegetationKind {
 	name: string;
@@ -45,6 +48,12 @@ export const flowerVarietyDefaults = {
 	primrose: { count: 4, spread: 0.26, height: 0.12, petal: '#f2d24a', centerColor: '#c0a020' },
 };
 
+function toColorHex( color: number ): string {
+
+	return `#${ color.toString( 16 ).padStart( 6, '0' ) }`;
+
+}
+
 export const kinds: VegetationKind[] = [
 	{
 		name: 'Tree',
@@ -52,13 +61,22 @@ export const kinds: VegetationKind[] = [
 		createAsync: ( opts ) => generateTreeAsync( opts as TreeMeshOptions ),
 		colorParts: [ 'leaf', 'bark' ],
 		colorOptions: { leaf: 'leafColor', bark: 'barkColor' },
-		defaultColors: { leaf: '#2f7d1f', bark: '#6b4c32' },
+		defaultColors: { leaf: toColorHex( DEFAULT_LEAF_COLOR ), bark: toColorHex( DEFAULT_BARK_COLOR ) },
 		options: {
 			seed: 1,
 			height: 7.5,
 			crownSize: 1,
 			branchCount: 10,
 		},
+	},
+	{
+		name: 'Broadleaf',
+		create: ( opts ) => generateBroadleafTree( opts as BroadleafTreeMeshOptions ),
+		createAsync: ( opts ) => generateBroadleafTreeAsync( opts as BroadleafTreeMeshOptions ),
+		colorParts: [ 'leaf', 'bark' ],
+		colorOptions: { leaf: 'leafColor', bark: 'barkColor' },
+		defaultColors: { leaf: toColorHex( DEFAULT_BROADLEAF_TREE_LEAF_COLOR ), bark: toColorHex( DEFAULT_BROADLEAF_TREE_BARK_COLOR ) },
+		options: { seed: 1, height: DEFAULT_BROADLEAF_TREE_HEIGHT },
 	},
 	{
 		name: 'Rock',

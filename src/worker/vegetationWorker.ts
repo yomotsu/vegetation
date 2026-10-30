@@ -1,23 +1,62 @@
-import { generatePebblesData } from '../core/generators/pebbles';
 import type { PebblesOptions } from '../core/generators/pebbles';
-import { generateRockData } from '../core/generators/rock';
 import type { RockOptions } from '../core/generators/rock';
-import { generateTreeData } from '../core/generators/tree';
 import type { TreeOptions } from '../core/generators/tree';
 import { prepareVegetationAsset } from '../core/vegetationAssetPreparation';
 import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
-import { normalizePebblesGenerationOptions, normalizeRockGenerationOptions, normalizeTreeGenerationOptions } from '../core/vegetationGeneration';
-import { generateGrassData } from '../core/generators/grass';
 import type { GrassOptions } from '../core/generators/grass';
-import { normalizeGrassGenerationOptions } from '../core/vegetationGeneration';
-import { generateFlowersData } from '../core/generators/flowers';
 import type { FlowersOptions } from '../core/generators/flowers';
-import { normalizeFlowersGenerationOptions } from '../core/vegetationGeneration';
+import type { BroadleafTreeOptions } from '../core/trees/broadleaf';
+import type { VegetationData } from '../core/types';
+import type { NormalizedVegetationGeneration } from '../core/generationOptions';
 import { encodeUastcTexture } from '../core/uastc';
 import { writeUastcKtx2 } from '../core/ktx2';
-import type { VegetationWorkerRequest, VegetationWorkerResponse } from './protocol';
+import type { VegetationWorkerKind, VegetationWorkerRequest, VegetationWorkerResponse } from './protocol';
 
-export function handleVegetationWorkerMessage( request: VegetationWorkerRequest ): VegetationWorkerResponse {
+interface WorkerGenerator {
+	normalize: ( options: Record<string, number | boolean | string>, colors: Record<string, number> ) => NormalizedVegetationGeneration<unknown>;
+	generate: ( options: unknown ) => VegetationData;
+}
+
+function createWorkerGenerator<Options>(
+	generate: ( options: Options ) => VegetationData,
+	normalize: ( options: Options, colors: Record<string, number> ) => NormalizedVegetationGeneration<Options>,
+): WorkerGenerator {
+
+	return {
+		normalize: ( options, colors ) => normalize( options as unknown as Options, colors ),
+		generate: ( options ) => generate( options as Options ),
+	};
+
+}
+
+const generatorLoaders: Record<VegetationWorkerKind, () => Promise<WorkerGenerator>> = {
+	tree: async () => {
+		const [ generator, options ] = await Promise.all( [ import( '../core/generators/tree' ), import( '../core/generationOptions/tree' ) ] );
+		return createWorkerGenerator<TreeOptions>( generator.generateTreeData, options.normalizeTreeGenerationOptions );
+	},
+	'broadleaf-tree': async () => {
+		const generator = await import( '../core/trees/broadleaf' );
+		return createWorkerGenerator<BroadleafTreeOptions>( generator.generateBroadleafTreeData, generator.normalizeBroadleafTreeGenerationOptions );
+	},
+	rock: async () => {
+		const [ generator, options ] = await Promise.all( [ import( '../core/generators/rock' ), import( '../core/generationOptions/rock' ) ] );
+		return createWorkerGenerator<RockOptions>( generator.generateRockData, options.normalizeRockGenerationOptions );
+	},
+	pebbles: async () => {
+		const [ generator, options ] = await Promise.all( [ import( '../core/generators/pebbles' ), import( '../core/generationOptions/pebbles' ) ] );
+		return createWorkerGenerator<PebblesOptions>( generator.generatePebblesData, options.normalizePebblesGenerationOptions );
+	},
+	grass: async () => {
+		const [ generator, options ] = await Promise.all( [ import( '../core/generators/grass' ), import( '../core/generationOptions/grass' ) ] );
+		return createWorkerGenerator<GrassOptions>( generator.generateGrassData, options.normalizeGrassGenerationOptions );
+	},
+	flowers: async () => {
+		const [ generator, options ] = await Promise.all( [ import( '../core/generators/flowers' ), import( '../core/generationOptions/flowers' ) ] );
+		return createWorkerGenerator<FlowersOptions>( generator.generateFlowersData, options.normalizeFlowersGenerationOptions );
+	},
+};
+
+export async function handleVegetationWorkerMessage( request: VegetationWorkerRequest ): Promise<VegetationWorkerResponse> {
 
 	try {
 
@@ -30,40 +69,9 @@ export function handleVegetationWorkerMessage( request: VegetationWorkerRequest 
 
 		}
 
-		if ( request.kind === 'tree' ) {
-
-			const normalized = normalizeTreeGenerationOptions( request.options as TreeOptions, request.colors );
-			const data = generateTreeData( normalized.options );
-			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
-
-		}
-
-		if ( request.kind === 'rock' ) {
-
-			const normalized = normalizeRockGenerationOptions( request.options as RockOptions, request.colors );
-			const data = generateRockData( normalized.options );
-			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
-
-		}
-
-		if ( request.kind === 'grass' ) {
-
-			const normalized = normalizeGrassGenerationOptions( request.options as GrassOptions, request.colors );
-			const data = generateGrassData( normalized.options );
-			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
-
-		}
-
-		if ( request.kind === 'flowers' ) {
-
-			const normalized = normalizeFlowersGenerationOptions( request.options as FlowersOptions, request.colors );
-			const data = generateFlowersData( normalized.options );
-			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
-
-		}
-
-		const normalized = normalizePebblesGenerationOptions( request.options as PebblesOptions, request.colors );
-		const data = generatePebblesData( normalized.options );
+		const generator = await generatorLoaders[ request.kind ]();
+		const normalized = generator.normalize( request.options, request.colors );
+		const data = generator.generate( normalized.options );
 		return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 	} catch ( error ) {
@@ -115,14 +123,15 @@ if ( workerCandidate.document === undefined && typeof workerCandidate.addEventLi
 	const scope = workerCandidate as WorkerScope;
 	scope.addEventListener( 'message', ( event ) => {
 
-		const response = handleVegetationWorkerMessage( event.data );
-		if ( 'error' in response ) {
-			scope.postMessage( response, [] );
-		} else if ( response.task === 'encode' ) {
-			scope.postMessage( response, [ response.buffer ] );
-		} else {
-			scope.postMessage( response, getPreparedTransferables( response.prepared ) );
-		}
+		void handleVegetationWorkerMessage( event.data ).then( ( response ) => {
+			if ( 'error' in response ) {
+				scope.postMessage( response, [] );
+			} else if ( response.task === 'encode' ) {
+				scope.postMessage( response, [ response.buffer ] );
+			} else {
+				scope.postMessage( response, getPreparedTransferables( response.prepared ) );
+			}
+		} );
 
 	} );
 

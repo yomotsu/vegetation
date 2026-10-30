@@ -11,7 +11,7 @@ import {
 	SRGBColorSpace,
 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { generateTree } from '../../src/three/meshes';
+import { generateTree } from '../../src/three/trees/fir';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { registerTextureRegenerator } from '../../src/core/textureRegenerator';
 import { generateTreeData } from '../../src/core/generators/tree';
