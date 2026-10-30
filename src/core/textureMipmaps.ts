@@ -12,6 +12,21 @@ function getCoverageCount( pixels: Uint8Array, alphaTest: number ): number {
 	return covered;
 }
 
+async function getCoverageCountAsync( pixels: Uint8Array, alphaTest: number, onSlice?: ( durationMs: number ) => void ): Promise<number> {
+	let covered = 0;
+	const pixelCount = pixels.length / 4;
+	for ( let firstPixel = 0; firstPixel < pixelCount; firstPixel += ALPHA_SLICE_PIXELS ) {
+		const startedAt = performance.now();
+		const endPixel = Math.min( pixelCount, firstPixel + ALPHA_SLICE_PIXELS );
+		for ( let pixel = firstPixel; pixel < endPixel; pixel ++ ) {
+			if ( pixels[ pixel * 4 + 3 ]! / 255 >= alphaTest ) covered ++;
+		}
+		onSlice?.( performance.now() - startedAt );
+		if ( endPixel < pixelCount ) await yieldToMainThread();
+	}
+	return covered;
+}
+
 function preserveAlphaCoverage( pixels: Uint8Array, targetCoverage: number, alphaTest: number ): void {
 	if ( targetCoverage === 0 ) {
 		for ( let offset = 3; offset < pixels.length; offset += 4 ) pixels[ offset ] = 0;
@@ -82,13 +97,14 @@ function preserveAlphaCoverage( pixels: Uint8Array, targetCoverage: number, alph
 	}
 }
 
-function downsample( source: TextureMipLevel, alphaTest: number, normalMap: boolean, data: Uint8Array ): TextureMipLevel {
+function downsample( source: TextureMipLevel, alphaTest: number, normalMap: boolean, data: Uint8Array, firstOutputRow = 0, lastOutputRow?: number ): TextureMipLevel {
 	const width = Math.max( 1, Math.floor( source.width / 2 ) );
 	const height = Math.max( 1, Math.floor( source.height / 2 ) );
 	const sourceData = source.data;
+	const endOutputRow = Math.min( height, lastOutputRow ?? height );
 
 	if ( source.width % 2 === 0 && source.height % 2 === 0 ) {
-		for ( let y = 0; y < height; y ++ ) {
+	for ( let y = firstOutputRow; y < endOutputRow; y ++ ) {
 			for ( let x = 0; x < width; x ++ ) {
 				const topLeft = ( y * 2 * source.width + x * 2 ) * 4;
 				const topRight = topLeft + 4;
@@ -134,7 +150,7 @@ function downsample( source: TextureMipLevel, alphaTest: number, normalMap: bool
 		return { width, height, data };
 	}
 
-	for ( let y = 0; y < height; y ++ ) {
+		for ( let y = firstOutputRow; y < endOutputRow; y ++ ) {
 		const startY = y * source.height / height;
 		const endY = ( y + 1 ) * source.height / height;
 		const firstY = Math.floor( startY );
@@ -218,6 +234,139 @@ export function generateTextureMipmaps( texture: TextureData, alphaTest = 0, nor
 		offset += byteLength;
 		source = downsample( source, alphaTest, normalMap, levelData );
 		if ( alphaTest > 0 ) preserveAlphaCoverage( source.data, baseCoverage, alphaTest );
+		levels.push( source );
+	}
+
+	return levels;
+}
+
+const MIPMAP_SLICE_BYTES = 8 * 1024;
+const ALPHA_SLICE_PIXELS = MIPMAP_SLICE_BYTES / 4;
+
+function yieldToMainThread(): Promise<void> {
+	return new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+}
+
+async function preserveAlphaCoverageInSlices( pixels: Uint8Array, targetCoverage: number, alphaTest: number, onSlice?: ( durationMs: number ) => void ): Promise<void> {
+	const pixelCount = pixels.length / 4;
+	if ( targetCoverage === 0 ) {
+		for ( let firstPixel = 0; firstPixel < pixelCount; firstPixel += ALPHA_SLICE_PIXELS ) {
+			const startedAt = performance.now();
+			const endPixel = Math.min( pixelCount, firstPixel + ALPHA_SLICE_PIXELS );
+			for ( let pixel = firstPixel; pixel < endPixel; pixel ++ ) pixels[ pixel * 4 + 3 ] = 0;
+			onSlice?.( performance.now() - startedAt );
+			if ( endPixel < pixelCount ) await yieldToMainThread();
+		}
+		return;
+	}
+
+	const targetCovered = targetCoverage * pixelCount;
+	const histogram = new Uint32Array( 256 );
+	for ( let firstPixel = 0; firstPixel < pixelCount; firstPixel += ALPHA_SLICE_PIXELS ) {
+		const startedAt = performance.now();
+		const endPixel = Math.min( pixelCount, firstPixel + ALPHA_SLICE_PIXELS );
+		for ( let pixel = firstPixel; pixel < endPixel; pixel ++ ) {
+			const alpha = pixels[ pixel * 4 + 3 ]!;
+			histogram[ alpha ] = histogram[ alpha ]! + 1;
+		}
+		onSlice?.( performance.now() - startedAt );
+		if ( endPixel < pixelCount ) await yieldToMainThread();
+	}
+	const threshold = Math.ceil( alphaTest * 255 );
+	let minimumScale = 0;
+	let maximumScale = 255;
+	let bestScale = 1;
+	let bestError = Infinity;
+
+	for ( let iteration = 0; iteration < 32; iteration ++ ) {
+		const scale = ( minimumScale + maximumScale ) * 0.5;
+		let covered = 0;
+		for ( let alpha = 1; alpha < 256; alpha ++ ) {
+			if ( Math.min( 255, Math.round( alpha * scale ) ) >= threshold ) covered += histogram[ alpha ]!;
+		}
+
+		const error = Math.abs( covered - targetCovered );
+		if ( error < bestError ) {
+			bestError = error;
+			bestScale = scale;
+		}
+		if ( error === 0 ) break;
+		if ( covered < targetCovered ) minimumScale = scale;
+		else maximumScale = scale;
+	}
+
+	for ( let firstPixel = 0; firstPixel < pixelCount; firstPixel += ALPHA_SLICE_PIXELS ) {
+		const startedAt = performance.now();
+		const endPixel = Math.min( pixelCount, firstPixel + ALPHA_SLICE_PIXELS );
+		for ( let pixel = firstPixel; pixel < endPixel; pixel ++ ) {
+			const offset = pixel * 4 + 3;
+			pixels[ offset ] = Math.min( 255, Math.round( pixels[ offset ]! * bestScale ) );
+		}
+		onSlice?.( performance.now() - startedAt );
+		if ( endPixel < pixelCount ) await yieldToMainThread();
+	}
+
+	if ( bestError <= Math.max( 1, pixelCount * 0.002 ) ) return;
+	const targetCount = Math.round( targetCovered );
+	const scaledHistogram = new Uint32Array( 256 );
+	for ( let alpha = 1; alpha < 256; alpha ++ ) {
+		const scaled = Math.min( 255, Math.round( alpha * bestScale ) );
+		scaledHistogram[ scaled ] = scaledHistogram[ scaled ]! + histogram[ alpha ]!;
+	}
+	let cutoff = 255;
+	let above = 0;
+	while ( cutoff > 0 && above + scaledHistogram[ cutoff ]! < targetCount ) {
+		above += scaledHistogram[ cutoff ]!;
+		cutoff --;
+	}
+	let raiseAtCutoff = targetCount - above;
+	for ( let firstPixel = 0; firstPixel < pixelCount; firstPixel += ALPHA_SLICE_PIXELS ) {
+		const startedAt = performance.now();
+		const endPixel = Math.min( pixelCount, firstPixel + ALPHA_SLICE_PIXELS );
+		for ( let pixel = firstPixel; pixel < endPixel; pixel ++ ) {
+			const offset = pixel * 4 + 3;
+			const alpha = pixels[ offset ]!;
+			if ( alpha === 0 ) continue;
+			if ( alpha > cutoff ) pixels[ offset ] = Math.max( alpha, threshold );
+			else if ( alpha < cutoff ) pixels[ offset ] = Math.min( alpha, threshold - 1 );
+			else if ( raiseAtCutoff > 0 ) {
+				pixels[ offset ] = Math.max( alpha, threshold );
+				raiseAtCutoff --;
+			} else pixels[ offset ] = Math.min( alpha, threshold - 1 );
+		}
+		onSlice?.( performance.now() - startedAt );
+		if ( endPixel < pixelCount ) await yieldToMainThread();
+	}
+}
+
+/** Worker が使えない環境向け。ミップ生成とアルファ処理を 8 KiB 以下の行・画素単位で進めます。 */
+export async function generateTextureMipmapsAsync( texture: TextureData, alphaTest = 0, normalMap = false, onSlice?: ( durationMs: number ) => void ): Promise<TextureMipLevel[]> {
+	const levels: TextureMipLevel[] = [ { width: texture.width, height: texture.height, data: texture.data } ];
+	const dimensions: { width: number; height: number }[] = [];
+	let width = texture.width;
+	let height = texture.height;
+	while ( width > 1 || height > 1 ) {
+		width = Math.max( 1, Math.floor( width / 2 ) );
+		height = Math.max( 1, Math.floor( height / 2 ) );
+		dimensions.push( { width, height } );
+	}
+	let source = levels[ 0 ]!;
+	const baseCoverage = alphaTest > 0
+		? await getCoverageCountAsync( texture.data, alphaTest, onSlice ) / ( texture.width * texture.height )
+		: 0;
+
+	for ( const dimensionsAtLevel of dimensions ) {
+		const levelData = new Uint8Array( dimensionsAtLevel.width * dimensionsAtLevel.height * 4 );
+		source = { width: dimensionsAtLevel.width, height: dimensionsAtLevel.height, data: levelData };
+		const rowsPerSlice = Math.max( 1, Math.floor( MIPMAP_SLICE_BYTES / ( dimensionsAtLevel.width * 4 ) ) );
+		for ( let firstRow = 0; firstRow < dimensionsAtLevel.height; firstRow += rowsPerSlice ) {
+			const startedAt = performance.now();
+			const endRow = Math.min( dimensionsAtLevel.height, firstRow + rowsPerSlice );
+			downsample( levels[ levels.length - 1 ]!, alphaTest, normalMap, levelData, firstRow, endRow );
+			onSlice?.( performance.now() - startedAt );
+			if ( endRow < dimensionsAtLevel.height ) await yieldToMainThread();
+		}
+		if ( alphaTest > 0 ) await preserveAlphaCoverageInSlices( levelData, baseCoverage, alphaTest, onSlice );
 		levels.push( source );
 	}
 

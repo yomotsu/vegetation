@@ -1,4 +1,5 @@
 export { VegetationAsset } from './three/VegetationAsset';
+export type { KTX2LoaderLike, TextureCompressionReport, VegetationAssetOptions } from './three/VegetationAsset';
 export { orientBillboardInstances, VegetationMesh } from './three/VegetationMesh';
 export { FlowersMesh, GrassMesh, PebblesMesh, RockMesh, TreeMesh, disposeVegetationWorkers, generateFlowers, generateFlowersAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from './three/meshes';
 export type {

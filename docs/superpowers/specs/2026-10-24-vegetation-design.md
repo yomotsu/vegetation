@@ -473,3 +473,12 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
   - スキップしている性能テスト（`VEGETATION_PERF=1`）
   - コードスタイルの統一
 - デモの照明（facet のコントラストを強める案）は未回答
+
+### UASTC / KTX2 圧縮（2026-10-30 ユーザー採用）
+
+- 圧縮は opt-in。呼び出し側が `KTX2Loader.detectSupport( renderer )` 済みの loader を Mesh / `generate*Async` の option に渡す。省略時は従来の RGBA `DataTexture` を使う。ASTC / BC7 / ETC2 / RGBA fallback の選択と transcoder のロードは loader 側が担う
+- UASTC mode 5 を不透明色・法線、mode 13 を alpha-test 色に使う。coverage-preserving mip の後で各 mip の alpha を 0 / 255 にし、ETC2 EAC alpha の base は `0xff` に固定する。共有 Worker pool へテクスチャ単位で分散し、色変更・impostor の焼き直しは世代番号で古い結果を破棄する。RGBA は圧縮結果の到着まで表示する
+- Worker が使えない場合は main thread の fallback を小さく分割する（mip / alpha 処理 8 KiB、UASTC encode 16 blocks、KTX2 packing 64 KiB 単位）。計測時の最大 slice は 2.63 ms
+- alpha mask は allium / tree leaf / leafRing の全 mip で RGBA32・BC7・ETC2 とも不一致 0。alpha を二値化しても RGB PSNR の差は 0 dB（各画像 43.36 / 56.95 / 44.69 dB）。不透明テクスチャの PSNR は rock albedo が RGBA32 60.47 dB / BC7 53.16 dB、rock normal が 51.91 / 49.85 dB
+- texture ごとの main sync / Worker encode+pack 時間（ms）: rock albedo 118.89 / 122.24、rock normal 107.00 / 105.34、allium 14.89 / 16.48、tree leaf 18.01 / 17.77、tree leafRing 42.93 / 47.35。公開 async API の生成開始から圧縮 texture への swap までは rock 628.46 ms、tree 393.82 ms、allium 291.22 ms（4 Worker、Node worker_threads による測定）
+- GPU texture memory は ASTC / BC7 / ETC2 RGBA で RGBA8 の約 1/4、opaque ETC2 RGB で約 1/8、RGBA fallback では削減なし。library bundle 増分は 14,420 bytes minified / 4,228 bytes gzip

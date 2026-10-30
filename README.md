@@ -152,6 +152,30 @@ The `generate*` functions (and their async versions) return a `VegetationAsset`,
 
 For instanced LOD4 billboards, call `orientBillboardInstances( instancedMesh, camera )` each frame so the cards face the camera.
 
+### Optional runtime UASTC textures
+
+UASTC texture compression is opt-in. Pass your own Three.js `KTX2Loader`, after calling `detectSupport( renderer )`, in the options for a `*Mesh`, `generate*` or `generate*Async` call. The RGBA `DataTexture`s remain visible while encoding and transcoding run; each compressed texture replaces its RGBA texture when ready. Colour changes and impostor rebakes schedule a new worker encode, and results from older requests are discarded.
+
+```js
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { VegetationMesh, generateTreeAsync } from 'vegetation';
+
+const ktx2Loader = new KTX2Loader();
+ktx2Loader.detectSupport( renderer );
+
+const asset = await generateTreeAsync( { seed: 7, ktx2Loader } );
+scene.add( new VegetationMesh( asset, 0 ) );
+
+function disposeVegetation() {
+	asset.dispose();
+	ktx2Loader.dispose();
+}
+```
+
+The compressed GPU texture uses about **one quarter of RGBA8 memory** with 16-byte 4×4 formats such as ASTC, BC7, and ETC2 RGBA, including mip levels. Opaque ETC2 RGB uses 8 bytes per 4×4 block (about one eighth); an RGBA8 fallback has no GPU memory reduction. The format is selected by your `KTX2Loader` based on renderer support: ASTC, BC7, ETC2, or RGBA8 fallback. UASTC encoding and KTX2 packing run as one task per texture in the existing worker pool; if workers are unavailable, mipmap and alpha preparation yield every 8 KiB, encoding yields after every 16 4×4 blocks, and KTX2 packing yields every 64 KiB. The KTX2 transcoder is loaded and owned by your `KTX2Loader`; the vegetation library does not include or import it. The RGBA `DataTexture` GPU storage is released when its compressed replacement arrives, while its CPU pixels remain available for color changes. Without `ktx2Loader`, textures remain RGBA8 `DataTexture`s.
+
+Opaque colour textures use UASTC mode 5; alpha-tested textures use mode 13 with a binary alpha channel. Mips retain their coverage-preserving filter, then alpha is thresholded to 0 or 255 at each level before encoding. This keeps the `alphaTest` cut-out mask exact after RGBA32, BC7 and ETC2 transcodes. Normal maps use UASTC mode 5 with a linear transfer function and `NoColorSpace`; X, Y and Z remain in RGB.
+
 ## Core data API
 
 `vegetation/core` exposes only the data generators and their types, without a three.js dependency. `generateTreeData`, `generateRockData`, `generatePebblesData`, `generateGrassData` and `generateFlowersData` return `VegetationData` with typed arrays for positions, normals, UVs and indices per LOD, texture pixels and collider data. Their option types are `TreeOptions`, `RockOptions`, `PebblesOptions`, `GrassOptions` and `FlowersOptions`; shared data types include `VegetationData`, `MeshData`, `PartDef`, `TextureData` and `ColliderData`. Use it to bake assets offline or to feed another engine.

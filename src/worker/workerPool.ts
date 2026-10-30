@@ -1,5 +1,7 @@
 import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
-import type { VegetationWorkerRequest, VegetationWorkerResponse } from './protocol';
+import type { TextureData } from '../core/types';
+import type { UastcEncodeOptions } from '../core/uastc';
+import type { VegetationEncodeRequest, VegetationGenerateRequest, VegetationWorkerRequest, VegetationWorkerResponse, VegetationWorkerSuccessResponse } from './protocol';
 
 type WorkerFactory = () => Worker;
 
@@ -11,7 +13,8 @@ interface WorkerSlot {
 
 interface PendingRequest {
 	slot: WorkerSlot;
-	resolve: ( prepared: PreparedVegetationAsset ) => void;
+	task: VegetationWorkerRequest['task'];
+	resolve: ( response: VegetationWorkerSuccessResponse ) => void;
 	reject: ( error: Error ) => void;
 }
 
@@ -27,7 +30,8 @@ export class VegetationWorkerUnavailableError extends Error {
 }
 
 export interface VegetationWorkerPool {
-	request: ( request: Omit<VegetationWorkerRequest, 'id'>, affinity: string ) => Promise<PreparedVegetationAsset>;
+	request: ( request: Omit<VegetationGenerateRequest, 'id' | 'task'>, affinity: string ) => Promise<PreparedVegetationAsset>;
+	encode: ( texture: TextureData, options: UastcEncodeOptions, affinity: string ) => Promise<{ buffer: ArrayBuffer; encodeTimeMs: number }>;
 	dispose: () => void;
 }
 
@@ -84,7 +88,8 @@ export function createVegetationWorkerPool( options: { maxWorkers?: number; work
 			const request = removePending( response.id, slot );
 			if ( request === undefined ) return;
 			if ( 'error' in response ) request.reject( reviveError( response.error ) );
-			else request.resolve( response.prepared );
+			else if ( response.task !== request.task ) request.reject( new Error( `Vegetation worker returned ${ response.task } for a ${ request.task } request` ) );
+			else request.resolve( response );
 
 		};
 		worker.onerror = ( event: ErrorEvent ) => {
@@ -117,7 +122,7 @@ export function createVegetationWorkerPool( options: { maxWorkers?: number; work
 
 	}
 
-	function request( payload: Omit<VegetationWorkerRequest, 'id'>, affinity: string ): Promise<PreparedVegetationAsset> {
+	function dispatch( payload: Omit<VegetationGenerateRequest, 'id'> | Omit<VegetationEncodeRequest, 'id'>, affinity: string ): Promise<VegetationWorkerSuccessResponse> {
 
 		if ( disposed ) return Promise.reject( new Error( 'Vegetation worker pool is disposed' ) );
 
@@ -130,21 +135,40 @@ export function createVegetationWorkerPool( options: { maxWorkers?: number; work
 		}
 
 		const id = nextId ++;
-		const message: VegetationWorkerRequest = { ...payload, id };
-		affinities.set( affinity, slot );
+		const message: VegetationWorkerRequest = { ...payload, id } as VegetationWorkerRequest;
+		if ( message.task === 'generate' ) affinities.set( affinity, slot );
 		slot.busy ++;
 		slot.requestIds.add( id );
 
 		return new Promise( ( resolve, reject ) => {
 
-			pending.set( id, { slot, resolve, reject } );
+			pending.set( id, { slot, task: message.task, resolve, reject } );
 			try {
-				slot.worker.postMessage( message );
+				const transferables = message.task === 'encode' ? getTextureTransferables( message.texture ) : [];
+				slot.worker.postMessage( message, transferables );
 			} catch ( error ) {
 				removePending( id, slot );
 				reject( error instanceof Error ? error : new Error( String( error ) ) );
 			}
 
+		} );
+
+	}
+
+	function request( payload: Omit<VegetationGenerateRequest, 'id' | 'task'>, affinity: string ): Promise<PreparedVegetationAsset> {
+
+		return dispatch( { ...payload, task: 'generate' }, affinity ).then( ( response ) => {
+			if ( response.task !== 'generate' ) throw new Error( 'Vegetation worker returned a non-generation response' );
+			return response.prepared;
+		} );
+
+	}
+
+	function encode( texture: TextureData, options: UastcEncodeOptions, affinity: string ): Promise<{ buffer: ArrayBuffer; encodeTimeMs: number }> {
+
+		return dispatch( { task: 'encode', texture, options }, affinity ).then( ( response ) => {
+			if ( response.task !== 'encode' ) throw new Error( 'Vegetation worker returned a non-encoding response' );
+			return { buffer: response.buffer, encodeTimeMs: response.encodeTimeMs };
 		} );
 
 	}
@@ -171,19 +195,44 @@ export function createVegetationWorkerPool( options: { maxWorkers?: number; work
 
 	}
 
-	return { request, dispose };
+	return { request, encode, dispose };
+
+}
+
+function getTextureTransferables( texture: TextureData ): Transferable[] {
+
+	const transferables = new Set<ArrayBuffer>();
+	const add = ( data: Uint8Array ): void => {
+		if ( data.buffer instanceof ArrayBuffer ) transferables.add( data.buffer );
+	};
+	add( texture.data );
+	for ( const level of texture.mipmaps ?? [] ) add( level.data );
+	return [ ...transferables ];
 
 }
 
 let pool: VegetationWorkerPool | undefined;
 
 export function requestVegetationWorker(
-	request: Omit<VegetationWorkerRequest, 'id'>,
+	request: Omit<VegetationGenerateRequest, 'id' | 'task'>,
 	affinity: string,
 ): Promise<PreparedVegetationAsset> {
 
 	pool ??= createVegetationWorkerPool();
 	return pool.request( request, affinity );
+
+}
+
+let nextEncodeAffinity = 1;
+
+export function requestVegetationWorkerEncoding(
+	texture: TextureData,
+	options: UastcEncodeOptions,
+): Promise<{ buffer: ArrayBuffer; encodeTimeMs: number }> {
+
+	pool ??= createVegetationWorkerPool();
+	const affinity = `uastc:${ nextEncodeAffinity ++ }`;
+	return pool.encode( texture, options, affinity );
 
 }
 

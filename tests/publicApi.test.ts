@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { KTX2LoaderLike, TreeMeshOptions } from '../src/index';
 
 describe( 'public entry points', () => {
 
@@ -47,6 +48,12 @@ describe( 'public entry points', () => {
 		const exports = Object.keys( await import( '../src/webgpu/index' ) ).sort();
 		expect( exports ).toEqual( [] );
 
+	} );
+
+	it( 'accepts the caller-owned KTX2 loader through mesh generation options', () => {
+		const loader: KTX2LoaderLike = { parse() {} };
+		const options: TreeMeshOptions = { seed: 3, ktx2Loader: loader };
+		expect( options.ktx2Loader ).toBe( loader );
 	} );
 
 } );

@@ -47,4 +47,29 @@ describe( 'vegetation worker pool', () => {
 
 	} );
 
+	it( 'transfers encode buffers and sends independent textures to different workers', async () => {
+		const workers: FakeWorker[] = [];
+		const pool = createVegetationWorkerPool( { maxWorkers: 2, workerFactory: () => {
+			const worker = new FakeWorker();
+			workers.push( worker );
+			return worker as unknown as Worker;
+		} } );
+		const pixels = new Uint8Array( 4 * 4 * 4 );
+		const mipPixels = new Uint8Array( 2 * 2 * 4 );
+		const first = pool.encode( { width: 4, height: 4, data: pixels, mipmaps: [ { width: 2, height: 2, data: mipPixels } ] }, { alphaTest: 0.5 }, 'uastc:first' );
+		const second = pool.encode( { width: 4, height: 4, data: new Uint8Array( 64 ) }, { alphaTest: 0 }, 'uastc:second' );
+
+		expect( workers ).toHaveLength( 2 );
+		const firstCall = workers[ 0 ]!.postMessage.mock.calls[ 0 ]! as unknown as [ { id: number; task: string }, Transferable[] ];
+		const secondCall = workers[ 1 ]!.postMessage.mock.calls[ 0 ]! as unknown as [ { id: number; task: string }, Transferable[] ];
+		expect( firstCall[ 0 ].task ).toBe( 'encode' );
+		expect( firstCall[ 1 ] ).toEqual( [ pixels.buffer, mipPixels.buffer ] );
+		workers[ 0 ]!.onmessage( { data: { id: firstCall[ 0 ].id, task: 'encode', buffer: new ArrayBuffer( 1 ), encodeTimeMs: 1 } } as MessageEvent );
+		workers[ 1 ]!.onmessage( { data: { id: secondCall[ 0 ].id, task: 'encode', buffer: new ArrayBuffer( 2 ), encodeTimeMs: 2 } } as MessageEvent );
+
+		await expect( first ).resolves.toMatchObject( { encodeTimeMs: 1 } );
+		await expect( second ).resolves.toMatchObject( { encodeTimeMs: 2 } );
+		pool.dispose();
+	} );
+
 } );

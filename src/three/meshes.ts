@@ -1,4 +1,5 @@
 import { VegetationAsset } from './VegetationAsset';
+import type { KTX2LoaderLike } from './VegetationAsset';
 import { VegetationMesh } from './VegetationMesh';
 import { Color } from 'three';
 import type { ColorRepresentation } from 'three';
@@ -24,23 +25,27 @@ export type TreeMeshOptions = Omit<TreeOptions, 'leafColor'> & {
 	lod?: number;
 	leafColor?: ColorRepresentation;
 	barkColor?: ColorRepresentation;
+	ktx2Loader?: KTX2LoaderLike;
 };
 
 export type RockMeshOptions = Omit<RockOptions, 'rockColor' | 'mossColor'> & {
 	lod?: number;
 	rockColor?: ColorRepresentation;
 	mossColor?: ColorRepresentation;
+	ktx2Loader?: KTX2LoaderLike;
 };
 
 export type PebblesMeshOptions = Omit<PebblesOptions, 'stoneColor' | 'mossColor'> & {
 	lod?: number;
 	stoneColor?: ColorRepresentation;
 	mossColor?: ColorRepresentation;
+	ktx2Loader?: KTX2LoaderLike;
 };
 
 export type GrassMeshOptions = Omit<GrassOptions, 'bladeColor'> & {
 	lod?: number;
 	bladeColor?: ColorRepresentation;
+	ktx2Loader?: KTX2LoaderLike;
 };
 
 export type FlowersMeshOptions = Omit<FlowersOptions, 'petalColor' | 'centerColor' | 'stemColor'> & {
@@ -48,6 +53,7 @@ export type FlowersMeshOptions = Omit<FlowersOptions, 'petalColor' | 'centerColo
 	petalColor?: ColorRepresentation;
 	centerColor?: ColorRepresentation;
 	stemColor?: ColorRepresentation;
+	ktx2Loader?: KTX2LoaderLike;
 };
 
 function colorHex( color: ColorRepresentation | undefined, fallback: number ): number {
@@ -160,7 +166,7 @@ export function generateTree( options: TreeMeshOptions = {} ): VegetationAsset {
 	const data = generateTreeData( normalized.options );
 	const colors = { leaf: options.leafColor ?? DEFAULT_LEAF_COLOR, ...( options.barkColor === undefined ? {} : { bark: options.barkColor } ) };
 
-	return new VegetationAsset( data, colors );
+	return new VegetationAsset( data, colors, 128, { ktx2Loader: options.ktx2Loader } );
 
 }
 
@@ -172,7 +178,7 @@ export async function generateTreeAsync( options: TreeMeshOptions = {} ): Promis
 	const normalized = normalizeTreeOptions( options );
 	const request = workerRequest( 'tree', normalized.options, normalized.colors );
 	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `tree:${ normalized.options.seed ?? 1 }` ) );
+		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `tree:${ normalized.options.seed ?? 1 }` ), { ktx2Loader: options.ktx2Loader } );
 	} catch ( error ) {
 		if ( error instanceof VegetationWorkerUnavailableError ) return generateTree( options );
 		throw error;
@@ -205,7 +211,7 @@ export function generateRock( options: RockMeshOptions = {} ): VegetationAsset {
 	const color = new Color( options.rockColor ?? 0xffffff );
 	const data = generateRockData( normalized.options );
 
-	return new VegetationAsset( data, { rock: color } );
+	return new VegetationAsset( data, { rock: color }, 128, { ktx2Loader: options.ktx2Loader } );
 
 }
 
@@ -217,7 +223,7 @@ export async function generateRockAsync( options: RockMeshOptions = {} ): Promis
 	const normalized = normalizeRockOptions( options );
 	const request = workerRequest( 'rock', normalized.options, normalized.colors );
 	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `rock:${ normalized.options.seed ?? 1 }` ) );
+		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `rock:${ normalized.options.seed ?? 1 }` ), { ktx2Loader: options.ktx2Loader } );
 	} catch ( error ) {
 		if ( error instanceof VegetationWorkerUnavailableError ) return generateRock( options );
 		throw error;
@@ -250,7 +256,7 @@ export function generatePebbles( options: PebblesMeshOptions = {} ): VegetationA
 	const color = new Color( options.stoneColor ?? 0xffffff );
 	const data = generatePebblesData( normalized.options );
 
-	return new VegetationAsset( data, { stone: color } );
+	return new VegetationAsset( data, { stone: color }, 128, { ktx2Loader: options.ktx2Loader } );
 
 }
 
@@ -262,7 +268,7 @@ export async function generatePebblesAsync( options: PebblesMeshOptions = {} ): 
 	const normalized = normalizePebblesOptions( options );
 	const request = workerRequest( 'pebbles', normalized.options, normalized.colors );
 	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `pebbles:${ normalized.options.seed ?? 1 }` ) );
+		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `pebbles:${ normalized.options.seed ?? 1 }` ), { ktx2Loader: options.ktx2Loader } );
 	} catch ( error ) {
 		if ( error instanceof VegetationWorkerUnavailableError ) return generatePebbles( options );
 		throw error;
@@ -293,7 +299,7 @@ export function generateGrass( options: GrassMeshOptions = {} ): VegetationAsset
 
 	const normalized = normalizeGrassOptions( options );
 	const data = generateGrassData( normalized.options );
-	return new VegetationAsset( data, { blade: options.bladeColor ?? DEFAULT_BLADE_COLOR } );
+	return new VegetationAsset( data, { blade: options.bladeColor ?? DEFAULT_BLADE_COLOR }, 128, { ktx2Loader: options.ktx2Loader } );
 
 }
 
@@ -305,7 +311,7 @@ export async function generateGrassAsync( options: GrassMeshOptions = {} ): Prom
 	const normalized = normalizeGrassOptions( options );
 	const request = workerRequest( 'grass', normalized.options, normalized.colors );
 	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `grass:${ normalized.options.seed ?? 1 }` ) );
+		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `grass:${ normalized.options.seed ?? 1 }` ), { ktx2Loader: options.ktx2Loader } );
 	} catch ( error ) {
 		if ( error instanceof VegetationWorkerUnavailableError ) return generateGrass( options );
 		throw error;
@@ -337,7 +343,7 @@ export function generateFlowers( options: FlowersMeshOptions = {} ): VegetationA
 	return new VegetationAsset( generateFlowersData( normalized.options ), {
 		petal: normalized.options.petalColor!,
 		stem: normalized.options.stemColor!,
-	} );
+	}, 128, { ktx2Loader: options.ktx2Loader } );
 
 }
 
@@ -349,7 +355,7 @@ export async function generateFlowersAsync( options: FlowersMeshOptions = {} ): 
 	const normalized = normalizeFlowersOptions( options );
 	const request = workerRequest( 'flowers', normalized.options, normalized.colors );
 	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `flowers:${ normalized.options.seed ?? 1 }` ) );
+		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `flowers:${ normalized.options.seed ?? 1 }` ), { ktx2Loader: options.ktx2Loader } );
 	} catch ( error ) {
 		if ( error instanceof VegetationWorkerUnavailableError ) return generateFlowers( options );
 		throw error;

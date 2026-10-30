@@ -12,6 +12,7 @@ describe( 'vegetation worker handler', () => {
 
 		const result = handleVegetationWorkerMessage( {
 			id: 1,
+			task: 'generate',
 			kind: 'rock',
 			options: { seed: 1, moss: 0.5, rockColor: 0x897b6a, mossColor: 0x7cb83a },
 			colors: { rock: 0x897b6a },
@@ -47,6 +48,7 @@ describe( 'vegetation worker handler', () => {
 
 		const result = handleVegetationWorkerMessage( {
 			id: 2,
+			task: 'generate',
 			kind: 'rock',
 			options: { seed: 1, size: 0 },
 			colors: {},
@@ -76,6 +78,7 @@ describe( 'vegetation worker handler', () => {
 
 		const result = handleVegetationWorkerMessage( {
 			id: 3,
+			task: 'generate',
 			kind: 'grass',
 			options: { seed: 5, height: 0.45, width: 0.50625, bladeColor: 0xb8a64a },
 			colors: { blade: 0xb8a64a },
@@ -108,6 +111,7 @@ describe( 'vegetation worker handler', () => {
 			};
 			const result = handleVegetationWorkerMessage( {
 				id: 17,
+				task: 'generate',
 				kind: 'flowers',
 				options,
 				colors: { petal: options.petalColor, stem: options.stemColor },
@@ -145,6 +149,7 @@ describe( 'vegetation worker handler', () => {
 			};
 			const result = handleVegetationWorkerMessage( {
 				id: 27,
+				task: 'generate',
 				kind: 'flowers',
 				options,
 				colors: { petal: options.petalColor, stem: options.stemColor },
@@ -172,6 +177,7 @@ describe( 'vegetation worker handler', () => {
 			const options = { seed: 13, variety, petalColor: 0xa98bd6, centerColor: 0xf4d6a0, stemColor: 0x81603d };
 			const result = handleVegetationWorkerMessage( {
 				id: 37,
+				task: 'generate',
 				kind: 'flowers',
 				options,
 				colors: { petal: options.petalColor, stem: options.stemColor },

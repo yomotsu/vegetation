@@ -13,17 +13,28 @@ import { normalizeGrassGenerationOptions } from '../core/vegetationGeneration';
 import { generateFlowersData } from '../core/generators/flowers';
 import type { FlowersOptions } from '../core/generators/flowers';
 import { normalizeFlowersGenerationOptions } from '../core/vegetationGeneration';
+import { encodeUastcTexture } from '../core/uastc';
+import { writeUastcKtx2 } from '../core/ktx2';
 import type { VegetationWorkerRequest, VegetationWorkerResponse } from './protocol';
 
 export function handleVegetationWorkerMessage( request: VegetationWorkerRequest ): VegetationWorkerResponse {
 
 	try {
 
+		if ( request.task === 'encode' ) {
+
+			const start = performance.now();
+			const encoded = encodeUastcTexture( request.texture, request.options );
+			const buffer = writeUastcKtx2( encoded );
+			return { id: request.id, task: 'encode', buffer, encodeTimeMs: performance.now() - start };
+
+		}
+
 		if ( request.kind === 'tree' ) {
 
 			const normalized = normalizeTreeGenerationOptions( request.options as TreeOptions, request.colors );
 			const data = generateTreeData( normalized.options );
-			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
+			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 		}
 
@@ -31,7 +42,7 @@ export function handleVegetationWorkerMessage( request: VegetationWorkerRequest 
 
 			const normalized = normalizeRockGenerationOptions( request.options as RockOptions, request.colors );
 			const data = generateRockData( normalized.options );
-			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
+			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 		}
 
@@ -39,7 +50,7 @@ export function handleVegetationWorkerMessage( request: VegetationWorkerRequest 
 
 			const normalized = normalizeGrassGenerationOptions( request.options as GrassOptions, request.colors );
 			const data = generateGrassData( normalized.options );
-			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
+			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 		}
 
@@ -47,13 +58,13 @@ export function handleVegetationWorkerMessage( request: VegetationWorkerRequest 
 
 			const normalized = normalizeFlowersGenerationOptions( request.options as FlowersOptions, request.colors );
 			const data = generateFlowersData( normalized.options );
-			return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
+			return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 		}
 
 		const normalized = normalizePebblesGenerationOptions( request.options as PebblesOptions, request.colors );
 		const data = generatePebblesData( normalized.options );
-		return { id: request.id, prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
+		return { id: request.id, task: 'generate', prepared: prepareVegetationAsset( data, normalized.colors, request.impostorSize ) };
 
 	} catch ( error ) {
 
@@ -105,7 +116,13 @@ if ( workerCandidate.document === undefined && typeof workerCandidate.addEventLi
 	scope.addEventListener( 'message', ( event ) => {
 
 		const response = handleVegetationWorkerMessage( event.data );
-		scope.postMessage( response, 'prepared' in response ? getPreparedTransferables( response.prepared ) : [] );
+		if ( 'error' in response ) {
+			scope.postMessage( response, [] );
+		} else if ( response.task === 'encode' ) {
+			scope.postMessage( response, [ response.buffer ] );
+		} else {
+			scope.postMessage( response, getPreparedTransferables( response.prepared ) );
+		}
 
 	} );
 

@@ -8,13 +8,24 @@ import {
 	MeshNormalMaterial,
 	MeshStandardMaterial,
 	PerspectiveCamera,
+	RGB_ETC1_Format,
+	RGB_ETC2_Format,
+	RGB_PVRTC_4BPPV1_Format,
+	RGB_S3TC_DXT1_Format,
+	RGBA_ASTC_4x4_Format,
+	RGBA_BPTC_Format,
+	RGBA_ETC2_EAC_Format,
+	RGBA_PVRTC_4BPPV1_Format,
+	RGBAFormat,
+	RGBA_S3TC_DXT1_Format,
+	RGBA_S3TC_DXT5_Format,
 	Vector3,
 	WireframeGeometry,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import GUI from 'lil-gui';
-import { disposeVegetationWorkers, VegetationMesh } from 'vegetation';
-import type { VegetationAsset } from 'vegetation';
+import { disposeVegetationWorkers, VegetationAsset, VegetationMesh } from 'vegetation';
 import { flowerPetalColorPresets, flowerVarietyDefaults, grassColorPresets, kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
 import { createColorUpdateScheduler } from './colorUpdateScheduler';
@@ -30,11 +41,12 @@ if ( import.meta.env.MODE === 'webgpu' ) {
 
 }
 
-type ViewMode = 'single' | 'compare' | 'scatter';
+type ViewMode = 'single' | 'compare' | 'compression' | 'scatter';
 
 interface DemoState {
 	kind: string;
 	mode: ViewMode;
+	compression: boolean;
 	lod: number;
 	wireframe: boolean;
 	collider: boolean;
@@ -50,6 +62,7 @@ interface DemoState {
 interface CompareLabel {
 	mesh: Mesh;
 	element: HTMLDivElement;
+	getText?: () => string;
 }
 
 const canvasContainer = document.querySelector<HTMLDivElement>( '#canvas' )!;
@@ -65,6 +78,19 @@ const sunlightBaseIntensity = sunlight.intensity;
 // 上向き法線で明るく出すぎるぶん、草の scatter だけ光を落とす。
 const GRASS_GROUND_SHADE = 0.75;
 const GRASS_LIGHT_SCALE = 0.62;
+const TEXTURE_FORMAT_NAMES = new Map<number, string>( [
+	[ RGBA_ASTC_4x4_Format, 'ASTC 4×4' ],
+	[ RGBA_BPTC_Format, 'BC7' ],
+	[ RGBA_ETC2_EAC_Format, 'ETC2 RGBA' ],
+	[ RGB_ETC2_Format, 'ETC2 RGB' ],
+	[ RGB_ETC1_Format, 'ETC1 RGB' ],
+	[ RGB_PVRTC_4BPPV1_Format, 'PVRTC 4bpp RGB' ],
+	[ RGB_S3TC_DXT1_Format, 'S3TC DXT1' ],
+	[ RGBA_PVRTC_4BPPV1_Format, 'PVRTC 4bpp RGBA' ],
+	[ RGBA_S3TC_DXT5_Format, 'S3TC DXT5' ],
+	[ RGBA_S3TC_DXT1_Format, 'S3TC DXT1 RGBA' ],
+	[ RGBAFormat, 'RGBA8' ],
+] );
 
 const camera = new PerspectiveCamera( 38, window.innerWidth / window.innerHeight, 0.1, 260 );
 let controls: OrbitControls;
@@ -75,6 +101,7 @@ scene.add( root );
 const state: DemoState = {
 	kind: kinds[ 0 ]!.name,
 	mode: 'compare',
+	compression: false,
 	lod: 0,
 	wireframe: false,
 	collider: false,
@@ -89,6 +116,8 @@ const state: DemoState = {
 
 let activeKind: VegetationKind = kinds[ 0 ]!;
 let asset: VegetationAsset;
+let compressionTwin: VegetationAsset | null = null;
+let ktx2Loader: KTX2Loader | null = null;
 let scatter: ScatterController | null = null;
 let scatterVariants: VegetationAsset[] = [];
 let rebuildRequest = 0;
@@ -102,7 +131,7 @@ let lastScatterShadowUpdate = - Infinity;
 const colliderMaterialController = createColliderMaterialController();
 const scheduleColorUpdate = createColorUpdateScheduler( ( colors ) => {
 
-	for ( const current of [ asset, ...scatterVariants ] ) {
+	for ( const current of [ asset, compressionTwin, ...scatterVariants ].filter( ( value ): value is VegetationAsset => value !== null ) ) {
 
 		const partNames = new Set( current.data.parts.map( ( part ) => part.name ) );
 		const matchingColors = Object.fromEntries( Object.entries( colors ).filter( ( [ part ] ) => partNames.has( part ) ) );
@@ -256,16 +285,42 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 
 }
 
-function makeAsset( kind: VegetationKind, options: Record<string, number | boolean | string>, colors: Record<string, string> ): Promise<VegetationAsset> {
+function makeAsset( kind: VegetationKind, options: Record<string, number | boolean | string>, colors: Record<string, string>, withCompression = state.compression ): Promise<VegetationAsset> {
 
 	const textureColors = Object.fromEntries( Object.keys( kind.textureColors ?? {} ).flatMap( ( key ) => colors[ key ] === undefined ? [] : [ [ key, colors[ key ]! ] ] ) );
 	const colorOptions = Object.fromEntries( Object.entries( kind.colorOptions ).flatMap( ( [ part, option ] ) => colors[ part ] === undefined ? [] : [ [ option, colors[ part ]! ] ] ) );
-	return kind.createAsync( { ...options, ...textureColors, ...colorOptions } );
+	const compressionOptions = withCompression && ktx2Loader !== null ? { ktx2Loader } : {};
+	return kind.createAsync( { ...options, ...textureColors, ...colorOptions, ...compressionOptions } );
+
+}
+
+function supportsCompressionCompare(): boolean {
+
+	return activeKind.name === 'Rock' || activeKind.name === 'Tree' || ( activeKind.name === 'Flowers' && state.options.variety === 'allium' );
+
+}
+
+function getTextureFormatName( format: number ): string {
+
+	return TEXTURE_FORMAT_NAMES.get( format ) ?? `format ${ format }`;
+
+}
+
+function getCompressionLabel(): string {
+
+	if ( compressionTwin === null ) return 'UASTC → waiting…';
+	const reports = compressionTwin.getTextureCompressionReport();
+	if ( reports.length === 0 ) return 'UASTC → encoding / transcoding…';
+	return reports.map( ( report ) => `${ report.texture } ${ report.slot === 'normalMap' ? 'normal' : 'color' }: ${ getTextureFormatName( report.format ) }\n${ report.encodeThread } encode ${ report.encodeTimeMs.toFixed( 1 ) } ms · main slice ≤${ report.mainThreadMaxSliceMs.toFixed( 2 ) } ms · transcode ${ report.transcodeTimeMs.toFixed( 1 ) } ms` ).join( '\n' );
 
 }
 
 const initialAssetPromise = makeAsset( activeKind, { ...state.options }, { ...state.colors } );
-window.addEventListener( 'pagehide', disposeVegetationWorkers );
+window.addEventListener( 'pagehide', () => {
+	compressionTwin?.dispose();
+	ktx2Loader?.dispose();
+	disposeVegetationWorkers();
+} );
 
 function updateGrassScene(): void {
 
@@ -474,6 +529,36 @@ function rebuildPreview(): void {
 			labels.push( { mesh, element: label } );
 
 		}
+	} else if ( state.mode === 'compression' ) {
+		if ( supportsCompressionCompare() && ktx2Loader !== null ) {
+			const comparedAsset = compressionTwin ?? asset;
+			const spacing = activeKind.name === 'Flowers'
+				? Math.max( 0.85, Number( state.options.spread ?? 0.29 ) * 2.5 )
+				: activeKind.name === 'Tree'
+				? Math.max( 4.5, Number( state.options.height ?? 7.5 ) * 0.72 )
+				: Math.max( 4.5, Number( state.options.size ?? 6.4 ) * 1.25 );
+			const left = new VegetationMesh( asset, 0 );
+			left.position.x = - spacing / 2;
+			setPreviewShadowFlags( left );
+			root.add( left );
+			const right = new VegetationMesh( comparedAsset, 0 );
+			right.position.x = spacing / 2;
+			setPreviewShadowFlags( right );
+			root.add( right );
+			addCollider( - spacing / 2, state.collider );
+
+			const rawLabel = document.createElement( 'div' );
+			rawLabel.className = 'compare-label';
+			rawLabel.textContent = 'RGBA8 source';
+			compareLabels.append( rawLabel );
+			labels.push( { mesh: left, element: rawLabel } );
+
+			const compressedLabel = document.createElement( 'div' );
+			compressedLabel.className = 'compare-label';
+			compressedLabel.textContent = getCompressionLabel();
+			compareLabels.append( compressedLabel );
+			labels.push( { mesh: right, element: compressedLabel, getText: getCompressionLabel } );
+		}
 	} else {
 		const seedCount = Math.max( 1, Math.min( 4, Math.floor( state.seedVariants ) ) );
 		scatter = createScatter( [ asset, ...scatterVariants.slice( 0, seedCount - 1 ) ], state.scatterCount, Number( state.options.seed ?? 1 ) );
@@ -485,7 +570,9 @@ function rebuildPreview(): void {
 	updateGrassScene();
 	sunlight.shadow.needsUpdate = true;
 	lastScatterShadowUpdate = - Infinity;
-	status.hidden = ! isGenerating && state.mode !== 'scatter';
+	const compressionUnavailable = state.mode === 'compression' && ( ! supportsCompressionCompare() || ktx2Loader === null );
+	status.hidden = ! isGenerating && state.mode !== 'scatter' && ! compressionUnavailable;
+	if ( compressionUnavailable && ! isGenerating ) status.textContent = 'Choose Rock, Tree, or Flowers → allium for this comparison.';
 
 }
 
@@ -496,11 +583,12 @@ async function rebuildAsset(): Promise<void> {
 	const options = { ...state.options };
 	const colors = { ...state.colors };
 	const seedCount = state.mode === 'scatter' ? Math.max( 1, Math.min( 4, Math.floor( state.seedVariants ) ) ) : 1;
-	const jobs = [ makeAsset( kind, options, colors ) ];
+	const compressionEnabled = state.mode === 'compression' ? false : state.compression;
+	const jobs = [ makeAsset( kind, options, colors, compressionEnabled ) ];
 
 	for ( let variant = 1; variant < seedCount; variant ++ ) {
 
-		jobs.push( makeAsset( kind, { ...options, seed: Number( options.seed ?? 1 ) + variant }, colors ) );
+		jobs.push( makeAsset( kind, { ...options, seed: Number( options.seed ?? 1 ) + variant }, colors, compressionEnabled ) );
 
 	}
 
@@ -541,6 +629,10 @@ async function rebuildAsset(): Promise<void> {
 		for ( const variant of scatterVariants ) variant.dispose();
 		asset = nextAsset;
 		scatterVariants = nextVariants;
+		compressionTwin?.dispose();
+		compressionTwin = state.mode === 'compression' && supportsCompressionCompare() && ktx2Loader !== null
+			? new VegetationAsset( nextAsset.data, Object.fromEntries( nextAsset.data.parts.map( ( part ) => [ part.name, nextAsset.getColor( part.name ) ] ) ), 128, { ktx2Loader } )
+			: null;
 		isGenerating = false;
 		rebuildPreview();
 		previous.dispose();
@@ -717,12 +809,13 @@ function createGui(): void {
 
 	} );
 
-	gui.add( state, 'mode', [ 'single', 'compare', 'scatter' ] ).name( 'view' ).onChange( () => {
+	gui.add( state, 'mode', [ 'single', 'compare', 'compression', 'scatter' ] ).name( 'view' ).onChange( () => {
 
 		updateViewControls();
 		void rebuildAsset();
 
 	} );
+	gui.add( state, 'compression' ).name( 'UASTC textures' ).onChange( () => void rebuildAsset() );
 	const lodController = gui.add( state, 'lod', 0, 4, 1 ).name( 'LOD' ).onChange( () => {
 
 		if ( state.mode === 'single' ) {
@@ -776,6 +869,7 @@ function updateCompareLabels(): void {
 
 	for ( const label of labels ) {
 
+		if ( label.getText !== undefined ) label.element.textContent = label.getText();
 		const position = label.mesh.position.clone();
 		position.y = Number( state.options.height ?? state.options.size ?? 7.5 ) * 1.13;
 		position.project( camera );
@@ -801,6 +895,8 @@ async function start(): Promise<void> {
 
 	const [ { renderer, label }, initialAsset ] = await Promise.all( [ createPreviewRenderer(), initialAssetPromise ] );
 	asset = initialAsset;
+	ktx2Loader = new KTX2Loader();
+	ktx2Loader.detectSupport( renderer as Parameters<KTX2Loader['detectSupport']>[ 0 ] );
 	rendererLabel.textContent = `${ label } renderer`;
 	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
 	renderer.setSize( window.innerWidth, window.innerHeight );
