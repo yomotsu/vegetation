@@ -166,8 +166,8 @@ describe( 'VegetationAsset', () => {
 		expect( leafTexture ).toBeInstanceOf( DataTexture );
 		expect( leafTexture.image.width ).toBe( 256 );
 		expect( leafTexture.image.height ).toBe( 256 );
-		expect( leafRingTexture.image.width ).toBe( 4 * 64 );
-		expect( leafRingTexture.image.height ).toBe( 4 * 64 );
+		expect( leafRingTexture.image.width ).toBe( 10 * 128 );
+		expect( leafRingTexture.image.height ).toBe( 128 );
 		expect( impostorTexture ).toBeInstanceOf( DataTexture );
 		expect( impostorTexture.image.width ).toBe( 128 * 2 );
 		expect( impostorTexture.image.height ).toBe( 128 );

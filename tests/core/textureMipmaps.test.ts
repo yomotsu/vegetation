@@ -34,7 +34,8 @@ function expectPowerOfTwoTextureSizes( data: VegetationData, skipPlantCard: bool
 	const prepared = prepareVegetationAsset( data );
 	for ( const [ name, texture ] of Object.entries( prepared.data.textures ) ) {
 		if ( skipPlantCard && name === 'plantCard' ) continue;
-		expect( isPowerOfTwo( texture.width ), `${ data.kind}/${ name } width ${ texture.width }` ).toBe( true );
+		// leafRing は 1 段 128 px を横一列に並べる（幅は 4 の倍数で十分）。
+		if ( name !== 'leafRing' ) expect( isPowerOfTwo( texture.width ), `${ data.kind}/${ name } width ${ texture.width }` ).toBe( true );
 		expect( isPowerOfTwo( texture.height ), `${ data.kind}/${ name } height ${ texture.height }` ).toBe( true );
 		expect( texture.width % 4, `${ data.kind}/${ name } width alignment` ).toBe( 0 );
 		expect( texture.height % 4, `${ data.kind}/${ name } height alignment` ).toBe( 0 );
@@ -71,7 +72,7 @@ describe( 'generated texture mipmaps', () => {
 
 	} );
 
-	it( 'keeps generated texture and impostor dimensions power-of-two, except pending flower plant cards', () => {
+	it( 'keeps generated texture and impostor dimensions power-of-two, except pending flower plant cards and the leafRing row', () => {
 
 		const generated = [
 			generateTreeData( { seed: 11 } ),

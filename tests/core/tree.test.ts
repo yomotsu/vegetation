@@ -628,18 +628,18 @@ describe( 'conifer tree data', () => {
 
 	} );
 
-	it( 'bakes one transparent 64-pixel leafRing cell for each tier', () => {
+	it( 'bakes one transparent 128-pixel leafRing cell for each tier', () => {
 
 		const texture = generateTreeData( { seed: 1 } ).textures.leafRing!;
-		const tileSize = texture.width / 4;
+		const tileSize = texture.height;
 
-		expect( texture.width ).toBe( 4 * 64 );
-		expect( texture.height ).toBe( 4 * 64 );
+		expect( texture.width ).toBe( 10 * 128 );
+		expect( texture.height ).toBe( 128 );
 		expect( texture.data.length ).toBe( texture.width * texture.height * 4 );
 
 		for ( let tier = 0; tier < 10; tier ++ ) {
-			const tileX = ( tier % 4 ) * tileSize;
-			const tileY = Math.floor( tier / 4 ) * tileSize;
+			const tileX = tier * tileSize;
+			const tileY = 0;
 
 			let opaquePixels = 0;
 			let transparentPixels = 0;
@@ -662,8 +662,8 @@ describe( 'conifer tree data', () => {
 		}
 
 		const shrunk = generateTreeData( { seed: 1, branchCount: 33 } ).textures.leafRing!;
-		expect( shrunk.width ).toBe( 8 * 64 );
-		expect( shrunk.height ).toBe( 8 * 64 );
+		expect( shrunk.width ).toBe( 33 * 64 );
+		expect( shrunk.height ).toBe( 64 );
 		expect( shrunk.width ).toBeLessThanOrEqual( 4096 );
 
 	} );
@@ -1396,8 +1396,8 @@ describe( 'conifer tree data', () => {
 					const localU = 0.5 + ( mesh.positions[ positionOffset ]! - center[ 0 ] ) / ( 2 * radius );
 					const localV = 0.5 + ( mesh.positions[ positionOffset + 2 ]! - center[ 2 ] ) / ( 2 * radius );
 
-					expect( mesh.uvs[ uvOffset ] ).toBeCloseTo( ( tier % 4 + localU ) / 4, 4 );
-					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( ( Math.floor( tier / 4 ) + localV ) / 4, 4 );
+					expect( mesh.uvs[ uvOffset ] ).toBeCloseTo( ( tier + localU ) / 10, 4 );
+					expect( mesh.uvs[ uvOffset + 1 ] ).toBeCloseTo( localV, 4 );
 					expect( mesh.normals[ positionOffset ] ).toBe( 0 );
 					expect( mesh.normals[ positionOffset + 1 ] ).toBe( 1 );
 					expect( mesh.normals[ positionOffset + 2 ] ).toBe( 0 );

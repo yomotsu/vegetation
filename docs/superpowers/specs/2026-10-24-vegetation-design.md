@@ -229,7 +229,8 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 - `src/core`: three に依存しない純データ層（型付き配列。MeshData、PartDef、VegetationData、TextureData）
   - TextureData は「行 0 = v=0（下端）」で、`flipY = false` でアップロードする
 - **透過方式（ユーザー決定）**: 植生オブジェクトでは alpha blending / transparency と alpha-to-coverage を使わない。抜き形状は alpha test（discard）のみで描画する
-- alpha test を使う色テクスチャは CPU でカバレッジを保つ mipmap を生成し、`DataTexture.mipmaps` としてアップロードする
+- alpha test を使う色テクスチャは CPU でカバレッジを保つ mipmap を生成し、`DataTexture.mipmaps` としてアップロードする（各段で alphaTest 以上の画素の割合を元のテクスチャにそろえる。遠くで細い茎・針葉・草が消えないようにするため。色変更と焼き直しのたびに作り直す）
+- テクスチャの縦横は 2 のべき乗にそろえる（LOD3 のインポスターのアトラスは正方形寄りのタイル配置）。例外: 木の leafRing は 1 段 128 px を横一列（例 1280×128、幅は 4 の倍数）。2 のべき乗の正方形に詰めると 1 段 64 px になり、LOD1/2 の枝葉がまばらに見えた。花のまとめたカード（allium / tulip / calla）は未対応
 - `src/three`: VegetationAsset / VegetationMesh / meshes.ts（TreeMesh、RockMesh、PebblesMesh）
 - `src/webgpu`: LOD4 クロスフェードの TSL 版（`vegetation/webgpu` エントリ）
 - 色の変更:

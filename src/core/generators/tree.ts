@@ -498,11 +498,11 @@ function getLeafBowlTier( layout: TreeLayout, tier: Tier, lod: 1 | 2 ): LeafBowl
 
 }
 
+// 段は横一列に並べる（1 段 128 px）。2 のべき乗の正方形に詰めると 1 段 64 px になり、LOD1/2 の枝葉がまばらに見えた。
+// 1280×128 などの幅は 4 の倍数なので、ブロック圧縮にも使える。
 function getLeafRingTileGrid( tierCount: number ): { columns: number; rows: number } {
 
-	const capacity = getLeafRingTierCapacity( tierCount );
-	const columns = 2 ** Math.ceil( Math.log2( Math.ceil( Math.sqrt( capacity ) ) ) );
-	return { columns, rows: capacity / columns };
+	return { columns: Math.max( 1, tierCount ), rows: 1 };
 
 }
 
@@ -514,12 +514,6 @@ function getLeafRingUv( tierIndex: number, tileColumns: number, tileRows: number
 	const tileY = Math.floor( tierIndex / tileColumns );
 
 	return [ ( tileX + localU ) / tileColumns, ( tileY + localV ) / tileRows ];
-
-}
-
-function getLeafRingTierCapacity( tierCount: number ): number {
-
-	return 2 ** Math.ceil( Math.log2( Math.max( 1, tierCount ) ) );
 
 }
 
@@ -648,7 +642,7 @@ function getLeafRingCellSize( cells: number ): number {
 		throw new RangeError( 'Tree branchCount cannot exceed 4096 when creating leafRing' );
 	}
 
-	let size = 64;
+	let size = 128;
 
 	while ( cells * size > 4096 && size > 4 ) {
 		size /= 2;
