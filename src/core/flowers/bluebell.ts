@@ -236,7 +236,8 @@ function buildBluebellLegacyPart( lod: number, plants: FlowerPlacement[], part: 
 
 }
 
-const BLUEBELL_LOD0_STEM_SEGMENTS = 4;
+// 頂点数を LOD0 で 170 未満（既定 3 株）に収めるため、茎は 2 区間にする。
+const BLUEBELL_LOD0_STEM_SEGMENTS = 2;
 const BLUEBELL_LOD2_STEM_SEGMENTS = 2;
 // 釣り鐘の高さと口の半径。LOD1（旧 LOD0）のカードに描いた釣り鐘（高さ約 3.4 cm・幅約 2.2 cm）に合わせる。
 const BLUEBELL_BELL_HEIGHT = 0.034;
@@ -293,24 +294,6 @@ function addBluebellLodStemCard( builder: MeshBuilder, plant: FlowerPlacement, y
 
 }
 
-// 花柄: 茎から釣り鐘の頭までを交差 2 枚の細い帯にする（1 枚の三角形では細すぎて見えない）。
-function addBluebellPedicel( builder: MeshBuilder, start: [ number, number, number ], end: [ number, number, number ], yaw: number ): void {
-
-	const halfWidth = 0.0022;
-	const uv: [ number, number ] = [ 0.555, 0.76 ];
-	for ( const angle of [ yaw + Math.PI * 0.5, yaw ] ) {
-		const sideX = Math.cos( angle ) * halfWidth;
-		const sideZ = Math.sin( angle ) * halfWidth;
-		const a = builder.addVertex( [ start[ 0 ] - sideX, start[ 1 ], start[ 2 ] - sideZ ], [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 );
-		const b = builder.addVertex( [ start[ 0 ] + sideX, start[ 1 ], start[ 2 ] + sideZ ], [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 );
-		const c = builder.addVertex( [ end[ 0 ] + sideX, end[ 1 ], end[ 2 ] + sideZ ], [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 );
-		const d = builder.addVertex( [ end[ 0 ] - sideX, end[ 1 ], end[ 2 ] - sideZ ], [ 0, 1, 0 ], uv, [ 1, 1, 1 ], 1 );
-		builder.addTriangle( a, b, c );
-		builder.addTriangle( a, c, d );
-	}
-
-}
-
 function addBluebellCup( builder: MeshBuilder, top: [ number, number, number ], yaw: number, sides: number, topV: number, topU = 0.5 ): void {
 
 	const topVertex = builder.addVertex( top, [ 0, 1, 0 ], [ topU, topV ], [ 1, 1, 1 ], 1 );
@@ -329,6 +312,37 @@ function addBluebellCup( builder: MeshBuilder, top: [ number, number, number ], 
 
 }
 
+// 花柄と釣り鐘を 1 つの立体にする（6 頂点）。茎の付け根 1 点から花柄が広がり、釣り鐘の肩（2 点、萼の緑）へつながる。
+// 肩から 3 点の口へ広げ、下向きに開いた小さな釣り鐘にする。花柄の帯は肩の 2 点の向きに張るので、正面と斜めから見える。
+function addBluebellHangingBell( builder: MeshBuilder, stem: [ number, number, number ], yaw: number ): void {
+
+	const radialX = Math.cos( yaw );
+	const radialZ = Math.sin( yaw );
+	const tangentX = - radialZ;
+	const tangentZ = radialX;
+	// 花柄は約 2 cm。LOD1 の絵の花柄と同じくらい外へ張り出して下がる。
+	const top: [ number, number, number ] = [ stem[ 0 ] + radialX * 0.016, stem[ 1 ] - 0.012, stem[ 2 ] + radialZ * 0.016 ];
+	const shoulder = 0.0035;
+	const pedicelUv: [ number, number ] = [ 0.555, 0.76 ];
+	const stemVertex = builder.addVertex( stem, [ 0, 1, 0 ], pedicelUv, [ 1, 1, 1 ], 1 );
+	const left = builder.addVertex( [ top[ 0 ] - tangentX * shoulder, top[ 1 ], top[ 2 ] - tangentZ * shoulder ], [ 0, 1, 0 ], pedicelUv, [ 1, 1, 1 ], 1 );
+	const right = builder.addVertex( [ top[ 0 ] + tangentX * shoulder, top[ 1 ], top[ 2 ] + tangentZ * shoulder ], [ 0, 1, 0 ], pedicelUv, [ 1, 1, 1 ], 1 );
+	const rim: number[] = [];
+	for ( const angle of [ - Math.PI * 0.5, Math.PI * 0.5 - Math.PI / 6, Math.PI * 0.5 + Math.PI / 6 ] ) {
+		// 口の 3 点: 1 点は肩の左の下、2 点は右側へ開く。
+		const x = top[ 0 ] + ( tangentX * Math.sin( angle ) + radialX * Math.cos( angle ) ) * BLUEBELL_BELL_RADIUS;
+		const z = top[ 2 ] + ( tangentZ * Math.sin( angle ) + radialZ * Math.cos( angle ) ) * BLUEBELL_BELL_RADIUS;
+		rim.push( builder.addVertex( [ x, top[ 1 ] - BLUEBELL_BELL_HEIGHT, z ], [ 0, 1, 0 ], [ 0.5 + Math.sin( angle ) * 0.11, 0.125 ], [ 1, 1, 1 ], 1 ) );
+	}
+	builder.addTriangle( stemVertex, left, right );
+	builder.addTriangle( left, rim[ 0 ]!, rim[ 1 ]! );
+	builder.addTriangle( left, rim[ 1 ]!, right );
+	builder.addTriangle( right, rim[ 1 ]!, rim[ 2 ]! );
+	builder.addTriangle( right, rim[ 2 ]!, rim[ 0 ]! );
+	builder.addTriangle( right, rim[ 0 ]!, left );
+
+}
+
 function buildBluebellLod0Part( plants: FlowerPlacement[], part: 'petal' | 'stem' ): MeshData {
 
 	const builder = new MeshBuilder();
@@ -337,12 +351,7 @@ function buildBluebellLod0Part( plants: FlowerPlacement[], part: 'petal' | 'stem
 			for ( let bell = 0; bell < BELL_PROGRESS.length; bell ++ ) {
 				const yaw = plant.yaw + bell * 0.31;
 				const [ x, y, z ] = bluebellLodStemPoint( plant, BELL_PROGRESS[ bell ]!, BLUEBELL_LOD0_STEM_SEGMENTS );
-				const radialX = Math.cos( yaw );
-				const radialZ = Math.sin( yaw );
-				// 花柄は約 2 cm。LOD1 の絵の花柄と同じくらい外へ張り出して下がる。
-				const top: [ number, number, number ] = [ x + radialX * 0.016, y - 0.012, z + radialZ * 0.016 ];
-				addBluebellPedicel( builder, [ x, y, z ], top, yaw );
-				addBluebellCup( builder, top, yaw, 6, 0.56 );
+				addBluebellHangingBell( builder, [ x, y, z ], yaw );
 			}
 		} else {
 			addBluebellLodStemCard( builder, plant, plant.yaw, BLUEBELL_LOD0_STEM_SEGMENTS );
