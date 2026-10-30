@@ -1,4 +1,4 @@
-import { compositeFlowersTexture, createColorizedFlowerTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT } from '../flowersTexture';
+import { compositeFlowersTexture, createColorizedFlowerTexture, FLOWERS_PETAL_TEXTURE_SIZE, FLOWERS_STEM_TEXTURE_HEIGHT, resizePlantCardTextureToPowerOfTwo } from '../flowersTexture';
 import { MeshBuilder } from '../meshBuilder';
 import type { MeshData, TextureData } from '../types';
 import type { FlowerPlacement } from './common';
@@ -213,7 +213,7 @@ export function createTulipPlantCardTexture( _seed: number, maxCardHeight: numbe
 	compositeFlowersTexture( data, width, height, stemTexture, 0, stemSourceWidth, 0, 0, Math.round( width * stemSourceWidth / stemTexture.width ), stemHeight );
 	compositeFlowersTexture( data, width, height, petalTexture, 0, petalTexture.width, Math.floor( ( width - petalWidth ) * 0.5 ), stemHeight, petalWidth, petalHeight );
 
-	return { width, height, data, wrap: 'clamp' };
+	return resizePlantCardTextureToPowerOfTwo( { width, height, data, wrap: 'clamp' } );
 
 }
 

@@ -1,4 +1,4 @@
-import { compositeFlowersTextureRegion, createColorizedFlowerTexture, createFlowerTextureShape, rasterFlowerPolygon } from '../flowersTexture';
+import { compositeFlowersTextureRegion, createColorizedFlowerTexture, createFlowerTextureShape, rasterFlowerPolygon, resizePlantCardTextureToPowerOfTwo } from '../flowersTexture';
 import { MeshBuilder } from '../meshBuilder';
 import type { MeshData, TextureData } from '../types';
 import type { FlowerPlacement } from './common';
@@ -273,7 +273,7 @@ export function createCallaPlantCardTexture( maxCardHeight: number, petalColor: 
 	compositeFlowersTextureRegion( texture, width, height, petalTexture, 0, 0, 96, petalTexture.height, 16, CALLA_PLANT_CARD_FLOWER_Y, 96, CALLA_PLANT_CARD_FLOWER_HEIGHT );
 	compositeFlowersTextureRegion( texture, width, height, petalTexture, 104, 0, 16, petalTexture.height, 56, CALLA_PLANT_CARD_FLOWER_Y, 16, CALLA_PLANT_CARD_FLOWER_HEIGHT );
 
-	return { width, height, data: texture, wrap: 'clamp' };
+	return resizePlantCardTextureToPowerOfTwo( { width, height, data: texture, wrap: 'clamp' } );
 
 }
 

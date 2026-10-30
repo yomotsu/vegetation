@@ -444,6 +444,21 @@ export function compositeFlowersTextureRegion(
 
 }
 
+/**
+ * 花のまとめたカードのテクスチャを、縦だけ下の 2 のべき乗の高さへ縮めます（幅はすでに 128 px）。
+ * UV はカードの高さに対する割合なので、縦に一様に伸縮すればカード側は変わらない。
+ * 上へ伸ばすと縦の画素密度が上がり、GPU が粗いミップ段を選んで細い茎が遠くで消えた（calla 397→512）。
+ */
+export function resizePlantCardTextureToPowerOfTwo( texture: TextureData ): TextureData {
+
+	const height = 2 ** Math.floor( Math.log2( texture.height ) );
+	if ( height === texture.height ) return texture;
+	const data = new Uint8Array( texture.width * height * 4 );
+	compositeResampledTexture( data, texture.width, height, texture, 0, texture.width, 0, 0, texture.width, height );
+	return { ...texture, height, data };
+
+}
+
 /** allium の頭と茎を、頭の 0.24 m を保つ縦カード用テクスチャにまとめます。 */
 export function createFlowersAlliumPlantCardTexture( seed: number, maxCardHeight: number, petalColor: number, centerColor: number, stemColor: number ): TextureData {
 
@@ -465,7 +480,7 @@ export function createFlowersAlliumPlantCardTexture( seed: number, maxCardHeight
 	// LOD0 と同じ 0.24 m 四方の花房を、カード最上部に重ねます。
 	compositeResampledTexture( data, width, height, petalTexture, 0, petalTexture.width, 0, headTop, width, headHeight );
 
-	return { width, height, data, wrap: 'clamp' };
+	return resizePlantCardTextureToPowerOfTwo( { width, height, data, wrap: 'clamp' } );
 
 }
 

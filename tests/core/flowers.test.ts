@@ -338,7 +338,7 @@ describe( 'flowers core generator', () => {
 			allium: {
 				positions: '8f1942c59997e9fc8a6e48476a5e937490c4f8bbae0c61489a60d8b25860791a',
 				indices: '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f',
-				plantCard: '465747905ce5c83a47934b38ac89a151d5b14f05fe574936dc2fe7253d617532',
+				plantCard: 'e629570c86c9697e1d0370fded2fd32f7e1796241eb30f74876a8f4abaf7bc56',
 			},
 			daisy: {
 				positions: '428c601204a4316a80ca6ff6b3455a33c962cd2076277d695faab564f2140fa8',
@@ -380,8 +380,9 @@ describe( 'flowers core generator', () => {
 		// 幅は花房の元テクスチャと同じ 128 px。茎の横方向は約 16 px に縮む（拡大しても細部は増えないため）。
 		expect( plantCardTexture.width ).toBe( FLOWERS_PETAL_TEXTURE_SIZE );
 		const texturePixelsPerMeter = plantCardTexture.height / data.bounds.height;
-		expect( ALLIUM_HEAD_SIZE * texturePixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_PETAL_TEXTURE_SIZE );
-		expect( ( data.bounds.height - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 ) * texturePixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_STEM_TEXTURE_HEIGHT );
+		// 縦は下の 2 のべき乗へ縮めるので、花房は元の密度の 85% 以上、まっすぐな茎は 70% 以上を保てばよい。
+		expect( ALLIUM_HEAD_SIZE * texturePixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_PETAL_TEXTURE_SIZE * 0.85 );
+		expect( ( data.bounds.height - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 ) * texturePixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_STEM_TEXTURE_HEIGHT * 0.7 );
 
 		for ( let plant = 0; plant < 6; plant ++ ) {
 			for ( let card = 0; card < 2; card ++ ) {
@@ -438,9 +439,9 @@ describe( 'flowers core generator', () => {
 			return Array.from( new Uint8Array( digest ), ( value ) => value.toString( 16 ).padStart( 2, '0' ) ).join( '' );
 		};
 		const expected = [
-			[ 'allium', 1, [ '8f1942c59997e9fc8a6e48476a5e937490c4f8bbae0c61489a60d8b25860791a', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '72c75ceaf1f2316c9ee766440be177939daa26da6af5d4b23bc31a5ea9965b2a', '465747905ce5c83a47934b38ac89a151d5b14f05fe574936dc2fe7253d617532' ] ],
-			[ 'allium', 2, [ '564759aa846c87aef2287f5ffc9e0c84f957dd09584da121d142a2dbe79d3b5a', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '4c9bb25185197b2256ad189dd50a84e44dcce87d7396fdd0f0f90a76cd534380', 'c3459e00a0a23e1bb8f7e19077a8afe7da15a268b104526fe69626e154ecdecd' ] ],
-			[ 'allium', 7, [ '5bb34d281ac5bd04cfab1b7a60dfdcebb35437bbe57238635787fb91cd829d9b', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '43aadacfa2a84c1bf34ac29bed80f138c14e7656490c0ac8c9dd785bdd9ffe6f', '33808a8b181301bec9cabdc235308ca8be14c62fa1a05a15f95749c132f9d320' ] ],
+			[ 'allium', 1, [ '8f1942c59997e9fc8a6e48476a5e937490c4f8bbae0c61489a60d8b25860791a', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '72c75ceaf1f2316c9ee766440be177939daa26da6af5d4b23bc31a5ea9965b2a', 'e629570c86c9697e1d0370fded2fd32f7e1796241eb30f74876a8f4abaf7bc56' ] ],
+			[ 'allium', 2, [ '564759aa846c87aef2287f5ffc9e0c84f957dd09584da121d142a2dbe79d3b5a', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '4c9bb25185197b2256ad189dd50a84e44dcce87d7396fdd0f0f90a76cd534380', 'a2745ec11ce4ec55eeb158a298f9d4fcb81cd7af6d0088b3e742a63efe320b61' ] ],
+			[ 'allium', 7, [ '5bb34d281ac5bd04cfab1b7a60dfdcebb35437bbe57238635787fb91cd829d9b', '682653da689bd491c23ae430b4f13ddb06afe9b77d9309e7b0e03cf89c51f71f', '43aadacfa2a84c1bf34ac29bed80f138c14e7656490c0ac8c9dd785bdd9ffe6f', '5d67a23a9d2594fe508f3f13bba481c568993fe8a163041da51db8413c92f988' ] ],
 			[ 'daisy', 1, [ '428c601204a4316a80ca6ff6b3455a33c962cd2076277d695faab564f2140fa8', 'bab8dcf8a445986d4199cc1f71c281d6e9a1338132bca9004bb38c1dbe45bfa8', '57fbdacbfda8e1942248579fd85df15cb28798790db0ef7e90fadfe9c992def4', '222a9e2a0bb425d388c14a29da4801971dc58b9be6226094d9125333a30c9c1d', 'ea67baca2f1e5707db9ed676c70efb101bd22204733ea5910ab6da569b9354c6' ] ],
 			[ 'daisy', 2, [ '42c32016ce3597322586bb69ca00a75530ae21aaedadd2fb02ee20cc349c7d0a', 'bab8dcf8a445986d4199cc1f71c281d6e9a1338132bca9004bb38c1dbe45bfa8', 'fd68a392fb79a5deab3b4570aac244ead053af7eb41ab3b3e7ebb85680553416', '43ea4c6d2c7ef3ab7df96158ab76ec9da5e3a1cad49ee105145aaf9de286adea', '5033481f927f85805d9b44abd7a244a6a117325c388393f54b4d57ed21a2c1fa' ] ],
 			[ 'daisy', 7, [ '0ddbb7c47de8fa01e4e3235785228288d8d9178cd18be5de49fe3eae06646a76', 'bab8dcf8a445986d4199cc1f71c281d6e9a1338132bca9004bb38c1dbe45bfa8', '346e626c596260439e050e9cbff38e62feba0f71d16a40ea71cbdf4b2fbf6c29', '694a01b81576c102e399d0525fbf9105b8090ab0edb2e6366020aa9bbdc4dc2d', '234137286cb32df7ded25af49300ad9e61eeed760d2fae41fbb15a19b5b254b5' ] ],
@@ -638,15 +639,16 @@ describe( 'flowers core generator', () => {
 		const plantCard = data.textures.plantCard!;
 		expect( plantCard.width ).toBe( CALLA_PLANT_CARD_TEXTURE_WIDTH );
 		expect( plantCard.width ).toBe( FLOWERS_PETAL_TEXTURE_SIZE );
-		expect( plantCard.height ).toBe( CALLA_PLANT_CARD_TEXTURE_HEIGHT );
-		expect( plantCard.height ).toBeLessThanOrEqual( 512 );
+		// 描いた高さ（CALLA_PLANT_CARD_TEXTURE_HEIGHT）を縦だけ下の 2 のべき乗に縮める。
+		expect( plantCard.height ).toBe( 256 );
+		const rowScale = plantCard.height / CALLA_PLANT_CARD_TEXTURE_HEIGHT;
 		expect( plantCard.width ).toBeLessThanOrEqual( 128 );
 		expect( CALLA_PLANT_CARD_FOLIAGE_WIDTH ).toBeGreaterThanOrEqual( 0.36 );
-		expect( plantCard.height ).toBe( 397 );
+		expect( CALLA_PLANT_CARD_TEXTURE_HEIGHT ).toBe( 397 );
 		expect( CALLA_PLANT_CARD_FLOWER_HEIGHT ).toBe( 141 );
 		for ( let tile = 0; tile < 2; tile ++ ) {
 			let coveredFoliagePixels = 0;
-			for ( let y = 0; y < CALLA_PLANT_CARD_FOLIAGE_HEIGHT; y ++ ) {
+			for ( let y = 0; y < Math.floor( CALLA_PLANT_CARD_FOLIAGE_HEIGHT * rowScale ); y ++ ) {
 				for ( let x = tile * ( plantCard.width / 2 ); x < ( tile + 1 ) * ( plantCard.width / 2 ); x ++ ) {
 					if ( plantCard.data[ ( y * plantCard.width + x ) * 4 + 3 ]! > 127 ) coveredFoliagePixels ++;
 				}
@@ -676,7 +678,7 @@ describe( 'flowers core generator', () => {
 		const stemTipCenter = [ 0, 1, 2 ].map( ( axis ) => lod0StemTop.reduce( ( sum, vertex ) => sum + singleLod0.positions[ vertex * 3 + axis ]!, 0 ) / lod0StemTop.length );
 		expect( lod0StemTop ).toHaveLength( 4 );
 		for ( const mesh of [ singlePlant.lods[ 1]!, singlePlant.lods[ 2]! ] ) {
-			const flowerStartV = CALLA_PLANT_CARD_FLOWER_Y / plantCard.height;
+			const flowerStartV = CALLA_PLANT_CARD_FLOWER_Y / CALLA_PLANT_CARD_TEXTURE_HEIGHT;
 			const flowerVertices = new Set( mesh.groups.filter( ( group ) => group.partIndex === 2 ).flatMap( ( group ) => [ ...mesh.indices.slice( group.start, group.start + group.count ) ].filter( ( vertex ) => {
 				const u = mesh.uvs[ vertex * 2 ]!;
 				return mesh.uvs[ vertex * 2 + 1 ]! >= flowerStartV - 1e-6 && ( Math.abs( u - 16 / CALLA_PLANT_CARD_TEXTURE_WIDTH ) < 1e-6 || Math.abs( u - 112 / CALLA_PLANT_CARD_TEXTURE_WIDTH ) < 1e-6 );
@@ -1101,7 +1103,9 @@ describe( 'flowers core generator', () => {
 		let maxPetalX = - 1;
 		let minPetalY = texture.height;
 		let maxPetalY = - 1;
-		for ( let y = FLOWERS_STEM_TEXTURE_HEIGHT; y < texture.height; y ++ ) {
+		// テクスチャは縦を 2 のべき乗に描き直しているので、花の段は高さの割合で求める。
+		const petalStartRow = Math.floor( texture.height * ( data.bounds.height - 0.06 ) / data.bounds.height ) + 1;
+		for ( let y = petalStartRow; y < texture.height; y ++ ) {
 			for ( let x = 0; x < texture.width; x ++ ) {
 				if ( texture.data[ ( y * texture.width + x ) * 4 + 3 ] === 0 ) continue;
 				minPetalX = Math.min( minPetalX, x );
@@ -1295,8 +1299,8 @@ describe( 'flowers core generator', () => {
 				const plantCard = data.textures.plantCard!;
 				const pixelsPerMeter = plantCard.height / data.bounds.height;
 				expect( plantCard.width ).toBe( ALLIUM_PLANT_CARD_TEXTURE_WIDTH );
-				expect( ALLIUM_HEAD_SIZE * pixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_PETAL_TEXTURE_SIZE );
-				expect( ( data.bounds.height - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 ) * pixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_STEM_TEXTURE_HEIGHT );
+				expect( ALLIUM_HEAD_SIZE * pixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_PETAL_TEXTURE_SIZE * 0.85 );
+				expect( ( data.bounds.height - ALLIUM_HEAD_RISE - ALLIUM_HEAD_SIZE * 0.5 ) * pixelsPerMeter ).toBeGreaterThanOrEqual( FLOWERS_STEM_TEXTURE_HEIGHT * 0.7 );
 			}
 		}
 
