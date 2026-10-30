@@ -37,7 +37,8 @@ function createLobes( random: Random, height: number, crownCenter: Vec3, splitY:
 
 		const angle = startAngle + index / sideCount * Math.PI * 2 + random.range( - 0.35, 0.35 );
 		const radius = height * random.range( 0.17, 0.21 );
-		const distance = height * random.range( 0.2, 0.25 );
+		// 頂上のローブに寄せて重ね、樹冠全体を丸くまとめる。
+		const distance = height * random.range( 0.16, 0.21 );
 		const y = Math.max( splitY + radius * 0.75, crownCenter[ 1 ] - height * random.range( 0.02, 0.09 ) );
 		lobes.push( { center: [ crownCenter[ 0 ] + Math.cos( angle ) * distance, y, crownCenter[ 2 ] + Math.sin( angle ) * distance ], radius } );
 
@@ -131,13 +132,14 @@ export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ):
 	builder.beginGroup( leafPartIndex );
 	// 木全体のカード枚数を一定にし、ローブの大きさ（半径の 2 乗）に応じて配分する。
 	// 内側は房 4 つの大きなカードで少ない枚数で埋め、表面は房 1 つの小さなカードにして輪郭で板が目立たないようにする。
+	// 表面のカードはローブの面に沿う向きに寄せ、少し内側に置く。真横を向いたカードの角が球の外へ飛び出すと、板の集まりに見えた。
 	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
 
 	for ( const lobe of lobes ) {
 
 		const share = lobe.radius * lobe.radius / totalWeight;
-		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( innerCardCount * share ), lobe.radius * 2.3, { depth: [ 0.35, 0.8 ] } );
-		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( outerCardCount * share ), lobe.radius * 1.15, { depth: [ 0.9, 1.1 ], quadrant: true } );
+		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( innerCardCount * share ), lobe.radius * 2.3, { depth: [ 0.35, 0.8 ], jitter: 0.35 } );
+		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( outerCardCount * share ), lobe.radius * 1.15, { depth: [ 0.8, 1 ], quadrant: true, jitter: 0.4 } );
 
 	}
 
