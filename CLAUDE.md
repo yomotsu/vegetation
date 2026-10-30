@@ -8,14 +8,45 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 
 ## ファイル構成
 
-- `src/core/generators/*.ts`: 種類ごとの生成（純粋関数、`generate*Data` が `VegetationData` を返す）
-- `src/core/impostor.ts`: インポスターの焼き込み（`bakeImpostor`）とカード生成。LOD3/4 は LOD0 から焼く
+- `src/core/generators/*.ts`: 種類ごとの生成（純粋関数、`generate*Data` が `VegetationData` を返す）。花の品種ごとの形は `src/core/flowers/*.ts`、allium / daisy の花テクスチャは `src/core/flowersTexture.ts`
+- `src/core/impostor.ts`: インポスターの焼き込み（`bakeImpostor`）とカード生成。LOD3/4 は LOD0 から焼く。タイルは 2 のべき乗の格子に並べる
+- `src/core/textureMipmaps.ts`: alpha test 用の CPU ミップ（カバレッジ保持）
+- `src/core/uastc.ts` / `src/core/ktx2.ts`: 自作 UASTC エンコーダーと KTX2 書き出し（GPU 圧縮、opt-in）
 - `src/core/leafTexture.ts`: モミの小枝テクスチャ（`createFirSprigTexture`）と `padTextureEdges`（横一列の正方形タイルの縁埋め。アルファは変えない）
-- `src/three/VegetationAsset.ts`: マテリアル・テクスチャ・色変更。`VegetationMesh.ts`: LOD ごとのパーツ Mesh、LOD4 ビルボードの向き
-- `src/webgpu/index.ts`: WebGPU 用インポスターマテリアル（TSL）。`src/worker/*`: 非同期生成
-- `demo/`: `npm run demo`（vite, 5173）。view = single / compare（LOD0〜4 を頂点数付きで並べる）/ scatter
+- `src/three/VegetationAsset.ts`: マテリアル・テクスチャ・色変更・UASTC 差し替え。`VegetationMesh.ts`: LOD ごとのパーツ Mesh、LOD4 ビルボードの向き、`upNormalCards` の両向き化
+- `src/webgpu/index.ts`: WebGPU 用インポスターマテリアル（TSL）。`src/worker/*`: 非同期生成と UASTC エンコード（共有 Worker プール）
+- `demo/`: `npm run demo`（vite, 5173）。view = single / compare（LOD0〜4 を頂点数付きで並べる）/ compression（RGBA と UASTC の左右比較）/ scatter。「UASTC textures」で圧縮を切り替え。`demo/grassBlueNoise.ts` はデモ専用
+
+## API（2026-10-30 に絞った）
+
+- メイン `vegetation`: `*Mesh`、`generate*` / `generate*Async`、`VegetationAsset`、`VegetationMesh`、`orientBillboardInstances`、`disposeVegetationWorkers` と型だけ。乱数・ノイズ・色変換などの部品は公開しない（デモは `../src/...` を直接 import）
+- `vegetation/core`: `generate{Tree,Rock,Pebbles,Grass,Flowers}Data` と型だけ。`vegetation/webgpu`: 読み込むと TSL マテリアルを登録
+- 公開リストは `tests/publicApi.test.ts` で固定している。export を増やしたらここも直す
+- GPU 圧縮: `*Mesh` / `generate*` / `generate*Async` のオプションに利用者の `KTX2Loader`（`detectSupport( renderer )` 済み）を渡したときだけ有効。トランスコーダーはライブラリから import しない
 
 ## アルゴリズム・設計
+
+### テクスチャ全般
+- 植生は半透明を使わない。抜きは alpha test（discard）のみ
+- alpha test の色テクスチャは CPU でミップを作り、各段で alphaTest 以上の画素の割合を元にそろえる（倍率で合わせ、届かない段は不透明度の高い順にちょうど目標の数だけ閾値以上にする）。遠くで細い茎・針葉が消えないため。補正は誤差 0.2% 超の段だけ（生成予算 50 ms のため）
+- テクスチャは 2 のべき乗。例外は tree の leafRing（1 段 128px を横一列、1280×128）。正方形に詰めると 1 段 64px になり LOD1/2 がまばらになった
+- 花のまとめたカード（allium / tulip / calla）は描いた後に縦だけ下の 2 のべき乗へ縮める。上へ伸ばすと縦の画素密度が上がり GPU が粗いミップを選んで細い茎が消えた
+- rock / pebbles の石テクスチャは 512²（`ROCK_TEXTURE_SIZE`）。1024² は 1 アセット 8MB だった
+
+### GPU 圧縮（UASTC、2026-10-30 採用）
+- 生成した RGBA → 自作エンコーダーで UASTC（不透明色と法線はモード 5、alpha test 色はモード 13）→ メモリ上の KTX2 → 利用者の KTX2Loader が端末の形式（ASTC / BC7 / ETC2 / RGBA）へ変換
+- エンコードは共有 Worker プールでテクスチャ 1 枚ずつ。届くまで RGBA を描き、届いたら差し替え。色変更・焼き直しは再エンコードし、古い結果は捨てる。Worker がなければメインスレッドで細切れ（最大約 2.6 ms）
+- alpha test のテクスチャは各ミップの不透明度を 0 / 255 に 2 値化してからエンコードする（BC7 で抜きがずれたため）。全変換先で抜きのずれ 0
+- 却下: BC/ETC2 の直接エンコード（ETC2 が遅く画質も破綻）、basisu の wasm（数 MB）
+
+### 花の LOD（2026-10-30 確定、詳細は仕様書）
+- allium / tulip / calla: LOD1/2（allium は LOD0 も）は花・茎・葉を 1 本分描いた共通テクスチャの交差カード。tulip は葉を片側 1 枚だけ描き、交差 2 枚で LOD0 と同じ葉数にする
+- daisy / poppy: LOD3/4 に花の高さの水平カード。poppy の水平カードだけ葉を除いて焼く（ビューの `excludesBakeRanges`）
+- primrose: LOD2/3 は群全体を覆う伏せたお椀（真上焼きを投影、片面描画）
+- bluebell: LOD0 は花柄＋釣り鐘の 6 頂点の立体×4 と 4 区間の茎（168 頂点）。LOD1/2 は LOD0 と同じ茎の弧に沿って曲げた帯 2 枚（茎は帯の中央にまっすぐ描く。正面と横で別の絵にすると茎が 2 本に見えた）
+- 花の LOD3/4 は全種類で切り替え（impostorFade）なし。切り替えを使う生成物は現在ない（マテリアルのテストは明示的に有効化して確認）
+- `upNormalCards` の部品は裏向きの三角形を足して FrontSide で描く（両面だと裏で法線が反転して黒くなる）。primrose のお椀は `doubleSided: false`
+- 葉の付け根は地面から 3 mm 埋める。allium の既定色は紫 `#8b5fbf`。pebbles の既定 `burial` は 0.48
 
 ### tree の LOD1/2: 段ごとのお椀（2026-10-29 採用）
 - 各段の 5 枚の枝葉を 1 枚の扇形メッシュにまとめる。テクスチャ `leafRing` は各段の LOD0 の枝葉を真上から焼いたアトラス（1 段 128px の横一列）。UV は水平位置そのままなので LOD1/2 で共有
@@ -25,7 +56,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - LOD0 への適用は不採用: 近距離用に 1 段 512px が必要でアトラス約 12MB、生成約 166ms、段がスカート状になる
 
 ### インポスター
-- パートの `impostorFade: false` で視線角度のディザ切り替えをやめ、全カードを常に描く。tree / rock / pebbles は false、flowers だけ切り替えが残る
+- パートの `impostorFade: false` で視線角度のディザ切り替えをやめ、全カードを常に描く。現在は全種類 false
 - カメラを向く LOD4 縦カードは、影パスでは光源（影カメラ）へ向ける。WebGL は `onBeforeShadow` より前に modelViewMatrix を計算するので、向きを変えた後に再計算している。WebGPU は影でも `onBeforeRender` が影カメラで呼ばれる
 
 ### tree のその他
@@ -36,13 +67,15 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - テストの `bakeLod( data, lod, topDown )` の topDown は真上視点ではない。真上は `LOD4_IMPOSTOR_VIEWS[ 1 ]` を `bakeImpostor` に渡す
 - `bakeLod( …, solidLeafCoverage )` は `leaf` テクスチャだけ不透明化する。`leafRing` には効かない
 - vitest は console.log を表示しない。調査用の probe テストは `appendFileSync` でファイルへ書き出す
-- 処理時間のテスト（50ms / 500ms 予算）は全体並列実行だと落ちることがある。ファイル単体で再実行して判断する
+- 処理時間のテスト（50ms / 500ms 予算）は全体並列実行だと落ちることがある。ファイル単体で再実行して判断する。三層の tree 予算は 50ms ぎりぎりなので、テクスチャ処理を足したら単体で計測する
 - rock の「HEAD とバイト一致」テストはパーツ定義もハッシュする（`impostorFade` は除外済み）。パーツに項目を足すとき注意
-- HEAD と見た目を比べるときは、HEAD の detached worktree（node_modules をシンボリックリンク）を別ポートで `vite --config vite.demo.config.ts --port 5180` として立てる
+- HEAD と見た目を比べるときは、HEAD の detached worktree（node_modules をシンボリックリンク）を別ポートで `vite --config vite.demo.config.ts --port 5180` として立てる。worktree から three の `libs/basis` を読むと Vite が 403 を返すので、`server.fs.strict: false` の一時設定で立てる
 - 見た目の変更はブラウザで確認してからコミットする（テストが通るだけでは不可）
+- Codex（`codex exec`）のサンドボックス内では `npx vitest run` の全体実行が 1 時間止まる。対象ファイルだけ実行させ、全体はこちらで回す。ブラウザ操作もさせない（ループして止まった）
 
 ## 未解決の課題
 
 - インスタンス用の `orientBillboardInstances( mesh, camera )` は影もカメラ向きのまま（影がオービットで動く）
-- インポスターの上面カードが目の高さで水平な薄い板として見える。真上寄りでは上面と縦カードの絵が重なる
+- 利用者が `getParts()` で自前の `InstancedMesh` を作ると `upNormalCards` の部品の裏が黒くなる（デモの scatter は対処済み。公開の手段はまだない）
 - tree の LOD1/2 は真上から見ると LOD0 より葉が 15〜20% 少ない（128px 焼きで細い針葉が欠ける）
+- UASTC の ETC2（古い Android など）と BC7（Windows デスクトップ）は実機で未確認
