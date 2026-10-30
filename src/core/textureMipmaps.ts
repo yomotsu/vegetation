@@ -55,12 +55,14 @@ function preserveAlphaCoverage( pixels: Uint8Array, targetCoverage: number, alph
 
 	// 同じ不透明度の画素が多いと倍率だけでは目標に届かない。不透明度の高い順に、ちょうど目標の数だけを閾値以上にそろえる。
 	// 並べ替えの代わりに、不透明度ごとの数から境目の値と、その値の画素をいくつ上げるかを求める。
+	// 倍率だけで十分近い段（ほとんどの段）はここで終える。
+	if ( bestError <= Math.max( 1, pixelCount * 0.002 ) ) return;
 	const targetCount = Math.round( targetCovered );
 	const scaledHistogram = new Uint32Array( 256 );
-	for ( let offset = 3; offset < pixels.length; offset += 4 ) scaledHistogram[ pixels[ offset ]! ] = scaledHistogram[ pixels[ offset ]! ]! + 1;
-	let coveredCount = 0;
-	for ( let alpha = threshold; alpha < 256; alpha ++ ) coveredCount += scaledHistogram[ alpha ]!;
-	if ( coveredCount === targetCount ) return;
+	for ( let alpha = 1; alpha < 256; alpha ++ ) {
+		const scaled = Math.min( 255, Math.round( alpha * bestScale ) );
+		scaledHistogram[ scaled ] = scaledHistogram[ scaled ]! + histogram[ alpha ]!;
+	}
 	let cutoff = 255;
 	let above = 0;
 	while ( cutoff > 0 && above + scaledHistogram[ cutoff ]! < targetCount ) {
