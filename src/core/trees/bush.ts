@@ -45,7 +45,8 @@ function createBushLobes( random: Random, height: number ): FoliageLobe[] {
 
 		const angle = startAngle + index / sideCount * Math.PI * 2 + random.range( - 0.4, 0.4 );
 		const radius = height * random.range( 0.36, 0.42 );
-		const distance = height * random.range( 0.5, 0.6 );
+		// 中央のドームに寄せて重ね、全体を丸くまとめる。
+		const distance = height * random.range( 0.42, 0.52 );
 		lobes.push( {
 			center: [ Math.cos( angle ) * distance, radius * 0.72, Math.sin( angle ) * distance ],
 			radius,
@@ -109,14 +110,14 @@ export function generateBushData( options: BushOptions = {} ): VegetationData {
 
 	// 木全体のカード枚数を一定にし、ドームの大きさ（半径の 2 乗）に応じて配分する。
 	// 内側は房 4 つの大きなカードで少ない枚数で埋め、表面は房 1 つの小さなカードにして輪郭で板が目立たないようにする。
-	// 低木は横から見ることが多いので、カードの向きを外向きに寄せて真横向きのカード（筋に見える）を減らす。
+	// カードの向きはドームの面に沿うよう外向きに寄せ、表面のカードは少し内側に置く。角が外へ飛び出すと板の集まりに見えた。
 	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
 
 	for ( const lobe of lobes ) {
 
 		const share = lobe.radius * lobe.radius / totalWeight;
-		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( innerCardCount * share ), lobe.radius * 1.7, { depth: [ 0.3, 0.7 ], jitter: 0.55 } );
-		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( outerCardCount * share ), lobe.radius * 0.95, { depth: [ 0.9, 1.1 ], quadrant: true, jitter: 0.55 } );
+		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( innerCardCount * share ), lobe.radius * 1.7, { depth: [ 0.3, 0.7 ], jitter: 0.35 } );
+		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( outerCardCount * share ), lobe.radius * 0.95, { depth: [ 0.8, 1 ], quadrant: true, jitter: 0.4 } );
 
 	}
 

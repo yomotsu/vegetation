@@ -182,7 +182,8 @@ export function generatePineTreeData( options: PineTreeOptions = {} ): Vegetatio
 	// 木全体のカード枚数を一定にし、塊の大きさ（半径の 2 乗）に応じて配分する。1 枚を大きくして覆う面積を保つ。
 	const lobes = branches.flatMap( ( branch ) => branch.lobes );
 	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
-	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( leafCardCount * lobe.radius * lobe.radius / totalWeight ), lobe.radius * 2.1 );
+	// カードは塊の面に沿う向きに寄せて少し内側に置く。真横を向いたカードの角が塊の外へ飛び出すと板の集まりに見える。
+	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( leafCardCount * lobe.radius * lobe.radius / totalWeight ), lobe.radius * 2.1, { depth: [ 0.55, 0.95 ], jitter: 0.4 } );
 
 	const lod0 = builder.build();
 	const collider = buildCollider( trunk.spine, trunk.radii );
