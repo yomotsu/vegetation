@@ -193,7 +193,20 @@ export function addStylizedLimb(
 	const sampled = sampleLimbCurve( points, radii, samplesPerSegment );
 	const local = new MeshBuilder();
 	local.beginGroup( partIndex );
-	addTube( local, sampled.spine, sampled.radii, sides, { color: [ 1, 1, 1 ], wind, capEnd: false } );
+	// 枝先は細い輪のまま開けず、1 点に閉じる（輪 1 つ分の頂点が減り、形はほぼ同じ）。
+	// 管は最後の 1 点を除いて作り、風の重みは元の点の並びと同じ値になるよう t を縮める。
+	const last = sampled.spine.length - 1;
+	const tubeScale = ( last - 1 ) / last;
+	addTube( local, sampled.spine.slice( 0, last ), sampled.radii.slice( 0, last ), sides, { color: [ 1, 1, 1 ], wind: ( t ) => wind( t * tubeScale ), capEnd: false } );
+	const tangent = normalizeVec3( subtractVec3( sampled.spine[ last ]!, sampled.spine[ last - 1 ]! ) );
+	const tip = local.addVertex( sampled.spine[ last ]!, tangent, [ 0.5, 1 ], [ 1, 1, 1 ], wind( 1 ) );
+
+	for ( let side = 0; side < sides; side ++ ) {
+
+		local.addTriangle( ( last - 1 ) * ( sides + 1 ) + side, ( last - 1 ) * ( sides + 1 ) + side + 1, tip );
+
+	}
+
 	const mesh = local.build();
 	const ringSize = sides + 1;
 	const distances: number[] = [ 0 ];

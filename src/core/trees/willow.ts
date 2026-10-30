@@ -24,7 +24,7 @@ const leafPartIndex = 1;
 const maxVertexCount = 900;
 const bellSegments = 8;
 const bellRows = 5;
-const bellVertexCount = ( bellSegments + 1 ) * bellRows;
+const bellVertexCount = ( bellSegments + 1 ) * bellRows - 1;
 
 interface Branch {
 	points: Vec3[];
@@ -208,7 +208,8 @@ function addCanopyBell( builder: MeshBuilder, random: Random, center: Vec3, radi
 		const shade = 0.62 + 0.38 * ( 1 - along[ row ]! / meridian );
 		const color: Color3 = [ shade, shade, shade ];
 
-		for ( let column = 0; column <= bellSegments; column ++ ) {
+		// 頂点の行は扇の要なので、継ぎ目の重複列は要らない。
+		for ( let column = 0; column <= ( row === 0 ? bellSegments - 1 : bellSegments ); column ++ ) {
 
 			const angle = startAngle + column / bellSegments * Math.PI * 2;
 			const scale = row === 0 ? 1 : wobble[ column % bellSegments ]!;
