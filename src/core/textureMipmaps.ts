@@ -52,6 +52,32 @@ function preserveAlphaCoverage( pixels: Uint8Array, targetCoverage: number, alph
 	for ( let offset = 3; offset < pixels.length; offset += 4 ) {
 		pixels[ offset ] = Math.min( 255, Math.round( pixels[ offset ]! * bestScale ) );
 	}
+
+	// 同じ不透明度の画素が多いと倍率だけでは目標に届かない。不透明度の高い順に、ちょうど目標の数だけを閾値以上にそろえる。
+	// 並べ替えの代わりに、不透明度ごとの数から境目の値と、その値の画素をいくつ上げるかを求める。
+	const targetCount = Math.round( targetCovered );
+	const scaledHistogram = new Uint32Array( 256 );
+	for ( let offset = 3; offset < pixels.length; offset += 4 ) scaledHistogram[ pixels[ offset ]! ] = scaledHistogram[ pixels[ offset ]! ]! + 1;
+	let coveredCount = 0;
+	for ( let alpha = threshold; alpha < 256; alpha ++ ) coveredCount += scaledHistogram[ alpha ]!;
+	if ( coveredCount === targetCount ) return;
+	let cutoff = 255;
+	let above = 0;
+	while ( cutoff > 0 && above + scaledHistogram[ cutoff ]! < targetCount ) {
+		above += scaledHistogram[ cutoff ]!;
+		cutoff --;
+	}
+	let raiseAtCutoff = targetCount - above;
+	for ( let offset = 3; offset < pixels.length; offset += 4 ) {
+		const alpha = pixels[ offset ]!;
+		if ( alpha === 0 ) continue;
+		if ( alpha > cutoff ) pixels[ offset ] = Math.max( alpha, threshold );
+		else if ( alpha < cutoff ) pixels[ offset ] = Math.min( alpha, threshold - 1 );
+		else if ( raiseAtCutoff > 0 ) {
+			pixels[ offset ] = Math.max( alpha, threshold );
+			raiseAtCutoff --;
+		} else pixels[ offset ] = Math.min( alpha, threshold - 1 );
+	}
 }
 
 function downsample( source: TextureMipLevel, alphaTest: number, normalMap: boolean, data: Uint8Array ): TextureMipLevel {

@@ -7,7 +7,7 @@ import { createRandom } from '../random';
 import type { MeshData, PartDef, TextureData, TextureGeneratorDef, VegetationData } from '../types';
 import { buildTulipPart, createTulipPetalTexture, createTulipPlantCardTexture, createTulipStemTexture, TULIP_BLOOM_HEIGHT, TULIP_PLANT_CARD_WIDTH } from '../flowers/tulip';
 import { buildPoppyPart, createPoppyPetalTexture, createPoppyStemTexture } from '../flowers/poppy';
-import { buildBluebellPart, buildBluebellPlantCardLeavesPart, BLUEBELL_PLANT_CARD_WIDTH, createBluebellPetalTexture, createBluebellPlantCardTexture, createBluebellStemTexture } from '../flowers/bluebell';
+import { buildBluebellPart, buildBluebellPlantCardLeavesPart, buildBluebellPlantCardPart, createBluebellPetalTexture, createBluebellPlantCardTexture, createBluebellStemTexture } from '../flowers/bluebell';
 import { buildCallaPart, buildCallaPlantCardPart, CALLA_PLANT_CARD_TEXTURE_WIDTH, createCallaPetalTexture, createCallaPlantCardTexture, createCallaStemTexture } from '../flowers/calla';
 import { buildPrimroseDomePart, buildPrimrosePart, createPrimrosePetalTexture, createPrimroseStemTexture } from '../flowers/primrose';
 import type { FlowerPlacement } from '../flowers/common';
@@ -520,25 +520,6 @@ function buildTulipPlantCardPart( plants: FlowerPlacement[], partIndex: number, 
 
 }
 
-function buildBluebellPlantCardPart( plants: FlowerPlacement[], partIndex: number, segments: number, lod: 1 | 2 ): MeshData {
-
-	const maxCardHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
-	return buildBentPlantCardPart( plants, partIndex, segments, {
-		width: BLUEBELL_PLANT_CARD_WIDTH,
-		maxCardHeight,
-		top: ( plant ) => plant.height,
-		stemHeight: ( plant ) => plant.height,
-		headBottom: ( _plant, top ) => top,
-		headAnchor: ( _plant, top ) => top,
-		// フックは共有テクスチャに描き、2 枚のカードの中心線はまっすぐに保つ。
-		spine: ( plant, progress ) => [ plant.x, plant.height * progress, plant.z ],
-		// フックの絵を茎の傾く向きへ合わせる。
-		yaw: ( plant ) => Math.atan2( - plant.leanZ, plant.leanX ),
-		uvRect: ( _plant, cardIndex ) => [ cardIndex * 0.5, ( cardIndex + 1 ) * 0.5, lod === 1 ? 0 : 0.5, lod === 1 ? 0.5 : 1 ],
-	} );
-
-}
-
 const ALLIUM_LOD3_YAW_ANGLES = [ 0, Math.PI / 2 ] as const;
 const ALLIUM_LOD3_IMPOSTOR_VIEWS = ALLIUM_LOD3_YAW_ANGLES.map( yawImpostorView );
 const ALLIUM_LOD4_IMPOSTOR_VIEWS = [ yawImpostorView( 0 ) ];
@@ -655,7 +636,7 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 			: variety === 'calla'
 				? buildCallaPlantCardPart( plants, 2, 1 )
 				: variety === 'bluebell'
-					? combineParts( buildBluebellPlantCardPart( plants, 2, 2, 1 ), buildBluebellPlantCardLeavesPart( 1, plants ) )
+					? combineParts( buildBluebellPlantCardPart( plants, 2, 1 ), buildBluebellPlantCardLeavesPart( 1, plants ) )
 				: combineParts( buildFlowersPart( variety, 1, plants, 'petal' ), buildFlowersPart( variety, 1, plants, 'stem' ) );
 	const maximumPlantHeight = Math.max( ...plants.map( ( plant ) => plant.height ) );
 	const headRise = variety === 'allium'
@@ -682,7 +663,7 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 			: variety === 'calla'
 				? buildCallaPlantCardPart( plants, 2, 2 )
 				: variety === 'bluebell'
-					? combineParts( buildBluebellPlantCardPart( plants, 2, 1, 2 ), buildBluebellPlantCardLeavesPart( 2, plants ) )
+					? combineParts( buildBluebellPlantCardPart( plants, 2, 2 ), buildBluebellPlantCardLeavesPart( 2, plants ) )
 				: variety === 'primrose'
 					? buildPrimroseDomePart( 2, 2, primroseDomeFootprint!, bounds.height, lod1.indices.length / 3 )
 					: combineParts( buildFlowersPart( variety, 2, plants, 'petal' ), buildFlowersPart( variety, 2, plants, 'stem' ) );

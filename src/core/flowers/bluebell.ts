@@ -7,9 +7,16 @@ import { setPartIndex } from './common';
 const SIZE = 128;
 const STEM_WIDTH = 128;
 const STEM_HEIGHT = 256;
+// LOD1/2 の交差カード: 2 枚とも LOD0 と同じ茎の弧に沿って曲げた帯にし、茎は帯の中央にまっすぐ描く。
+// タイルは 2 枚（茎の傾く面の帯 / それに直交する帯）を横に並べ、LOD1 と LOD2 で共有する。
 const BLUEBELL_PLANT_CARD_TILE_HEIGHT = 256;
-export const BLUEBELL_PLANT_CARD_TEXTURE_HEIGHT = BLUEBELL_PLANT_CARD_TILE_HEIGHT * 2;
-export const BLUEBELL_PLANT_CARD_WIDTH = 0.48;
+export const BLUEBELL_PLANT_CARD_TEXTURE_HEIGHT = BLUEBELL_PLANT_CARD_TILE_HEIGHT;
+// 帯の幅。花柄と釣り鐘が茎の横へ垂れる分（約 5.5 cm）が収まる幅。
+export const BLUEBELL_PLANT_CARD_WIDTH = 0.12;
+// 茎の太さ（直径）。以前の 12 mm の 2/3。
+const BLUEBELL_PLANT_CARD_STEM_WIDTH = 0.008;
+// LOD1/2 の帯の段（茎の進み具合）。鉤形に曲がる上部へ寄せる。
+const BLUEBELL_PLANT_CARD_ROWS: Record<1 | 2, readonly number[]> = { 1: [ 0, 0.55, 0.82, 1 ], 2: [ 0, 0.7, 1 ] };
 // 茎テクスチャ内の葉の位置（画素）。縦 1 列に並べ、UV を広げても隣の葉の絵を拾わないようにする。
 const LEAF_CENTER_X = 74;
 const LEAF_HALF_WIDTH = 12;
@@ -17,109 +24,148 @@ const LEAF_ROWS = [ 4, 88, 172 ];
 const LEAF_ROW_HEIGHT = 80;
 const LEAF_WIDEST = 0.4;
 // 最後の釣り鐘は茎の先端に付ける（茎だけで終わらない）。
-const BELL_PROGRESS = [ 0.64, 0.73, 0.82, 0.91, 1 ];
+// 釣り鐘は 4 つ（5 つから減らした分の頂点を茎の曲がりに回す）。疎に見えないよう先端寄りに詰め、最後の 1 つは茎の先端。
+const BELL_PROGRESS = [ 0.76, 0.84, 0.92, 1 ];
 // 釣り鐘のカードの高さ。上の約 45% が花柄。
 const BELL_CARD_HEIGHT = 0.07;
 const HOOK_START = 0.7;
 const HOOK_REACH = 0.06;
 const HOOK_DROP = 0.035;
 
-function bluebellPlantCardCurve( progress: number, maxCardHeight: number, textureWidth: number, hookScale: number ): [ number, number ] {
+// 代表的な株（高さ maxCardHeight・傾きは高さの 36%）の茎の接線。帯の段の向きの基準にする。
+function bluebellCanonicalTangent( progress: number, maxCardHeight: number ): [ number, number ] {
 
-	const lean = maxCardHeight * 0.36 * progress ** 1.5;
-	const hookProgress = progress > HOOK_START ? ( progress - HOOK_START ) / ( 1 - HOOK_START ) : 0;
-	const hook = hookProgress * hookProgress * HOOK_REACH;
-	const drop = hookProgress ** 3 * HOOK_DROP;
-	const x = textureWidth * 0.5 + ( lean + hook ) * hookScale / BLUEBELL_PLANT_CARD_WIDTH * textureWidth;
-	const y = ( maxCardHeight * progress - drop ) / maxCardHeight * BLUEBELL_PLANT_CARD_TILE_HEIGHT;
-	return [ x, y ];
+	const plant = { x: 0, z: 0, leanX: maxCardHeight * 0.36, leanZ: 0, height: maxCardHeight } as FlowerPlacement;
+	const before = bluebellSpine( plant, Math.max( 0, progress - 0.01 ) );
+	const after = bluebellSpine( plant, Math.min( 1, progress + 0.01 ) );
+	const along = after[ 0 ] - before[ 0 ];
+	const up = after[ 1 ] - before[ 1 ];
+	const length = Math.hypot( along, up ) || 1;
+	return [ along / length, up / length ];
 
 }
 
-function strokeBluebellPlantCardPath( shape: ReturnType<typeof createFlowerTextureShape>, points: [ number, number ][], radiusX: number, radiusY: number, shadeAt: ( progress: number ) => number ): void {
+function strokeBluebellPlantCardPath( shape: ReturnType<typeof createFlowerTextureShape>, points: [ number, number ][], radius: number, shadeAt: ( progress: number ) => number ): void {
 
 	const upper: [ number, number ][] = [];
 	const lower: [ number, number ][] = [];
 	for ( let index = 0; index < points.length; index ++ ) {
 		const previous = points[ Math.max( 0, index - 1 ) ]!;
 		const next = points[ Math.min( points.length - 1, index + 1 ) ]!;
-		const dx = ( next[ 0 ] - previous[ 0 ] ) / shape.width * BLUEBELL_PLANT_CARD_WIDTH;
-		const dy = ( next[ 1 ] - previous[ 1 ] ) / BLUEBELL_PLANT_CARD_TILE_HEIGHT;
+		const dx = next[ 0 ] - previous[ 0 ];
+		const dy = next[ 1 ] - previous[ 1 ];
 		const length = Math.hypot( dx, dy ) || 1;
-		const normalX = - dy / length;
-		const normalY = dx / length;
-		upper.push( [ points[ index ]![ 0 ] + normalX * radiusX, points[ index ]![ 1 ] + normalY * radiusY ] );
-		lower.push( [ points[ index ]![ 0 ] - normalX * radiusX, points[ index ]![ 1 ] - normalY * radiusY ] );
+		upper.push( [ points[ index ]![ 0 ] - dy / length * radius, points[ index ]![ 1 ] + dx / length * radius ] );
+		lower.push( [ points[ index ]![ 0 ] + dy / length * radius, points[ index ]![ 1 ] - dx / length * radius ] );
 	}
 	rasterFlowerPolygon( shape, [ ...upper, ...lower.reverse() ], ( _x, y ) => shadeAt( y / BLUEBELL_PLANT_CARD_TILE_HEIGHT ) );
 
 }
 
-/** 茎・鉤形の先・5 本の花柄と釣り鐘を 1 枚の LOD1/2 カード用テクスチャにまとめます。 */
+/** 茎・花柄・釣り鐘を、弧に沿って曲げる LOD1/2 の帯用テクスチャにまとめます。 */
 export function createBluebellPlantCardTexture( maxCardHeight: number, petalColor: number, pedicelColor: number, stemColor: number ): TextureData {
 
-	const height = BLUEBELL_PLANT_CARD_TEXTURE_HEIGHT;
-	// 1 タイル 128 px（カード幅 0.48 m）。64 px では茎が 1 px 未満になり、釣り鐘も棒状に潰れた。
 	const tileWidth = SIZE;
+	const tileHeight = BLUEBELL_PLANT_CARD_TILE_HEIGHT;
 	const textureWidth = tileWidth * 2;
-	const data = new Uint8Array( textureWidth * height * 4 );
-	for ( let tile = 0; tile < 4; tile ++ ) {
-		const tileView = tile % 2;
-		const tileRow = Math.floor( tile / 2 );
-		const stemShape = createFlowerTextureShape( tileWidth, BLUEBELL_PLANT_CARD_TILE_HEIGHT );
-		const pedicelShape = createFlowerTextureShape( tileWidth, BLUEBELL_PLANT_CARD_TILE_HEIGHT );
-		const petalShape = createFlowerTextureShape( tileWidth, BLUEBELL_PLANT_CARD_TILE_HEIGHT );
-		const hookScale = tileView === 0 ? 1 : 0.08;
-		const stemPath: [ number, number ][] = [];
-		for ( let step = 0; step <= 32; step ++ ) stemPath.push( bluebellPlantCardCurve( step / 32, maxCardHeight, tileWidth, hookScale ) );
-		// 遠くでも欠けないよう、茎は実寸より太く最低 1.6 px の半径で描く。
-		const stemRadiusX = Math.max( 1.6, 0.0015 / BLUEBELL_PLANT_CARD_WIDTH * tileWidth );
-		const stemRadiusY = Math.max( 1.6, 0.0015 / maxCardHeight * BLUEBELL_PLANT_CARD_TILE_HEIGHT );
-		strokeBluebellPlantCardPath( stemShape, stemPath, stemRadiusX, stemRadiusY, ( progress ) => 0.48 + progress * 0.38 );
+	const data = new Uint8Array( textureWidth * tileHeight * 4 );
+	// 帯の横は 1 px あたり約 0.94 mm、縦は茎の進み具合。
+	const pixelsAcross = tileWidth / BLUEBELL_PLANT_CARD_WIDTH;
+	const pixelsAlong = tileHeight / maxCardHeight;
+	const center = tileWidth * 0.5;
+	for ( let tile = 0; tile < 2; tile ++ ) {
+		const stemShape = createFlowerTextureShape( tileWidth, tileHeight );
+		const pedicelShape = createFlowerTextureShape( tileWidth, tileHeight );
+		const petalShape = createFlowerTextureShape( tileWidth, tileHeight );
+		strokeBluebellPlantCardPath( stemShape, [ [ center, 0 ], [ center, tileHeight ] ], BLUEBELL_PLANT_CARD_STEM_WIDTH * 0.5 * pixelsAcross, ( progress ) => 0.48 + progress * 0.38 );
 		for ( let bell = 0; bell < BELL_PROGRESS.length; bell ++ ) {
 			const progress = BELL_PROGRESS[ bell ]!;
-			const [ attachX, attachY ] = bluebellPlantCardCurve( progress, maxCardHeight, tileWidth, hookScale );
-			const side = bell % 2 === 0 ? 1 : - 1;
-			const offsetX = side * ( tileView === 0 ? 0.009 : 0.003 ) / BLUEBELL_PLANT_CARD_WIDTH * tileWidth;
-			const topX = attachX + offsetX;
-			const topY = attachY - 0.03 / maxCardHeight * BLUEBELL_PLANT_CARD_TILE_HEIGHT;
-			const pedicel: [ number, number ][] = [];
-			for ( let step = 0; step <= 6; step ++ ) {
-				const amount = step / 6;
-				pedicel.push( [ attachX + ( topX - attachX ) * amount + side * Math.sin( amount * Math.PI ) * 0.4, attachY + ( topY - attachY ) * amount ] );
-			}
-			const pedicelRadiusX = Math.max( 1.1, 0.001 / BLUEBELL_PLANT_CARD_WIDTH * tileWidth );
-			const pedicelRadiusY = Math.max( 1.1, 0.001 / maxCardHeight * BLUEBELL_PLANT_CARD_TILE_HEIGHT );
-			strokeBluebellPlantCardPath( pedicelShape, pedicel, pedicelRadiusX, pedicelRadiusY, () => 0.82 );
-
-			const bellHeight = BLUEBELL_BELL_HEIGHT / maxCardHeight * BLUEBELL_PLANT_CARD_TILE_HEIGHT;
-			const bellHalfWidth = Math.max( 3, 0.011 / BLUEBELL_PLANT_CARD_WIDTH * tileWidth );
+			const [ along, up ] = bluebellCanonicalTangent( progress, maxCardHeight );
+			// 真下の向きを帯の座標へ移す。茎の傾く面の帯（tile 0）では横（u）と縦（v）の両方に出る。
+			// 直交する帯（tile 1）では横に出ないので、茎に沿って少しだけ下げる。
+			const downU = tile === 0 ? along : 0;
+			const downV = tile === 0 ? - up : - Math.max( 0.35, Math.abs( up ) );
+			const downLength = Math.hypot( downU, downV ) || 1;
+			const directionU = downU / downLength;
+			const directionV = downV / downLength;
+			const attachX = center;
+			const attachY = progress * tileHeight;
+			const pedicelLength = 0.02;
+			const topX = attachX + directionU * pedicelLength * pixelsAcross;
+			const topY = attachY + directionV * pedicelLength * pixelsAlong;
+			strokeBluebellPlantCardPath( pedicelShape, [ [ attachX, attachY ], [ topX, topY ] ], Math.max( 1, 0.002 * pixelsAcross ), () => 0.82 );
+			const bellHeight = BLUEBELL_BELL_HEIGHT;
+			const bellHalfWidth = BLUEBELL_BELL_RADIUS * pixelsAcross;
 			const bellPoints: [ number, number ][] = [];
+			// 釣り鐘は肩が細く口へ広がる。向きは真下（帯の座標での directionU / directionV）。
 			for ( let step = 0; step <= 14; step ++ ) {
 				const amount = step / 14;
 				const halfWidth = bellHalfWidth * ( 0.45 + 0.55 * amount ** 1.6 );
-				bellPoints.push( [ topX + halfWidth, topY - amount * bellHeight ] );
+				bellPoints.push( [ topX + directionU * amount * bellHeight * pixelsAcross - directionV * halfWidth, topY + directionV * amount * bellHeight * pixelsAlong + directionU * halfWidth ] );
 			}
 			for ( let step = 14; step >= 0; step -- ) {
 				const amount = step / 14;
 				const halfWidth = bellHalfWidth * ( 0.45 + 0.55 * amount ** 1.6 );
-				bellPoints.push( [ topX - halfWidth, topY - amount * bellHeight ] );
+				bellPoints.push( [ topX + directionU * amount * bellHeight * pixelsAcross + directionV * halfWidth, topY + directionV * amount * bellHeight * pixelsAlong - directionU * halfWidth ] );
 			}
 			rasterFlowerPolygon( petalShape, bellPoints, ( x, y ) => {
-				const amount = Math.max( 0, Math.min( 1, ( topY - y ) / bellHeight ) );
-				const across = Math.min( 1, Math.abs( x - topX ) / Math.max( 1, bellHalfWidth * ( 0.45 + 0.55 * amount ** 1.6 ) ) );
-				return 0.52 + amount * 0.34 - across * across * 0.2 + ( amount > 0.93 ? 0.08 : 0 );
+				const amount = Math.max( 0, Math.min( 1, Math.hypot( ( x - topX ) / pixelsAcross, ( y - topY ) / pixelsAlong ) / bellHeight ) );
+				return 0.52 + amount * 0.36 + ( amount > 0.93 ? 0.08 : 0 );
 			} );
 		}
-
 		const layers = [
-			createColorizedFlowerTexture( tileWidth, BLUEBELL_PLANT_CARD_TILE_HEIGHT, stemColor, stemShape.alpha, stemShape.shade ),
-			createColorizedFlowerTexture( tileWidth, BLUEBELL_PLANT_CARD_TILE_HEIGHT, pedicelColor, pedicelShape.alpha, pedicelShape.shade ),
-			createColorizedFlowerTexture( tileWidth, BLUEBELL_PLANT_CARD_TILE_HEIGHT, petalColor, petalShape.alpha, petalShape.shade ),
+			createColorizedFlowerTexture( tileWidth, tileHeight, stemColor, stemShape.alpha, stemShape.shade ),
+			createColorizedFlowerTexture( tileWidth, tileHeight, pedicelColor, pedicelShape.alpha, pedicelShape.shade ),
+			createColorizedFlowerTexture( tileWidth, tileHeight, petalColor, petalShape.alpha, petalShape.shade ),
 		];
-		for ( const layer of layers ) compositeFlowersTexture( data, textureWidth, height, layer, 0, tileWidth, tileView * tileWidth, tileRow * BLUEBELL_PLANT_CARD_TILE_HEIGHT, tileWidth, BLUEBELL_PLANT_CARD_TILE_HEIGHT );
+		for ( const layer of layers ) compositeFlowersTexture( data, textureWidth, tileHeight, layer, 0, tileWidth, tile * tileWidth, 0, tileWidth, tileHeight );
 	}
-	return { width: textureWidth, height, data, wrap: 'clamp' };
+	return { width: textureWidth, height: tileHeight, data, wrap: 'clamp' };
+
+}
+
+/** LOD1/2 の茎と花: LOD0 と同じ茎の弧に沿って曲げた帯を 2 枚（傾く面 / 直交する面）重ねます。 */
+export function buildBluebellPlantCardPart( plants: FlowerPlacement[], partIndex: number, lod: 1 | 2 ): MeshData {
+
+	const builder = new MeshBuilder();
+	const rows = BLUEBELL_PLANT_CARD_ROWS[ lod ];
+	const halfWidth = BLUEBELL_PLANT_CARD_WIDTH * 0.5;
+	builder.beginGroup( partIndex );
+	for ( const plant of plants ) {
+		const leanLength = Math.hypot( plant.leanX, plant.leanZ );
+		const leanX = leanLength > 1e-6 ? plant.leanX / leanLength : Math.cos( plant.yaw );
+		const leanZ = leanLength > 1e-6 ? plant.leanZ / leanLength : Math.sin( plant.yaw );
+		for ( let card = 0; card < 2; card ++ ) {
+			const vertices: number[][] = [];
+			for ( const progress of rows ) {
+				const point = bluebellSpine( plant, progress );
+				const before = bluebellSpine( plant, Math.max( 0, progress - 0.01 ) );
+				const after = bluebellSpine( plant, Math.min( 1, progress + 0.01 ) );
+				const along = ( after[ 0 ] - before[ 0 ] ) * leanX + ( after[ 2 ] - before[ 2 ] ) * leanZ;
+				const up = after[ 1 ] - before[ 1 ];
+				const length = Math.hypot( along, up ) || 1;
+				// tile 0: 茎の傾く面の中で接線に直交する向き。tile 1: その面に直交する水平の向き。
+				const side: [ number, number, number ] = card === 0
+					? [ leanX * up / length, - along / length, leanZ * up / length ]
+					: [ - leanZ, 0, leanX ];
+				const u0 = card * 0.5;
+				const u1 = u0 + 0.5;
+				vertices.push( [
+					builder.addVertex( [ point[ 0 ] - side[ 0 ] * halfWidth, point[ 1 ] - side[ 1 ] * halfWidth, point[ 2 ] - side[ 2 ] * halfWidth ], [ 0, 1, 0 ], [ u0, progress ], [ 1, 1, 1 ], progress ),
+					builder.addVertex( [ point[ 0 ] + side[ 0 ] * halfWidth, point[ 1 ] + side[ 1 ] * halfWidth, point[ 2 ] + side[ 2 ] * halfWidth ], [ 0, 1, 0 ], [ u1, progress ], [ 1, 1, 1 ], progress ),
+				] );
+			}
+			for ( let row = 0; row + 1 < vertices.length; row ++ ) {
+				const a = vertices[ row ]![ 0 ]!;
+				const b = vertices[ row ]![ 1 ]!;
+				const c = vertices[ row + 1 ]![ 1 ]!;
+				const d = vertices[ row + 1 ]![ 0 ]!;
+				builder.addTriangle( a, b, c );
+				builder.addTriangle( a, c, d );
+			}
+		}
+	}
+	return builder.build();
 
 }
 
@@ -378,8 +424,8 @@ function buildBluebellLegacyPart( lod: number, plants: FlowerPlacement[], part: 
 
 }
 
-// 茎は 3 区間。2 区間では 1 回折れて見えた（既定 3 株で 174 頂点）。
-const BLUEBELL_LOD0_STEM_SEGMENTS = 3;
+// 茎は 4 区間で、段は曲がる上部へ寄せる。釣り鐘を 4 つにして浮いた頂点を回す（既定 3 株で 168 頂点）。
+const BLUEBELL_LOD0_STEM_SEGMENTS = 4;
 const BLUEBELL_LOD2_STEM_SEGMENTS = 2;
 // 釣り鐘の高さと口の半径。LOD1（旧 LOD0）のカードに描いた釣り鐘（高さ約 3.4 cm・幅約 2.2 cm）に合わせる。
 const BLUEBELL_BELL_HEIGHT = 0.034;

@@ -844,8 +844,8 @@ describe( 'flowers core generator', () => {
 				validateMeshData( first.lods[ lod ]! );
 				expect( areStructurallyByteIdentical( first.lods[ lod ]!, second.lods[ lod ]! ) ).toBe( true );
 				if ( lod === 0 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThan( variety === 'bluebell' ? 180 : 151 );
-				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : variety === 'bluebell' ? 75 : 78 );
-				if ( lod === 2 && variety === 'bluebell' ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( 50 );
+				if ( lod === 1 ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( variety === 'calla' ? 120 : variety === 'bluebell' ? 84 : 78 );
+				if ( lod === 2 && variety === 'bluebell' ) expect( vertexCount( first.lods[ lod ]! ) ).toBeLessThanOrEqual( 60 );
 			}
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
 			expect( areByteIdentical( first.textures.petal!.data, second.textures.petal!.data ) ).toBe( true );
@@ -863,24 +863,25 @@ describe( 'flowers core generator', () => {
 		const trianglesByPart = ( mesh: MeshData, partIndex: number ) => mesh.groups.filter( ( group ) => group.partIndex === partIndex ).reduce( ( sum, group ) => sum + group.count / 3, 0 );
 
 		expect( data.parts.map( ( part ) => part.name ) ).toEqual( [ 'petal', 'stem', 'plantCard', 'impostor-lod3', 'impostor' ] );
-		expect( [ lod0!, lod1!, lod2! ].map( vertexCount ) ).toEqual( [ 174, 72, 48 ] );
-		expect( [ lod0!, lod1!, lod2!, data.lods[ 3]!, data.lods[ 4]! ].map( triangleCount ) ).toEqual( [ 144, 42, 27, 8, 2 ] );
+		expect( [ lod0!, lod1!, lod2! ].map( vertexCount ) ).toEqual( [ 168, 84, 60 ] );
+		expect( [ lod0!, lod1!, lod2!, data.lods[ 3]!, data.lods[ 4]! ].map( triangleCount ) ).toEqual( [ 138, 54, 39, 8, 2 ] );
 		expect( [ texture.width, texture.height ] ).toEqual( [ 256, BLUEBELL_PLANT_CARD_TEXTURE_HEIGHT ] );
 		expect( texture.wrap ).toBe( 'clamp' );
 		expect( data.parts[ 1 ] ).toMatchObject( { name: 'stem', doubleSided: true } );
 		expect( data.parts[ 2 ] ).toMatchObject( { texture: 'plantCard', alphaTest: 0.5, upNormalCards: true, doubleSided: true } );
-		expect( trianglesByPart( lod1!, 2 ) ).toBe( 24 );
+		// 弧に沿う帯 2 枚: LOD1 は 3 区間、LOD2 は 2 区間。
+		expect( trianglesByPart( lod1!, 2 ) ).toBe( 36 );
 		expect( trianglesByPart( lod1!, 1 ) ).toBe( 18 );
-		expect( trianglesByPart( lod2!, 2 ) ).toBe( 12 );
+		expect( trianglesByPart( lod2!, 2 ) ).toBe( 24 );
 		expect( trianglesByPart( lod2!, 1 ) ).toBe( 15 );
 
 		const firstCardWidth = Math.hypot( lod1!.positions[ 0 ]! - lod1!.positions[ 3 ]!, lod1!.positions[ 2 ]! - lod1!.positions[ 5 ]! );
-		expect( firstCardWidth ).toBeCloseTo( BLUEBELL_PLANT_CARD_WIDTH, 6 );
+		expect( firstCardWidth ).toBeCloseTo( BLUEBELL_PLANT_CARD_WIDTH, 3 );
 		const firstCardDirection = [ lod1!.positions[ 3 ]! - lod1!.positions[ 0 ]!, lod1!.positions[ 5 ]! - lod1!.positions[ 2 ]! ];
 		const firstStemGroup = lod0!.groups.find( ( group ) => group.partIndex === 1 )!;
 		const firstStemVertex = Math.min( ...lod0!.indices.slice( firstStemGroup.start, firstStemGroup.start + firstStemGroup.count ) );
 		const firstStemBase = cardRowCenter( lod0!, firstStemVertex, 0 );
-		const firstStemTop = cardRowCenter( lod0!, firstStemVertex, 3 );
+		const firstStemTop = cardRowCenter( lod0!, firstStemVertex, 4 );
 		const hookDirection = [ firstStemTop[ 0 ] - firstStemBase[ 0 ], firstStemTop[ 2 ] - firstStemBase[ 2 ] ];
 		const directionDot = ( firstCardDirection[ 0 ]! * hookDirection[ 0 ]! + firstCardDirection[ 1 ]! * hookDirection[ 1 ]! ) / ( Math.hypot( ...firstCardDirection ) * Math.hypot( ...hookDirection ) );
 		expect( Math.abs( directionDot ) ).toBeGreaterThan( 0.99 );
@@ -888,7 +889,7 @@ describe( 'flowers core generator', () => {
 		const prepared = prepareVegetationAsset( data, {}, 128 );
 		expect( prepared.data.textures.plantCard!.mipmaps!.length ).toBeGreaterThan( 0 );
 		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.width ).toBe( 128 );
-		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.height ).toBe( 256 );
+		expect( prepared.data.textures.plantCard!.mipmaps![ 1 ]!.height ).toBe( 128 );
 
 	} );
 
@@ -896,10 +897,10 @@ describe( 'flowers core generator', () => {
 
 		const defaultData = generateFlowersData( { seed: 1, variety: 'bluebell' } );
 		const defaultTriangles = defaultData.lods.map( triangleCount );
-		expect( defaultTriangles ).toEqual( [ 144, 42, 27, 8, 2 ] );
+		expect( defaultTriangles ).toEqual( [ 138, 54, 39, 8, 2 ] );
 		for ( let count = 1; count <= 6; count ++ ) {
 			const triangles = generateFlowersData( { seed: 1, variety: 'bluebell', count } ).lods.map( triangleCount );
-			expect( triangles ).toEqual( [ 48 * count, 14 * count, 9 * count, 8, 2 ] );
+			expect( triangles ).toEqual( [ 46 * count, 18 * count, 13 * count, 8, 2 ] );
 			expect( triangles.slice( 1 ).every( ( value, index ) => value < triangles[ index ]! ) ).toBe( true );
 		}
 
@@ -1157,7 +1158,7 @@ describe( 'flowers core generator', () => {
 
 		const cases = [
 			{ variety: 'poppy' as const, segments: 3 },
-			{ variety: 'bluebell' as const, segments: 3 },
+			{ variety: 'bluebell' as const, segments: 4 },
 			{ variety: 'calla' as const, segments: 1 },
 			{ variety: 'primrose' as const, segments: 1 },
 		];
@@ -1209,8 +1210,8 @@ describe( 'flowers core generator', () => {
 		// 釣り鐘は茎から下へ垂れる。最後の釣り鐘は茎の先端に付く（茎だけで終わらない）。
 		expect( highestBell ).toBeLessThanOrEqual( highestSpine + 1e-6 );
 		// 釣り鐘 1 つは 6 三角形: 花柄 1 枚と、肩から口へ開く釣り鐘 5 枚。
-		expect( bluebellPetal.count / 3 ).toBe( 5 * 6 * 3 );
-		const bluebellCupTriangles = Array.from( { length: 5 }, ( _, bell ) => bluebellPetal.start + ( bell * 6 + 1 ) * 3 );
+		expect( bluebellPetal.count / 3 ).toBe( 4 * 6 * 3 );
+		const bluebellCupTriangles = Array.from( { length: 4 }, ( _, bell ) => bluebellPetal.start + ( bell * 6 + 1 ) * 3 );
 		for ( const triangleStart of bluebellCupTriangles ) {
 			const top = bluebell.positions[ bluebell.indices[ triangleStart ]! * 3 + 1 ]!;
 			const rimA = bluebell.positions[ bluebell.indices[ triangleStart + 1 ]! * 3 + 1 ]!;
