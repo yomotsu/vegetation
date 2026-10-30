@@ -436,7 +436,8 @@ export function generatePebblesData( options: PebblesOptions = {} ): VegetationD
 	const spread = options.spread ?? 1.56;
 	const size = options.size ?? 0.22;
 	const sizeVariation = options.sizeVariation ?? 0.8;
-	const burial = options.burial ?? 0.4;
+	// 既定は高さの 48% を沈める（0.4 では地面に置いたように見えた。2026-10-30 ユーザー指定）。
+	const burial = options.burial ?? 0.48;
 	const stoneColor = options.stoneColor ?? 0xffffff;
 	const moss = options.moss ?? 0;
 	const mossColor = options.mossColor ?? DEFAULT_MOSS_COLOR;

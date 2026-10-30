@@ -104,7 +104,7 @@ All options are optional.
 | `spread` | `1.56` | Scatter radius in metres. |
 | `size` | `0.22` | Average pebble size in metres. |
 | `sizeVariation` | `0.8` | Size variation (0–0.9). |
-| `burial` | `0.4` | Fraction of the height sunk below the ground (0–1). |
+| `burial` | `0.48` | Fraction of the height sunk below the ground (0–1). |
 | `stoneColor` | `0xffffff` | Stone tint. |
 | `moss` | `0` | Moss coverage (0–1). |
 | `mossColor` | `0x7cb83a` | Moss color. |

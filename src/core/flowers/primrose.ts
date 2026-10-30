@@ -144,9 +144,10 @@ function addPrimroseLeaf( builder: MeshBuilder, plant: FlowerPlacement, angle: n
 	const cells: [ number, number, number, number ][] = [ [ 0.19, 0.02, 0.43, 0.29 ], [ 0.55, 0.02, 0.79, 0.29 ], [ 0.19, 0.36, 0.43, 0.63 ], [ 0.55, 0.36, 0.79, 0.63 ], [ 0.19, 0.69, 0.43, 0.96 ], [ 0.55, 0.69, 0.79, 0.96 ] ];
 	const cell = cells[ slot % cells.length ]!;
 	const vertices = [
-		builder.addVertex( [ baseX - sideX * 0.12, 0.014, baseZ - sideZ * 0.12 ], [ 0, 1, 0 ], [ cell[ 0 ], cell[ 1 ] ], [ 1, 1, 1 ], 0.05 ),
+		// 付け根は地面にわずかに埋め、葉先も地面近くへ下ろす（ロゼットが浮いて見えないように）。
+		builder.addVertex( [ baseX - sideX * 0.12, - 0.003, baseZ - sideZ * 0.12 ], [ 0, 1, 0 ], [ cell[ 0 ], cell[ 1 ] ], [ 1, 1, 1 ], 0.05 ),
 		builder.addVertex( [ centerX - sideX, 0.047, centerZ - sideZ ], [ 0, 1, 0 ], [ cell[ 0 ], cell[ 3 ] ], [ 1, 1, 1 ], 0.24 ),
-		builder.addVertex( [ tipX, 0.026, tipZ ], [ 0, 1, 0 ], [ cell[ 2 ], cell[ 3 ] ], [ 1, 1, 1 ], 0.15 ),
+		builder.addVertex( [ tipX, 0.006, tipZ ], [ 0, 1, 0 ], [ cell[ 2 ], cell[ 3 ] ], [ 1, 1, 1 ], 0.15 ),
 		builder.addVertex( [ centerX + sideX, 0.047, centerZ + sideZ ], [ 0, 1, 0 ], [ cell[ 2 ], cell[ 1 ] ], [ 1, 1, 1 ], 0.24 ),
 	];
 	builder.addTriangle( vertices[ 0 ]!, vertices[ 1 ]!, vertices[ 2 ]! );

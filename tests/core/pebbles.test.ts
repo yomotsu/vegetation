@@ -329,7 +329,8 @@ describe( 'procedural pebbles data', () => {
 		expect( components ).toHaveLength( 16 );
 		expect( components.map( vertexCount ) ).toEqual( Array.from( { length: 16 }, () => 12 ) );
 		expect( vertexCount( data.lods[ 0 ]! ) ).toBeLessThanOrEqual( 200 );
-		expect( median( metrics.flattening ) ).toBeGreaterThanOrEqual( 0.6 );
+		// burial 0.48 で沈めたぶん、地上に見える部分は少し平たい。
+		expect( median( metrics.flattening ) ).toBeGreaterThanOrEqual( 0.58 );
 		expect( median( metrics.flattening ) ).toBeLessThanOrEqual( 0.75 );
 		expect( median( metrics.elongation ) ).toBeLessThanOrEqual( 1.2 );
 		expect( Math.max( ...metrics.elongation ) ).toBeLessThanOrEqual( 1.5 );
@@ -338,7 +339,8 @@ describe( 'procedural pebbles data', () => {
 		for ( const fraction of metrics.embeddedFraction ) {
 
 			expect( fraction ).toBeGreaterThan( 0.19 );
-			expect( fraction ).toBeLessThan( 0.22 );
+			// burial 0.48（以前は 0.4）で、地中の割合が少し増える。
+			expect( fraction ).toBeLessThan( 0.25 );
 
 		}
 

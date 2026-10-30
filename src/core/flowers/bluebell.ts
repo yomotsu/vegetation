@@ -346,7 +346,8 @@ function addBluebellLeaf( builder: MeshBuilder, plant: FlowerPlacement, angle: n
 	const u = ( pixels: number ) => ( LEAF_CENTER_X + pixels ) / STEM_WIDTH;
 	const v = ( ratio: number ) => ( rowY + LEAF_ROW_HEIGHT * ratio ) / STEM_HEIGHT;
 	const vertices = [
-		builder.addVertex( [ plant.x, 0.006, plant.z ], [ 0, 1, 0 ], [ u( 0 ), v( 0 ) ], [ 1, 1, 1 ], 0.02 ),
+		// 付け根は地面にわずかに埋める。
+		builder.addVertex( [ plant.x, - 0.003, plant.z ], [ 0, 1, 0 ], [ u( 0 ), v( 0 ) ], [ 1, 1, 1 ], 0.02 ),
 		builder.addVertex( [ middleX - tangentX * halfWidth * span, length * 0.3, middleZ - tangentZ * halfWidth * span ], [ 0, 1, 0 ], [ u( - LEAF_HALF_WIDTH * span ), v( LEAF_WIDEST ) ], [ 1, 1, 1 ], 0.34 ),
 		builder.addVertex( [ tipX, length * 0.34, tipZ ], [ 0, 1, 0 ], [ u( 0 ), v( 1 ) ], [ 1, 1, 1 ], 0.48 ),
 		builder.addVertex( [ middleX + tangentX * halfWidth * span, length * 0.3, middleZ + tangentZ * halfWidth * span ], [ 0, 1, 0 ], [ u( LEAF_HALF_WIDTH * span ), v( LEAF_WIDEST ) ], [ 1, 1, 1 ], 0.34 ),

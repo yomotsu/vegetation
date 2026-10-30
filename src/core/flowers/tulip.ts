@@ -95,7 +95,8 @@ function addTulipLeaf( builder: MeshBuilder, plant: FlowerPlacement, side: numbe
 	const length = Math.max( 0.22, ( plant.height - 0.06 ) * 0.74 );
 	const baseX = plant.x;
 	const baseZ = plant.z;
-	const base = builder.addVertex( [ baseX, 0.025, baseZ ], [ 0, 1, 0 ], [ side === 0 ? 0.46 : 0.54, 0.12 ], [ 1, 1, 1 ], 0.08 );
+	// 葉の付け根は地面にわずかに埋める（浮いて見えないように）。
+	const base = builder.addVertex( [ baseX, - 0.003, baseZ ], [ 0, 1, 0 ], [ side === 0 ? 0.46 : 0.54, 0.12 ], [ 1, 1, 1 ], 0.08 );
 	const outer = builder.addVertex( [ baseX + radialX * 0.055, length * 0.69, baseZ + radialZ * 0.055 ], [ 0, 1, 0 ], [ side === 0 ? 0.18 : 0.82, 0.63 ], [ 1, 1, 1 ], 0.69 );
 	const tip = builder.addVertex( [ baseX + radialX * 0.035, length, baseZ + radialZ * 0.035 ], [ 0, 1, 0 ], [ side === 0 ? 0.28 : 0.72, 0.79 ], [ 1, 1, 1 ], 0.82 );
 	builder.addTriangle( base, outer, tip );

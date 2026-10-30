@@ -92,7 +92,7 @@ export const kinds: VegetationKind[] = [
 			spread: 1.6,
 			size: 0.32,
 			sizeVariation: 0.48,
-			burial: 0.4,
+			burial: 0.48,
 			moss: 0,
 		},
 	},

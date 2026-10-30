@@ -205,13 +205,13 @@ describe( 'rock texture output goldens', () => {
     "albedo": "80883d5a31b68957ea8a17853ca025ff7591949e92253d2d77b58a3d35cbef1d",
     "normal": "1dd9bb08c056f10dabd998f2815a54233a6957080c2d5830abca95777f28aa3e",
     "lods": [
-      "e7f47e7a7b062d8a4c50bc4a0a9d5b35929ad5206a1edcb72de6c50356ea2a3f",
-      "6a7199ae15cf9c01131efcc48afc706f39217ea01b13e0cb587f1227c6112f27",
-      "6583fafa13252702a4441316aaeda62cd9c50a07c51a329a0a54416faed1a16e",
-      "23faab8b39c108e10cdedd2f9d74ddf47b7b3384c59bfb10f88b2c31f0ccfeb6",
-      "c19beaba7b8301f06d78917b2eefa8211cfbce08bf838e2fbbcbfac24439ebc2"
+      "77f1e0c31d1e63301b12ac6821a67e15b1f21a05e241d382d7c8547b91c254e2",
+      "78697e3934ad1b4131617e926b185f68a17f6aed27b65a880cb6ac81554f9fc9",
+      "5cb10f4acac7dfbc9a3efa5b4e74783f49fd466be84e920523f5b8561462ddcc",
+      "ab16a854318c0c68b8c20b9304c7a3dea1b4b0bd9e625fd91e0c7aa44dc2bf74",
+      "984c8a7e4f3b3c35bc43dad0cf504fda78b670b5916d8c3be08992ac465fbe30"
     ],
-    "impostor": "10cf76cfe983f4af7442a1b5298fa9979ec926afa84c29e909adb4b2b2b37c05"
+    "impostor": "ae1c90ef01d03eb25ab110be4c049a4b426147ef8e05a75f68cc5a0e32e3d487"
   }
 };
 		const actual: Record<string, unknown> = {};

@@ -299,8 +299,8 @@ function addCallaLeaf( builder: MeshBuilder, plant: FlowerPlacement, angle: numb
 	const baseHalf = 0.006 * scale;
 	// 根元は茎のすぐ脇。
 	const base = [
-		builder.addVertex( point( 0.007, - baseHalf, 0.004 ), [ 0, 1, 0 ], [ u( - baseHalf * pixelsPerMetre ), v( 0 ) ], [ 1, 1, 1 ], 0.02 ),
-		builder.addVertex( point( 0.007, baseHalf, 0.004 ), [ 0, 1, 0 ], [ u( baseHalf * pixelsPerMetre ), v( 0 ) ], [ 1, 1, 1 ], 0.02 ),
+		builder.addVertex( point( 0.007, - baseHalf, - 0.003 ), [ 0, 1, 0 ], [ u( - baseHalf * pixelsPerMetre ), v( 0 ) ], [ 1, 1, 1 ], 0.02 ),
+		builder.addVertex( point( 0.007, baseHalf, - 0.003 ), [ 0, 1, 0 ], [ u( baseHalf * pixelsPerMetre ), v( 0 ) ], [ 1, 1, 1 ], 0.02 ),
 	];
 	// 最も広い所: 中央は外へ出し、左右の縁は茎の側へ寄せて丸める。葉は約 65° で立ち上がる。
 	const middleHeight = length * LEAF_WIDEST * 0.9;

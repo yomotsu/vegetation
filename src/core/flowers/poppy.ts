@@ -167,9 +167,10 @@ function addPoppyLeaf( builder: MeshBuilder, plant: FlowerPlacement, angle: numb
 	const tipV = ( leaf.y + leaf.h ) / STEM_HEIGHT;
 	const middleV = baseV + ( tipV - baseV ) * 0.56;
 	const vertices = [
-		builder.addVertex( [ baseX, 0.012, baseZ ], [ 0, 1, 0 ], [ centerU - leaf.lean * 0.5 * leaf.h / STEM_WIDTH, baseV ], [ 1, 1, 1 ], 0.04 ),
+		// 付け根は地面にわずかに埋め、葉先も地面近くへ下ろす（ロゼットが浮いて見えないように）。
+		builder.addVertex( [ baseX, - 0.003, baseZ ], [ 0, 1, 0 ], [ centerU - leaf.lean * 0.5 * leaf.h / STEM_WIDTH, baseV ], [ 1, 1, 1 ], 0.04 ),
 		builder.addVertex( [ centerX - tangentX * halfWidth, 0.028, centerZ - tangentZ * halfWidth ], [ 0, 1, 0 ], [ centerU - halfU, middleV ], [ 1, 1, 1 ], 0.22 ),
-		builder.addVertex( [ tipX, 0.018, tipZ ], [ 0, 1, 0 ], [ centerU + leaf.lean * 0.5 * leaf.h / STEM_WIDTH, tipV ], [ 1, 1, 1 ], 0.12 ),
+		builder.addVertex( [ tipX, 0.006, tipZ ], [ 0, 1, 0 ], [ centerU + leaf.lean * 0.5 * leaf.h / STEM_WIDTH, tipV ], [ 1, 1, 1 ], 0.12 ),
 		builder.addVertex( [ centerX + tangentX * halfWidth, 0.028, centerZ + tangentZ * halfWidth ], [ 0, 1, 0 ], [ centerU + halfU, middleV ], [ 1, 1, 1 ], 0.22 ),
 	];
 	builder.addTriangle( vertices[ 0 ]!, vertices[ 1 ]!, vertices[ 2 ]! );

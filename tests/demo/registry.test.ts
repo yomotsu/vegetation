@@ -46,7 +46,7 @@ describe( 'demo registry', () => {
 			spread: 1.6,
 			size: 0.32,
 			sizeVariation: 0.48,
-			burial: 0.4,
+			burial: 0.48,
 			moss: 0,
 		} );
 		expect( kinds[ 2 ]!.create( {} ).getColor( 'stone' ).getHex() ).toBe( 0xffffff );
