@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { generateBroadleafTreeData } from '../../src/core/trees/broadleaf';
+import { generateBushData } from '../../src/core/trees/bush';
+import { generatePineTreeData } from '../../src/core/trees/pine';
+import { generateWillowTreeData } from '../../src/core/trees/willow';
 import { validateMeshData } from '../helpers/validateMeshData';
 
 const trees = [
-	{ name: 'broadleaf', generate: generateBroadleafTreeData, kind: 'broadleaf-tree', height: 6, bark: 0x8a7350, leaf: 0x4f9a2a, parts: [ 'bark', 'leaf' ] },
+	{ name: 'broadleaf', generate: generateBroadleafTreeData, kind: 'broadleaf-tree', height: 6, bark: 0x8a7350, leaf: 0x4f9a2a, parts: [ 'bark', 'leaf' ], maxVertices: 800, collider: true },
+	{ name: 'bush', generate: generateBushData, kind: 'bush', height: 1.3, bark: 0x6e5a40, leaf: 0x55a02e, parts: [ 'bark', 'leaf' ], maxVertices: 500, collider: false },
+	{ name: 'pine', generate: generatePineTreeData, kind: 'pine-tree', height: 9, bark: 0xb8653a, leaf: 0x3f8a4c, parts: [ 'bark', 'leaf' ], maxVertices: 1000, collider: true },
+	{ name: 'willow', generate: generateWillowTreeData, kind: 'willow-tree', height: 7, bark: 0x6f6a45, leaf: 0x6cad3a, parts: [ 'bark', 'leaf' ], maxVertices: 900, collider: true },
 ];
 
 describe( 'stylized trees', () => {
@@ -20,8 +26,8 @@ describe( 'stylized trees', () => {
 		expect( data.bounds.height ).toBe( tree.height );
 		expect( data.parts[ 0 ]!.defaultColor ).toBe( tree.bark );
 		expect( data.parts[ 1 ]!.defaultColor ).toBe( tree.leaf );
-		expect( data.collider ).not.toBeNull();
-		expect( data.lods[ 0 ]!.positions.length / 3 ).toBeLessThanOrEqual( 3000 );
+		expect( data.collider !== null ).toBe( tree.collider );
+		expect( data.lods[ 0 ]!.positions.length / 3 ).toBeLessThanOrEqual( tree.maxVertices );
 		let maximumY = - Infinity;
 		for ( let index = 1; index < data.lods[ 0 ]!.positions.length; index += 3 ) maximumY = Math.max( maximumY, data.lods[ 0 ]!.positions[ index ]! );
 		expect( maximumY ).toBeLessThan( data.bounds.height * 1.02 );
@@ -100,14 +106,34 @@ describe( 'stylized trees', () => {
 
 	} );
 
-	it( 'draws the broadleaf leaf cards from both sides with outward normals', () => {
+	it.each( trees )( 'draws the $name leaves from both sides with outward normals', ( tree ) => {
 
-		const data = generateBroadleafTreeData( { seed: 5 } );
+		const data = tree.generate( { seed: 5 } );
 		const leaf = data.parts.find( ( part ) => part.name === 'leaf' )!;
 		expect( leaf.upNormalCards ).toBe( true );
 		expect( leaf.doubleSided ).toBe( false );
 		expect( leaf.normalTexture ).toBe( 'leafNormal' );
-		expect( data.textures.leafNormal!.width ).toBe( 512 );
+		expect( data.textures.leafNormal!.width ).toBe( data.textures.leaf!.width );
+
+	} );
+
+	it.each( trees )( 'keeps the $name vertex count within its budget across seeds', ( tree ) => {
+
+		for ( let seed = 1; seed <= 12; seed ++ ) expect( tree.generate( { seed } ).lods[ 0 ]!.positions.length / 3 ).toBeLessThanOrEqual( tree.maxVertices );
+
+	} );
+
+	it( 'wraps the willow canopy texture horizontally around its bells', () => {
+
+		const data = generateWillowTreeData( { seed: 3 } );
+		const texture = data.textures.leaf!;
+		expect( texture.wrapS ).toBe( 'repeat' );
+		expect( texture.wrapT ).toBe( 'clamp' );
+		const alphaAt = ( x: number, y: number ) => texture.data[ ( y * texture.width + x ) * 4 + 3 ]!;
+		// 左右の端をまたいで葉が続く（どこかの行で両端とも不透明）。
+		let crossesSeam = false;
+		for ( let y = 0; y < texture.height; y ++ ) if ( alphaAt( 0, y ) === 255 && alphaAt( texture.width - 1, y ) === 255 ) crossesSeam = true;
+		expect( crossesSeam ).toBe( true );
 
 	} );
 

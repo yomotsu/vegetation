@@ -12,6 +12,12 @@ export class MeshBuilder {
 	private _groups: MeshGroup[] = [];
 	private _currentPartIndex = 0;
 
+	get vertexCount(): number {
+
+		return this._positions.length / 3;
+
+	}
+
 	addVertex( p: Vec3, n: Vec3, uv: [ number, number ], color: Color3, wind: number, impostorCard = 0 ): number {
 
 		const index = this._positions.length / 3;

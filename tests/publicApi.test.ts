@@ -8,26 +8,35 @@ describe( 'public entry points', () => {
 		const exports = Object.keys( await import( '../src/index' ) ).sort();
 		expect( exports ).toEqual( [
 			'BroadleafTreeMesh',
+			'BushMesh',
 			'FlowersMesh',
 			'GrassMesh',
 			'PebblesMesh',
+			'PineTreeMesh',
 			'RockMesh',
 			'TreeMesh',
 			'VegetationAsset',
 			'VegetationMesh',
+			'WillowTreeMesh',
 			'disposeVegetationWorkers',
 			'generateBroadleafTree',
 			'generateBroadleafTreeAsync',
+			'generateBush',
+			'generateBushAsync',
 			'generateFlowers',
 			'generateFlowersAsync',
 			'generateGrass',
 			'generateGrassAsync',
 			'generatePebbles',
 			'generatePebblesAsync',
+			'generatePineTree',
+			'generatePineTreeAsync',
 			'generateRock',
 			'generateRockAsync',
 			'generateTree',
 			'generateTreeAsync',
+			'generateWillowTree',
+			'generateWillowTreeAsync',
 			'orientBillboardInstances',
 		] );
 
@@ -38,11 +47,14 @@ describe( 'public entry points', () => {
 		const exports = Object.keys( await import( '../src/core/index' ) ).sort();
 		expect( exports ).toEqual( [
 			'generateBroadleafTreeData',
+			'generateBushData',
 			'generateFlowersData',
 			'generateGrassData',
 			'generatePebblesData',
+			'generatePineTreeData',
 			'generateRockData',
 			'generateTreeData',
+			'generateWillowTreeData',
 		] );
 
 	} );

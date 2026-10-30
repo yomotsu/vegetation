@@ -16,7 +16,7 @@ describe( 'demo registry', () => {
 
 	it( 'registers separate tree kinds with their supported controls', () => {
 
-		expect( kinds ).toHaveLength( 6 );
+		expect( kinds ).toHaveLength( 9 );
 		expect( kinds[ 0 ]!.name ).toBe( 'Tree' );
 		expect( kinds[ 0 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
 		expect( kinds[ 0 ]!.options ).toEqual( {
@@ -25,14 +25,14 @@ describe( 'demo registry', () => {
 			crownSize: 1,
 			branchCount: 10,
 		} );
-		expect( kinds.slice( 1, 2 ).map( ( kind ) => kind.name ) ).toEqual( [ 'Broadleaf' ] );
+		expect( kinds.slice( 1, 5 ).map( ( kind ) => kind.name ) ).toEqual( [ 'Broadleaf', 'Bush', 'Pine', 'Willow' ] );
 		expect( kinds[ 1 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
 		expect( kinds[ 1 ]!.options ).toEqual( { seed: 1, height: expect.any( Number ) } );
 		expect( kinds[ 1 ]!.defaultColors ).toEqual( { leaf: '#4f9a2a', bark: '#8a7350' } );
-		expect( kinds[ 2 ]!.name ).toBe( 'Rock' );
-		expect( kinds[ 2 ]!.colorParts ).toEqual( [ 'rock' ] );
-		expect( kinds[ 2 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
-		expect( kinds[ 2 ]!.options ).toEqual( {
+		expect( kinds[ 5 ]!.name ).toBe( 'Rock' );
+		expect( kinds[ 5 ]!.colorParts ).toEqual( [ 'rock' ] );
+		expect( kinds[ 5 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
+		expect( kinds[ 5 ]!.options ).toEqual( {
 			seed: 1,
 			size: 6.4,
 			roughness: 1.2,
@@ -41,10 +41,10 @@ describe( 'demo registry', () => {
 			closeBottom: false,
 			moss: 0,
 		} );
-		expect( kinds[ 3 ]!.name ).toBe( 'Pebbles' );
-		expect( kinds[ 3 ]!.colorParts ).toEqual( [ 'stone' ] );
-		expect( kinds[ 3 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
-		expect( kinds[ 3 ]!.options ).toEqual( {
+		expect( kinds[ 6 ]!.name ).toBe( 'Pebbles' );
+		expect( kinds[ 6 ]!.colorParts ).toEqual( [ 'stone' ] );
+		expect( kinds[ 6 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
+		expect( kinds[ 6 ]!.options ).toEqual( {
 			seed: 1,
 			count: 16,
 			spread: 1.6,
@@ -53,19 +53,19 @@ describe( 'demo registry', () => {
 			burial: 0.48,
 			moss: 0,
 		} );
-		expect( kinds[ 3 ]!.create( {} ).getColor( 'stone' ).getHex() ).toBe( 0xffffff );
-		expect( kinds[ 4 ]!.name ).toBe( 'Grass' );
-		expect( kinds[ 4 ]!.colorParts ).toEqual( [ 'blade' ] );
-		expect( kinds[ 4 ]!.colorOptions ).toEqual( { blade: 'bladeColor' } );
-		expect( kinds[ 4 ]!.defaultColors ).toEqual( { blade: '#4b942b' } );
-		expect( kinds[ 4 ]!.options ).toEqual( { seed: 1, height: 0.45 } );
-		expect( kinds[ 4 ]!.create( {} ).getColor( 'blade' ).getHex() ).toBe( 0x4b942b );
-		expect( kinds[ 5 ]!.name ).toBe( 'Flowers' );
-		expect( kinds[ 5 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
-		expect( kinds[ 5 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
-		expect( kinds[ 5 ]!.defaultColors ).toEqual( { petal: '#8b5fbf', stem: '#2f6f1e', centerColor: '#5c3d7a' } );
-		expect( kinds[ 5 ]!.textureColors ).toEqual( { centerColor: '#5c3d7a' } );
-		expect( kinds[ 5 ]!.options ).toEqual( { seed: 1, variety: 'allium', count: 6, spread: 0.29, height: 0.37 } );
+		expect( kinds[ 6 ]!.create( {} ).getColor( 'stone' ).getHex() ).toBe( 0xffffff );
+		expect( kinds[ 7 ]!.name ).toBe( 'Grass' );
+		expect( kinds[ 7 ]!.colorParts ).toEqual( [ 'blade' ] );
+		expect( kinds[ 7 ]!.colorOptions ).toEqual( { blade: 'bladeColor' } );
+		expect( kinds[ 7 ]!.defaultColors ).toEqual( { blade: '#4b942b' } );
+		expect( kinds[ 7 ]!.options ).toEqual( { seed: 1, height: 0.45 } );
+		expect( kinds[ 7 ]!.create( {} ).getColor( 'blade' ).getHex() ).toBe( 0x4b942b );
+		expect( kinds[ 8 ]!.name ).toBe( 'Flowers' );
+		expect( kinds[ 8 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
+		expect( kinds[ 8 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
+		expect( kinds[ 8 ]!.defaultColors ).toEqual( { petal: '#8b5fbf', stem: '#2f6f1e', centerColor: '#5c3d7a' } );
+		expect( kinds[ 8 ]!.textureColors ).toEqual( { centerColor: '#5c3d7a' } );
+		expect( kinds[ 8 ]!.options ).toEqual( { seed: 1, variety: 'allium', count: 6, spread: 0.29, height: 0.37 } );
 
 	} );
 

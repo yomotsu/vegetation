@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { RockMesh } from '../../src/three/meshes';
 import { TreeMesh, generateTree } from '../../src/three/trees/fir';
 import { BroadleafTreeMesh, generateBroadleafTree } from '../../src/three/trees/broadleaf';
+import { BushMesh } from '../../src/three/trees/bush';
+import { PineTreeMesh } from '../../src/three/trees/pine';
+import { WillowTreeMesh } from '../../src/three/trees/willow';
 import { orientBillboardInstances, VegetationMesh } from '../../src/three/VegetationMesh';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 
@@ -106,6 +109,16 @@ describe( 'tree meshes', () => {
 		broadleaf.dispose();
 		customBroadleaf.dispose();
 		customBroadleaf.dispose();
+
+		for ( const [ Mesh, height, leaf, bark ] of [ [ BushMesh, 1.3, 0x55a02e, 0x6e5a40 ], [ PineTreeMesh, 9, 0x3f8a4c, 0xb8653a ], [ WillowTreeMesh, 7, 0x6cad3a, 0x6f6a45 ] ] as const ) {
+
+			const mesh = new Mesh( { seed: 1 } );
+			expect( mesh.asset.data.bounds.height ).toBe( height );
+			expect( mesh.getColor( 'leaf' ).getHex() ).toBe( leaf );
+			expect( mesh.getColor( 'bark' ).getHex() ).toBe( bark );
+			mesh.dispose();
+
+		}
 
 	} );
 

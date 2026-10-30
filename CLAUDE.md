@@ -22,7 +22,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - メイン `vegetation`: `*Mesh`、`generate*` / `generate*Async`、`VegetationAsset`、`VegetationMesh`、`orientBillboardInstances`、`disposeVegetationWorkers` と型だけ。乱数・ノイズ・色変換などの部品は公開しない（デモは `../src/...` を直接 import）
 - `vegetation/core`: `generate{Tree,Rock,Pebbles,Grass,Flowers}Data` と型だけ。`vegetation/webgpu`: 読み込むと TSL マテリアルを登録
 - 公開リストは `tests/publicApi.test.ts` で固定している。export を増やしたらここも直す
-- stylized な木（broadleaf。bush / pine / willow は予定）は種類ごとに別クラス・別モジュール（`src/core/trees/*.ts`、`src/three/trees/*.ts`）。tree shaking のため種類のモジュール同士は import しない。Worker も kind ごとに動的 import して chunk を分ける
+- stylized な木（broadleaf / bush / pine / willow）は種類ごとに別クラス・別モジュール（`src/core/trees/*.ts`、`src/three/trees/*.ts`）。tree shaking のため種類のモジュール同士は import しない（共通は `stylized.ts` / `stylizedTextures.ts`）。Worker も kind ごとに動的 import して chunk を分ける
 - GPU 圧縮: 既定 on。`compressTextures: false` で opt-out。通常は `VegetationMesh` が最初に描画されたとき renderer に対応する共有 `KTX2Loader` を遅延生成し、`detectSupport( renderer )` を呼ぶ。`getParts()` / `InstancedMesh` では `asset.setRenderer( renderer )` を呼ぶ。利用者が loader を渡した場合はそちらを使う
 
 ## アルゴリズム・設計
@@ -67,7 +67,9 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 ### stylized な木（2026-10-30〜）
 - 参考: CGTrader「Simple Trees Pack」と、ユーザーの Blender 素材 `~/Library/CloudStorage/Dropbox/works/_material/3d/models/vegitation-mountain/`（Forest の Tree01〜03 / Bush01、Leaf01 / Trunk01 テクスチャ）。フォルダの一覧は TCC で拒否されるが、ファイルはパス指定で読める（Blender は `/Applications/Blender.app/Contents/MacOS/Blender -b` で調べられる）
 - 葉は大きな正方形カードに房テクスチャを丸ごと貼り、法線は塊の中心から外向き（カードの向きではない）。`upNormalCards: true`
-- LOD0 が採用されるまで LOD1〜4 は作らない（LOD0 の複製を入れる）。broadleaf は採用済み（2026-10-30）。bush / pine / willow は未着手（Codex の仮実装は `.superpowers/sdd/2026-10-24-vegetation/stubs/` に退避）
+- LOD0 が採用されるまで LOD1〜4 は作らない（LOD0 の複製を入れる）。4 種とも LOD0 採用済み（2026-10-30）。次は LOD1〜4
+- 頂点数の目標: broadleaf ≤ 800、pine ≤ 1000、willow ≤ 900（bush 約 450）。葉カードは木全体の枚数を固定して塊の大きさで配分する。broadleaf / bush は房 4 つの大カード（内側）＋房 1 つの小カード（表面）
+- willow の葉は枝先に置く釣り鐘形の殻にシェブロンの垂れ枝テクスチャを巻く（YouTube「Stylized Willow Tree Tutorial」の方式）。主枝は 2 方向にまとめる
 
 ## 注意事項
 

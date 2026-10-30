@@ -6,6 +6,9 @@ import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation
 import type { GrassOptions } from '../core/generators/grass';
 import type { FlowersOptions } from '../core/generators/flowers';
 import type { BroadleafTreeOptions } from '../core/trees/broadleaf';
+import type { WillowTreeOptions } from '../core/trees/willow';
+import type { PineTreeOptions } from '../core/trees/pine';
+import type { BushOptions } from '../core/trees/bush';
 import type { VegetationData } from '../core/types';
 import type { NormalizedVegetationGeneration } from '../core/generationOptions';
 import { encodeUastcTexture } from '../core/uastc';
@@ -37,6 +40,18 @@ const generatorLoaders: Record<VegetationWorkerKind, () => Promise<WorkerGenerat
 	'broadleaf-tree': async () => {
 		const generator = await import( '../core/trees/broadleaf' );
 		return createWorkerGenerator<BroadleafTreeOptions>( generator.generateBroadleafTreeData, generator.normalizeBroadleafTreeGenerationOptions );
+	},
+	'willow-tree': async () => {
+		const generator = await import( '../core/trees/willow' );
+		return createWorkerGenerator<WillowTreeOptions>( generator.generateWillowTreeData, generator.normalizeWillowTreeGenerationOptions );
+	},
+	'pine-tree': async () => {
+		const generator = await import( '../core/trees/pine' );
+		return createWorkerGenerator<PineTreeOptions>( generator.generatePineTreeData, generator.normalizePineTreeGenerationOptions );
+	},
+	bush: async () => {
+		const generator = await import( '../core/trees/bush' );
+		return createWorkerGenerator<BushOptions>( generator.generateBushData, generator.normalizeBushGenerationOptions );
 	},
 	rock: async () => {
 		const [ generator, options ] = await Promise.all( [ import( '../core/generators/rock' ), import( '../core/generationOptions/rock' ) ] );

@@ -1,6 +1,7 @@
 import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
-import type { MeshData, Vec3 } from '../types';
+import type { Random } from '../random';
+import type { Color3, MeshData, Vec3 } from '../types';
 
 export function addVec3( a: Vec3, b: Vec3 ): Vec3 {
 
@@ -186,9 +187,10 @@ export function addStylizedLimb(
 	sides: number,
 	partIndex: number,
 	wind: ( t: number ) => number = ( t ) => t,
+	samplesPerSegment = 3,
 ): { spine: Vec3[]; radii: number[] } {
 
-	const sampled = sampleLimbCurve( points, radii );
+	const sampled = sampleLimbCurve( points, radii, samplesPerSegment );
 	const local = new MeshBuilder();
 	local.beginGroup( partIndex );
 	addTube( local, sampled.spine, sampled.radii, sides, { color: [ 1, 1, 1 ], wind, capEnd: false } );
@@ -210,6 +212,100 @@ export function addStylizedLimb(
 
 	appendMesh( target, mesh, partIndex );
 	return sampled;
+
+}
+
+export interface FoliageCardOptions {
+	/** カード中心の深さ（ローブ半径 × 0.78 に対する比）の範囲。省略時は表面寄りに多く内側にも少し。 */
+	depth?: [ number, number ];
+	/** true ならテクスチャを 2×2 に分けた区画の 1 つだけを貼る（房を区画ごとに描いたテクスチャ用）。 */
+	quadrant?: boolean;
+	/** カードの向きを外向きからどれだけばらすか。省略時 0.9。小さいほど真横を向いたカードが減る。 */
+	jitter?: number;
+}
+
+export interface FoliageLobe {
+	center: Vec3;
+	radius: number;
+	/** 軸ごとの縮尺。低木の平たいドームなどに使う。 */
+	scale?: Vec3;
+}
+
+function randomUnitVector( random: Random ): Vec3 {
+
+	const y = random.range( - 1, 1 );
+	const angle = random.range( 0, Math.PI * 2 );
+	const ring = Math.sqrt( 1 - y * y );
+	return [ ring * Math.cos( angle ), y, ring * Math.sin( angle ) ];
+
+}
+
+/**
+ * 葉の房テクスチャを丸ごと貼った正方形カードで球状の塊を作る。法線はカードの向きではなく、
+ * 塊と樹冠の中心から外向きにして、塊として陰影を付ける。
+ */
+export function addFoliageLobeCards(
+	builder: MeshBuilder,
+	random: Random,
+	lobe: FoliageLobe,
+	crownCenter: Vec3,
+	crownRadius: number,
+	count: number,
+	cardSize: number,
+	options: FoliageCardOptions = {},
+): void {
+
+	const scale = lobe.scale ?? [ 1, 1, 1 ];
+	const goldenAngle = Math.PI * ( 3 - Math.sqrt( 5 ) );
+
+	for ( let index = 0; index < count; index ++ ) {
+
+		// 表面寄りに多く、内側にも少し置いて透けを防ぐ。
+		const y = 1 - 2 * ( index + 0.5 ) / count;
+		const ring = Math.sqrt( Math.max( 0, 1 - y * y ) );
+		const angle = index * goldenAngle + random.range( - 0.3, 0.3 );
+		const direction = normalizeVec3( [ ring * Math.cos( angle ) + random.range( - 0.15, 0.15 ), y * 0.85 + random.range( - 0.15, 0.15 ), ring * Math.sin( angle ) + random.range( - 0.15, 0.15 ) ] );
+		const depth = options.depth === undefined ? 1 - 0.5 * random.next() * random.next() : random.range( options.depth[ 0 ], options.depth[ 1 ] );
+		const offset = scaleVec3( direction, lobe.radius * depth * 0.78 );
+		const center = addVec3( lobe.center, [ offset[ 0 ] * scale[ 0 ], offset[ 1 ] * scale[ 1 ], offset[ 2 ] * scale[ 2 ] ] );
+		// 外向き寄りのランダムな向き。真横を向いたカードが輪郭から線として飛び出さないようにする。
+		const cardNormal = normalizeVec3( addVec3( direction, scaleVec3( randomUnitVector( random ), options.jitter ?? 0.9 ) ) );
+		const reference: Vec3 = Math.abs( cardNormal[ 1 ] ) > 0.9 ? [ 1, 0, 0 ] : [ 0, 1, 0 ];
+		const right = scaleVec3( normalizeVec3( crossVec3( reference, cardNormal ) ), cardSize * 0.5 );
+		const up = scaleVec3( normalizeVec3( crossVec3( cardNormal, right ) ), cardSize * 0.5 );
+		const corners: Vec3[] = [
+			subtractVec3( subtractVec3( center, right ), up ),
+			subtractVec3( addVec3( center, right ), up ),
+			addVec3( addVec3( center, right ), up ),
+			addVec3( subtractVec3( center, right ), up ),
+		];
+		let uvs: [ number, number ][] = [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ] ];
+
+		if ( options.quadrant === true ) {
+
+			const quadrant = random.int( 0, 3 );
+			const u = ( quadrant % 2 ) * 0.5;
+			const v = Math.floor( quadrant / 2 ) * 0.5;
+			uvs = [ [ u, v ], [ u + 0.5, v ], [ u + 0.5, v + 0.5 ], [ u, v + 0.5 ] ];
+
+		}
+		const indices = corners.map( ( corner, cornerIndex ) => {
+
+			const lobeOffset = subtractVec3( corner, lobe.center );
+			const fromLobe: Vec3 = [ lobeOffset[ 0 ] / ( lobe.radius * scale[ 0 ] ), lobeOffset[ 1 ] / ( lobe.radius * scale[ 1 ] ), lobeOffset[ 2 ] / ( lobe.radius * scale[ 2 ] ) ];
+			const fromCrown = scaleVec3( subtractVec3( corner, crownCenter ), 1 / crownRadius );
+			const normal = normalizeVec3( addVec3( addVec3( fromLobe, scaleVec3( fromCrown, 0.5 ) ), [ 0, 0.15, 0 ] ) );
+			const outside = clamp( Math.hypot( ...fromLobe ), 0, 1 );
+			const brightness = clamp( 0.55 + 0.45 * outside, 0.5, 1 );
+			const color: Color3 = [ brightness, brightness, brightness ];
+			const wind = clamp( Math.hypot( corner[ 0 ], corner[ 2 ] ) / crownRadius, 0.2, 1 );
+			return builder.addVertex( corner, normal, uvs[ cornerIndex ]!, color, wind );
+
+		} );
+		builder.addTriangle( indices[ 0 ]!, indices[ 1 ]!, indices[ 2 ]! );
+		builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 3 ]! );
+
+	}
 
 }
 

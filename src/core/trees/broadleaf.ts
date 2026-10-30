@@ -2,10 +2,11 @@ import { MeshBuilder } from '../meshBuilder';
 import { addTube } from '../primitives';
 import { createRandom } from '../random';
 import type { Random } from '../random';
-import type { Color3, ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
+import type { ColliderData, MeshData, PartDef, Vec3, VegetationData } from '../types';
 import type { NormalizedVegetationGeneration } from '../vegetationGeneration';
-import { createBroadleafLeafTextures, createStylizedBarkTextures } from './broadleafTextures';
-import { addStylizedLimb, addVec3, cloneMeshData, createRootFlaredTrunkSpine, crossVec3, getMeshBoundsRadius, getStylizedRootDepth, normalizeVec3, scaleVec3, subtractVec3 } from './stylized';
+import { createLeafSprayTextures, createStylizedBarkTextures, LEAF_SPRAY_TEXTURE_SIZE } from './stylizedTextures';
+import { addFoliageLobeCards, addStylizedLimb, addVec3, cloneMeshData, createRootFlaredTrunkSpine, getMeshBoundsRadius, getStylizedRootDepth, normalizeVec3, scaleVec3, subtractVec3 } from './stylized';
+import type { FoliageLobe } from './stylized';
 
 export interface BroadleafTreeOptions {
 	seed?: number;
@@ -20,31 +21,13 @@ export const DEFAULT_BROADLEAF_TREE_BARK_COLOR = 0x8a7350;
 
 const barkPartIndex = 0;
 const leafPartIndex = 1;
-
-interface Lobe {
-	center: Vec3;
-	radius: number;
-}
-
-function clamp( value: number, minimum: number, maximum: number ): number {
-
-	return Math.max( minimum, Math.min( maximum, value ) );
-
-}
-
-function randomUnitVector( random: Random ): Vec3 {
-
-	const y = random.range( - 1, 1 );
-	const angle = random.range( 0, Math.PI * 2 );
-	const ring = Math.sqrt( 1 - y * y );
-	return [ ring * Math.cos( angle ), y, ring * Math.sin( angle ) ];
-
-}
+const innerCardCount = 50;
+const outerCardCount = 56;
 
 // 樹冠は数個の球（ローブ）の集まり。頂上に 1 個、残りはその周りに少し低く並べる。
-function createLobes( random: Random, height: number, crownCenter: Vec3, splitY: number ): Lobe[] {
+function createLobes( random: Random, height: number, crownCenter: Vec3, splitY: number ): FoliageLobe[] {
 
-	const lobes: Lobe[] = [];
+	const lobes: FoliageLobe[] = [];
 	const topRadius = height * random.range( 0.22, 0.25 );
 	lobes.push( { center: [ crownCenter[ 0 ] + random.range( - 0.04, 0.04 ) * height, height - topRadius * 0.92, crownCenter[ 2 ] + random.range( - 0.04, 0.04 ) * height ], radius: topRadius } );
 	const sideCount = random.int( 2, 4 );
@@ -64,66 +47,44 @@ function createLobes( random: Random, height: number, crownCenter: Vec3, splitY:
 
 }
 
-function addLimbToLobe( builder: MeshBuilder, random: Random, base: Vec3, baseRadius: number, lobe: Lobe, height: number ): void {
+// 付け根から外へ出てから上へ曲がり、ローブの中心手前で終わる曲線（付け根は含まない）。
+function limbCurveToLobe( random: Random, base: Vec3, lobe: FoliageLobe ): Vec3[] {
 
-	// 付け根から外へ出てから上へ曲がり、ローブの中心手前で終わる。
 	const target = addVec3( lobe.center, [ random.range( - 0.2, 0.2 ) * lobe.radius, - lobe.radius * 0.15, random.range( - 0.2, 0.2 ) * lobe.radius ] );
 	const offset = subtractVec3( target, base );
 	const horizontal: Vec3 = [ offset[ 0 ], 0, offset[ 2 ] ];
-	const points: Vec3[] = [
-		base,
+	return [
 		addVec3( base, addVec3( scaleVec3( horizontal, 0.45 ), [ 0, offset[ 1 ] * 0.3, 0 ] ) ),
 		addVec3( base, addVec3( scaleVec3( horizontal, 0.85 ), [ 0, offset[ 1 ] * 0.7, 0 ] ) ),
 		target,
 	];
-	const radii = [ baseRadius, baseRadius * 0.75, baseRadius * 0.5, height * 0.008 ];
-	addStylizedLimb( builder, points, radii, 6, barkPartIndex, ( t ) => 0.15 + t * 0.5 );
 
 }
 
-function addLeafCards( builder: MeshBuilder, random: Random, lobe: Lobe, crownCenter: Vec3, crownRadius: number, height: number ): void {
+/**
+ * 幹と枝。頂上のローブへの枝は幹からそのまま続く 1 本の管にする。
+ * ほかの枝は分かれ目の少し下で幹の中から細めに生やし、幹に沿って少し立ち上がってから外へ出す。
+ * 幹の外へ自然に分かれて見え、管同士の重なりは付け根の短い区間だけになる。
+ */
+function addTrunkAndLimbs( builder: MeshBuilder, random: Random, trunk: { spine: Vec3[]; radii: number[] }, lobes: readonly FoliageLobe[], height: number ): void {
 
-	const relativeSize = lobe.radius / ( height * 0.22 );
-	const count = Math.round( 64 * relativeSize * relativeSize );
-	const cardSize = lobe.radius * 1.05;
-	const goldenAngle = Math.PI * ( 3 - Math.sqrt( 5 ) );
+	const top = trunk.spine[ trunk.spine.length - 1 ]!;
+	const lower = trunk.spine[ trunk.spine.length - 2 ]!;
+	const topRadius = trunk.radii[ trunk.radii.length - 1 ]!;
+	const trunkUp = normalizeVec3( subtractVec3( top, lower ) );
+	const tipRadius = height * 0.008;
+	const leader = limbCurveToLobe( random, top, lobes[ 0 ]! );
+	addStylizedLimb( builder, [ ...trunk.spine, ...leader ], [ ...trunk.radii, topRadius * 0.8, topRadius * 0.55, tipRadius ], 7, barkPartIndex, ( t ) => t * 0.5, 2 );
 
-	for ( let index = 0; index < count; index ++ ) {
+	for ( const lobe of lobes.slice( 1 ) ) {
 
-		// 表面寄りに多く、内側にも少し置いて透けを防ぐ。
-		const y = 1 - 2 * ( index + 0.5 ) / count;
-		const ring = Math.sqrt( Math.max( 0, 1 - y * y ) );
-		const angle = index * goldenAngle + random.range( - 0.3, 0.3 );
-		const direction = normalizeVec3( [ ring * Math.cos( angle ) + random.range( - 0.15, 0.15 ), y * 0.85 + random.range( - 0.15, 0.15 ), ring * Math.sin( angle ) + random.range( - 0.15, 0.15 ) ] );
-		const depth = 1 - 0.5 * random.next() * random.next();
-		const center = addVec3( lobe.center, scaleVec3( direction, lobe.radius * depth * 0.78 ) );
-		// 外向き寄りのランダムな向き。真横を向いたカードが輪郭から線として飛び出さないようにする。
-		const cardNormal = normalizeVec3( addVec3( direction, scaleVec3( randomUnitVector( random ), 0.9 ) ) );
-		const reference: Vec3 = Math.abs( cardNormal[ 1 ] ) > 0.9 ? [ 1, 0, 0 ] : [ 0, 1, 0 ];
-		const right = scaleVec3( normalizeVec3( crossVec3( reference, cardNormal ) ), cardSize * 0.5 );
-		const up = scaleVec3( normalizeVec3( crossVec3( cardNormal, right ) ), cardSize * 0.5 );
-		const corners: Vec3[] = [
-			subtractVec3( subtractVec3( center, right ), up ),
-			subtractVec3( addVec3( center, right ), up ),
-			addVec3( addVec3( center, right ), up ),
-			addVec3( subtractVec3( center, right ), up ),
-		];
-		const uvs: [ number, number ][] = [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0, 1 ] ];
-		const indices = corners.map( ( corner, cornerIndex ) => {
-
-			// 法線はカードの向きではなく、ローブと樹冠の中心から外向き（塊として陰影を付ける）。
-			const fromLobe = scaleVec3( subtractVec3( corner, lobe.center ), 1 / lobe.radius );
-			const fromCrown = scaleVec3( subtractVec3( corner, crownCenter ), 1 / crownRadius );
-			const normal = normalizeVec3( addVec3( addVec3( fromLobe, scaleVec3( fromCrown, 0.5 ) ), [ 0, 0.15, 0 ] ) );
-			const outside = clamp( Math.hypot( ...fromLobe ), 0, 1 );
-			const brightness = clamp( 0.55 + 0.45 * outside, 0.5, 1 );
-			const color: Color3 = [ brightness, brightness, brightness ];
-			const wind = clamp( Math.hypot( corner[ 0 ], corner[ 2 ] ) / crownRadius, 0.2, 1 );
-			return builder.addVertex( corner, normal, uvs[ cornerIndex ]!, color, wind );
-
-		} );
-		builder.addTriangle( indices[ 0 ]!, indices[ 1 ]!, indices[ 2 ]! );
-		builder.addTriangle( indices[ 0 ]!, indices[ 2 ]!, indices[ 3 ]! );
+		const outward = normalizeVec3( [ lobe.center[ 0 ] - top[ 0 ], 0, lobe.center[ 2 ] - top[ 2 ] ] );
+		const base = addVec3( lower, scaleVec3( subtractVec3( top, lower ), random.range( 0.6, 0.75 ) ) );
+		const emerge = addVec3( addVec3( top, scaleVec3( trunkUp, topRadius * 0.9 ) ), scaleVec3( outward, topRadius * 0.7 ) );
+		const radius = topRadius * random.range( 0.6, 0.7 );
+		const curve = limbCurveToLobe( random, emerge, lobe );
+		// 外へ出た後の曲がりは 1 点で足りる（頂点数の節約）。
+		addStylizedLimb( builder, [ base, emerge, curve[ 1 ]!, curve[ 2 ]! ], [ radius, radius * 0.95, radius * 0.55, tipRadius ], 5, barkPartIndex, ( t ) => 0.15 + t * 0.5, 2 );
 
 	}
 
@@ -161,18 +122,24 @@ export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ):
 	const trunk = createRootFlaredTrunkSpine( height, getStylizedRootDepth( height ), trunkRadius, splitY, lean );
 	const builder = new MeshBuilder();
 	builder.beginGroup( barkPartIndex );
-	addStylizedLimb( builder, trunk.spine, trunk.radii, 8, barkPartIndex, ( t ) => t * 0.08 );
 	const trunkTop = trunk.spine[ trunk.spine.length - 1 ]!;
 	const crownCenter: Vec3 = [ trunkTop[ 0 ] * 1.3, height * 0.68, trunkTop[ 2 ] * 1.3 ];
 	const crownRadius = height * 0.42;
 	const lobes = createLobes( random, height, crownCenter, splitY );
-	const limbBase = addVec3( trunkTop, [ 0, - trunkRadius * 0.6, 0 ] );
-	const limbRadius = trunk.radii[ trunk.radii.length - 1 ]! * 0.72;
-
-	for ( const lobe of lobes ) addLimbToLobe( builder, random, limbBase, limbRadius, lobe, height );
+	addTrunkAndLimbs( builder, random, trunk, lobes, height );
 
 	builder.beginGroup( leafPartIndex );
-	for ( const lobe of lobes ) addLeafCards( builder, random, lobe, crownCenter, crownRadius, height );
+	// 木全体のカード枚数を一定にし、ローブの大きさ（半径の 2 乗）に応じて配分する。
+	// 内側は房 4 つの大きなカードで少ない枚数で埋め、表面は房 1 つの小さなカードにして輪郭で板が目立たないようにする。
+	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
+
+	for ( const lobe of lobes ) {
+
+		const share = lobe.radius * lobe.radius / totalWeight;
+		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( innerCardCount * share ), lobe.radius * 2.3, { depth: [ 0.35, 0.8 ] } );
+		addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( outerCardCount * share ), lobe.radius * 1.15, { depth: [ 0.9, 1.1 ], quadrant: true } );
+
+	}
 
 	const lod0 = builder.build();
 	const collider = buildCollider( trunk.spine, trunk.radii );
@@ -184,7 +151,7 @@ export function generateBroadleafTreeData( options: BroadleafTreeOptions = {} ):
 	for ( let index = 0; index < collider.positions.length; index ++ ) collider.positions[ index ]! *= fit;
 	const bounds = { radius: getMeshBoundsRadius( lod0 ), height };
 	const bark = createStylizedBarkTextures( seed );
-	const leaf = createBroadleafLeafTextures( seed );
+	const leaf = createLeafSprayTextures( seed, LEAF_SPRAY_TEXTURE_SIZE, 4 );
 	const parts: PartDef[] = [
 		{
 			name: 'bark',

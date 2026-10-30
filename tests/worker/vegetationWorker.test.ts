@@ -63,6 +63,9 @@ describe( 'vegetation worker handler', () => {
 
 		const cases = [
 			{ kind: 'broadleaf-tree', height: 6, leafColor: 0x4f9a2a, barkColor: 0x8a7350, impostors: [] },
+			{ kind: 'bush', height: 1.3, leafColor: 0x55a02e, barkColor: 0x6e5a40, impostors: [] },
+			{ kind: 'pine-tree', height: 9, leafColor: 0x3f8a4c, barkColor: 0xb8653a, impostors: [] },
+			{ kind: 'willow-tree', height: 7, leafColor: 0x6cad3a, barkColor: 0x6f6a45, impostors: [] },
 		] as const;
 
 		for ( const [ index, tree ] of cases.entries() ) {
