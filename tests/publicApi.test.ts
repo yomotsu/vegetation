@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BroadleafTreeMeshOptions, KTX2LoaderLike, TreeMeshOptions } from '../src/index';
+import type { BroadleafTreeMeshOptions, FirTreeMeshOptions, FirTreeOptions, KTX2LoaderLike, TreeMeshOptions } from '../src/index';
 
 describe( 'public entry points', () => {
 
@@ -9,6 +9,7 @@ describe( 'public entry points', () => {
 		expect( exports ).toEqual( [
 			'BroadleafTreeMesh',
 			'BushMesh',
+				'FirTreeMesh',
 			'FlowersMesh',
 			'GrassMesh',
 			'PebblesMesh',
@@ -23,6 +24,8 @@ describe( 'public entry points', () => {
 			'generateBroadleafTreeAsync',
 			'generateBush',
 			'generateBushAsync',
+				'generateFirTree',
+				'generateFirTreeAsync',
 			'generateFlowers',
 			'generateFlowersAsync',
 			'generateGrass',
@@ -48,6 +51,7 @@ describe( 'public entry points', () => {
 		expect( exports ).toEqual( [
 			'generateBroadleafTreeData',
 			'generateBushData',
+			'generateFirTreeData',
 			'generateFlowersData',
 			'generateGrassData',
 			'generatePebblesData',
@@ -75,7 +79,11 @@ describe( 'public entry points', () => {
 
 	it( 'exports a separate mesh options type for each stylized tree', () => {
 		const options: BroadleafTreeMeshOptions = { seed: 3, height: 4, leafColor: 0x336633, barkColor: 0x775533 };
+		const firOptions: FirTreeMeshOptions = { seed: 3, height: 4, leafColor: 0x336633, barkColor: 0x775533 };
+		const coreOptions: FirTreeOptions = { seed: 3, height: 4 };
 		expect( options.seed ).toBe( 3 );
+		expect( firOptions.seed ).toBe( 3 );
+		expect( coreOptions.height ).toBe( 4 );
 	} );
 
 } );

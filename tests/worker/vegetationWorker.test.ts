@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateFlowers, generateGrass, generateRock } from '../../src/three/meshes';
 import { generateFlowersData } from '../../src/core/generators/flowers';
+import { generateFirTreeData } from '../../src/core/trees/fir';
 import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import { alphaTestForTexture } from '../../src/core/textureMipmaps';
 import { getPreparedTransferables, handleVegetationWorkerMessage } from '../../src/worker/vegetationWorker';
@@ -65,6 +66,7 @@ describe( 'vegetation worker handler', () => {
 			{ kind: 'broadleaf-tree', height: 6, leafColor: 0x4f9a2a, barkColor: 0x8a7350, impostors: [ 'impostor', 'impostor-lod3' ] },
 			{ kind: 'bush', height: 1.3, leafColor: 0x55a02e, barkColor: 0x6e5a40, impostors: [ 'impostor', 'impostor-lod3' ] },
 			{ kind: 'pine-tree', height: 9, leafColor: 0x3f8a4c, barkColor: 0xb8653a, impostors: [ 'impostor', 'impostor-lod3' ] },
+			{ kind: 'fir-tree', height: 6, leafColor: 0x4b6c56, barkColor: 0x9a9183, impostors: [ 'impostor', 'impostor-lod3' ] },
 			{ kind: 'willow-tree', height: 7, leafColor: 0x6cad3a, barkColor: 0x6f6a45, impostors: [ 'impostor', 'impostor-lod3' ] },
 		] as const;
 
@@ -86,6 +88,10 @@ describe( 'vegetation worker handler', () => {
 			expect( result.prepared.data.parts[ 1 ]!.defaultColor ).toBe( tree.leafColor );
 			expect( result.prepared.data.textures.leaf!.mipmaps!.length ).toBeGreaterThan( 1 );
 			expect( Object.keys( result.prepared.impostorTextures ).sort() ).toEqual( tree.impostors );
+			if ( tree.kind === 'fir-tree' ) {
+				const synchronous = prepareVegetationAsset( generateFirTreeData( { seed: 9 } ), { leaf: tree.leafColor, bark: tree.barkColor }, 128 );
+				expect( areStructurallyByteIdentical( result.prepared.data, synchronous.data ) ).toBe( true );
+			}
 		}
 
 	}, 30000 );

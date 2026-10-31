@@ -6,6 +6,14 @@ export const LEAF_SPRAY_TEXTURE_SIZE = 512;
 export const WILLOW_CANOPY_TEXTURE_SIZE = 256;
 export const STYLIZED_BARK_TEXTURE_WIDTH = 256;
 export const STYLIZED_BARK_TEXTURE_HEIGHT = 512;
+export const FIR_FROND_TEXTURE_WIDTH = 512;
+export const FIR_FROND_TEXTURE_HEIGHT = 1024;
+export const FIR_FROND_MIDRIB_COLOR = 0x5c5446;
+
+const defaultFirFrondColor = 0x3f8a55;
+const frondRed = defaultFirFrondColor >> 16 & 0xff;
+const frondGreen = defaultFirFrondColor >> 8 & 0xff;
+const frondBlue = defaultFirFrondColor & 0xff;
 
 const leafMargin = 4;
 
@@ -556,6 +564,333 @@ export function createNeedleSprayTextures( seed: number, size = LEAF_SPRAY_TEXTU
 		color: { width: size, height: size, data: color },
 		normal: { width: size, height: size, data: normal },
 	};
+
+}
+
+// 枝の葉の片側の幅（最大を 1 とする割合）。付け根 (v = 0) から中ほどで最も広く、先端へ細る。
+// 枝のジオメトリは左右の帯の幅をこれに合わせ、テクスチャの小枝もこの幅に収める。帯の u = 0.5 が枝、u = 0 / 1 が縁。
+export function firFrondWidth( v: number ): number {
+
+	const t = clamp( v, 0, 1 );
+	// 実物のモミも stylized なモミも、小枝の長さは枝の途中でほぼ一定。付け根で少し短く、先端の 3 割で細る。
+	return ( 0.88 + 0.12 * Math.min( 1, t / 0.15 ) ) * ( t < 0.7 ? 1 : 1 - 0.55 * ( t - 0.7 ) / 0.3 );
+
+}
+
+function firFrondOutlineHalfWidth( v: number ): number {
+
+	if ( v <= 0 || v >= 1 ) return 0;
+	return 0.5 * firFrondWidth( v );
+
+}
+
+// 1 本の針葉（tree の小枝テクスチャと同じ描き方）。付け根から先へ前方に反る 2 次曲線で、付け根が太く先へ細る。
+// 色は付け根が暗く、前半で明るくなって後半は明るいまま。法線は太さ方向に丸める。
+function drawFirNeedle(
+	color: Uint8Array,
+	normal: Uint8Array,
+	colorFactors: Float32Array,
+	width: number,
+	height: number,
+	root: [ number, number ],
+	control: [ number, number ],
+	tip: [ number, number ],
+	rootWidth: number,
+	tipWidth: number,
+	factor: number,
+): void {
+
+	const segments = 4;
+	let previous = root;
+
+	for ( let segment = 1; segment <= segments; segment ++ ) {
+
+		const amount = segment / segments;
+		const inverse = 1 - amount;
+		const point: [ number, number ] = [
+			inverse * inverse * root[ 0 ] + 2 * inverse * amount * control[ 0 ] + amount * amount * tip[ 0 ],
+			inverse * inverse * root[ 1 ] + 2 * inverse * amount * control[ 1 ] + amount * amount * tip[ 1 ],
+		];
+		const startAmount = ( segment - 1 ) / segments;
+		const dx = point[ 0 ] - previous[ 0 ];
+		const dy = point[ 1 ] - previous[ 1 ];
+		const lengthSquared = Math.max( 1e-6, dx * dx + dy * dy );
+		const length = Math.sqrt( lengthSquared );
+		const tangentX = dx / length;
+		const tangentY = dy / length;
+		const startWidth = rootWidth + ( tipWidth - rootWidth ) * startAmount;
+		const endWidth = rootWidth + ( tipWidth - rootWidth ) * amount;
+		const radius = startWidth * 0.5 + 1;
+		const minX = Math.max( 1, Math.floor( Math.min( previous[ 0 ], point[ 0 ] ) - radius ) );
+		const maxX = Math.min( width - 2, Math.ceil( Math.max( previous[ 0 ], point[ 0 ] ) + radius ) );
+		const minY = Math.max( 1, Math.floor( Math.min( previous[ 1 ], point[ 1 ] ) - radius ) );
+		const maxY = Math.min( height - 2, Math.ceil( Math.max( previous[ 1 ], point[ 1 ] ) + radius ) );
+
+		for ( let y = minY; y <= maxY; y ++ ) {
+
+			for ( let x = minX; x <= maxX; x ++ ) {
+
+				const px = x + 0.5 - previous[ 0 ];
+				const py = y + 0.5 - previous[ 1 ];
+				const local = clamp( ( px * dx + py * dy ) / lengthSquared, 0, 1 );
+				const halfWidth = ( startWidth + ( endWidth - startWidth ) * local ) * 0.5;
+				const offsetX = px - dx * local;
+				const offsetY = py - dy * local;
+				// 平方根を取らずに距離を比べる（画素ごとの処理が生成時間の大半を占める）。
+				if ( offsetX * offsetX + offsetY * offsetY > halfWidth * halfWidth ) continue;
+
+				const t = startAmount + ( amount - startAmount ) * local;
+				const pixel = y * width + x;
+				const offset = pixel * 4;
+				const shade = factor * ( 0.58 + 0.42 * Math.min( 1, t * 2 ) );
+				color[ offset ] = Math.round( Math.min( 255, frondRed * shade ) );
+				color[ offset + 1 ] = Math.round( Math.min( 255, frondGreen * shade ) );
+				color[ offset + 2 ] = Math.round( Math.min( 255, frondBlue * shade ) );
+				color[ offset + 3 ] = 255;
+				colorFactors[ pixel ] = shade;
+
+				const across = clamp( ( px * tangentY - py * tangentX ) / Math.max( halfWidth, 1e-4 ), - 1, 1 );
+				// 接線は長さ 1、傾きは 0.7 以下なので、この法線は正規化済み。
+				const tilt = across * 0.7;
+				normal[ offset ] = Math.round( ( tangentY * tilt * 0.5 + 0.5 ) * 255 );
+				normal[ offset + 1 ] = Math.round( ( - tangentX * tilt * 0.5 + 0.5 ) * 255 );
+				normal[ offset + 2 ] = Math.round( ( Math.sqrt( 1 - tilt * tilt ) * 0.5 + 0.5 ) * 255 );
+				normal[ offset + 3 ] = 255;
+
+			}
+
+		}
+
+		previous = point;
+
+	}
+
+}
+
+
+function drawFirTwig( color: Uint8Array, colorFactors: Float32Array, width: number, height: number, from: [ number, number ], to: [ number, number ], startWidth: number, endWidth: number ): void {
+
+	const dx = to[ 0 ] - from[ 0 ];
+	const dy = to[ 1 ] - from[ 1 ];
+	const lengthSquared = dx * dx + dy * dy;
+	const radius = startWidth * 0.5 + 1;
+	const minX = Math.max( 1, Math.floor( Math.min( from[ 0 ], to[ 0 ] ) - radius ) );
+	const maxX = Math.min( width - 2, Math.ceil( Math.max( from[ 0 ], to[ 0 ] ) + radius ) );
+	const minY = Math.max( 1, Math.floor( Math.min( from[ 1 ], to[ 1 ] ) - radius ) );
+	const maxY = Math.min( height - 2, Math.ceil( Math.max( from[ 1 ], to[ 1 ] ) + radius ) );
+	const midrib = [ FIR_FROND_MIDRIB_COLOR >> 16 & 0xff, FIR_FROND_MIDRIB_COLOR >> 8 & 0xff, FIR_FROND_MIDRIB_COLOR & 0xff ];
+
+	for ( let y = minY; y <= maxY; y ++ ) {
+
+		for ( let x = minX; x <= maxX; x ++ ) {
+
+			const px = x + 0.5 - from[ 0 ];
+			const py = y + 0.5 - from[ 1 ];
+			const t = clamp( ( px * dx + py * dy ) / lengthSquared, 0, 1 );
+			const offsetX = px - dx * t;
+			const offsetY = py - dy * t;
+			const distance = Math.sqrt( offsetX * offsetX + offsetY * offsetY );
+			const strokeWidth = startWidth + ( endWidth - startWidth ) * t;
+			if ( distance > strokeWidth * 0.5 ) continue;
+
+			// 軸も丸く見えるよう、縁を少し暗くする。
+			const shade = 1.08 - 0.3 * Math.pow( distance / ( strokeWidth * 0.5 ), 2 );
+			const pixel = y * width + x;
+			const offset = pixel * 4;
+			color[ offset ] = Math.round( clamp( midrib[ 0 ]! * shade, 0, 255 ) );
+			color[ offset + 1 ] = Math.round( clamp( midrib[ 1 ]! * shade, 0, 255 ) );
+			color[ offset + 2 ] = Math.round( clamp( midrib[ 2 ]! * shade, 0, 255 ) );
+			color[ offset + 3 ] = 255;
+			colorFactors[ pixel ] = 0;
+
+		}
+
+	}
+
+}
+
+// 小枝は先へ向かって少し曲がる折れ線にし、両側に針葉を櫛状に並べる。小枝の先ほど針葉は短い。
+function drawFirPinna(
+	random: Random,
+	color: Uint8Array,
+	normal: Uint8Array,
+	colorFactors: Float32Array,
+	width: number,
+	height: number,
+	start: [ number, number ],
+	angle: number,
+	curl: number,
+	length: number,
+	needleLength: number,
+	needleWidth: number,
+	factor: number,
+	twigs: [ number, number ][][],
+): void {
+
+	const segments = 4;
+	const points: [ number, number ][] = [ start ];
+	let direction = angle;
+
+	for ( let segment = 0; segment < segments; segment ++ ) {
+
+		const previous = points[ points.length - 1 ]!;
+		points.push( [ previous[ 0 ] + Math.cos( direction ) * length / segments, previous[ 1 ] + Math.sin( direction ) * length / segments ] );
+		direction += curl / segments;
+
+	}
+
+	// tree の小枝と同じく、針葉の間隔は太さより狭くして隣と重ねる。
+	const spacing = needleWidth * 0.75;
+	const count = Math.max( 3, Math.floor( length / spacing ) );
+
+	for ( let needle = 0; needle < count; needle ++ ) {
+
+		const s = ( needle + 0.6 ) / count;
+		const segment = Math.min( segments - 1, Math.floor( s * segments ) );
+		const local = s * segments - segment;
+		const a = points[ segment ]!;
+		const b = points[ segment + 1 ]!;
+		const baseX = a[ 0 ] + ( b[ 0 ] - a[ 0 ] ) * local;
+		const baseY = a[ 1 ] + ( b[ 1 ] - a[ 1 ] ) * local;
+		const tangent = Math.atan2( b[ 1 ] - a[ 1 ], b[ 0 ] - a[ 0 ] );
+		const forwardX = Math.cos( tangent );
+		const forwardY = Math.sin( tangent );
+		const taper = 1 - 0.55 * Math.pow( s, 1.4 );
+		// 小枝の付け根では横へ広く開き（約 70°）、先ほど前を向く（約 15°）。
+		const sweep = clamp( ( s - 0.1 ) / 0.8, 0, 1 );
+		const spread = ( 70 - 55 * sweep * sweep * ( 3 - 2 * sweep ) ) * Math.PI / 180;
+
+		for ( const side of [ - 1, 1 ] ) {
+
+			const angle = spread + random.range( - 0.03, 0.03 );
+			const reach = needleLength * taper * random.range( 0.85, 1.05 );
+			const sideX = - forwardY * side;
+			const sideY = forwardX * side;
+			const out = Math.sin( angle ) * reach;
+			const ahead = Math.cos( angle ) * reach;
+			const tip: [ number, number ] = [ baseX + sideX * out + forwardX * ahead, baseY + sideY * out + forwardY * ahead ];
+			// 曲線の制御点は横に 64%、前に 28%。付け根は横へ出て、先は前へ反る。
+			const control: [ number, number ] = [ baseX + sideX * out * 0.64 + forwardX * ahead * 0.28, baseY + sideY * out * 0.64 + forwardY * ahead * 0.28 ];
+			// 短い針葉も長さに合わせて細くし、縦横比を保つ。
+			const rootWidth = Math.min( needleWidth * random.range( 0.92, 1 ), reach / 5.5 );
+			drawFirNeedle( color, normal, colorFactors, width, height, [ baseX, baseY ], control, tip, rootWidth, rootWidth * 0.32, factor * random.range( 0.92, 1.08 ) );
+
+		}
+
+	}
+
+	twigs.push( points );
+
+}
+
+/** 赤茶の中軸から互い違いに小枝を出し、小枝に先の丸い太い針葉を櫛状に付けた羽根形テクスチャ。 */
+export function createFirFrondTextures( seed: number, color: number ): { color: TextureData; normal: TextureData } {
+
+	const width = FIR_FROND_TEXTURE_WIDTH;
+	const height = FIR_FROND_TEXTURE_HEIGHT;
+	const pixels = width * height;
+	const colorData = new Uint8Array( pixels * 4 );
+	const normalData = new Uint8Array( pixels * 4 );
+	const colorFactors = new Float32Array( pixels );
+	const random = createRandom( seed * 67 + 13 );
+	const centerX = width * 0.5;
+	const needleWidth = width * 0.017;
+	const twigs: [ number, number ][][] = [];
+
+	// 平らな法線 (128, 128, 255, 255) で埋める。4 バイトずつまとめて書く（バイト順に依らないよう 1 画素分から複製する）。
+	normalData.set( [ 128, 128, 255, 255 ] );
+	new Uint32Array( normalData.buffer ).fill( new Uint32Array( normalData.buffer, 0, 1 )[ 0 ]! );
+
+	// 小枝は左右で半間隔ずらした互い違い。先端側から描き、付け根側の小枝を上に重ねる。
+	const pinnaCount = 13;
+	const spacing = 0.8 / pinnaCount;
+	const pinnae: { v: number; side: number }[] = [];
+	for ( let index = 0; index < pinnaCount; index ++ ) {
+		pinnae.push( { v: 0.07 + index * spacing, side: - 1 } );
+		pinnae.push( { v: 0.07 + ( index + 0.5 ) * spacing, side: 1 } );
+	}
+	pinnae.sort( ( a, b ) => b.v - a.v );
+
+	for ( const pinna of pinnae ) {
+
+		const v = pinna.v + random.range( - 0.008, 0.008 );
+		const start: [ number, number ] = [ centerX, v * height ];
+		// 枝先は頂芽と 2 本の側芽の三叉になるよう、先端の小枝ほど中軸に沿わせる。
+		const angle = Math.PI * 0.5 - pinna.side * ( ( v > 0.72 ? 0.82 - ( v - 0.72 ) * 3 : 0.82 ) + random.range( - 0.08, 0.08 ) );
+		const curl = pinna.side * random.range( 0.15, 0.35 );
+		const needleLength = width * 0.1 * random.range( 0.9, 1.1 );
+		// 輪郭（板の六角形）に針葉の先まで収まる長さまで縮める。
+		let length = width * 0.46 * random.range( 0.8, 1.05 );
+
+		for ( let attempt = 0; attempt < 24; attempt ++ ) {
+
+			const tipX = Math.abs( Math.cos( angle + curl * 0.5 ) ) * length;
+			const tipV = v + Math.sin( angle + curl * 0.5 ) * length / height;
+			const margin = needleLength * 0.45;
+			if ( tipX + margin <= firFrondOutlineHalfWidth( tipV ) * width - 2 && tipX * 0.5 + margin <= firFrondOutlineHalfWidth( v + ( tipV - v ) * 0.5 ) * width - 2 ) break;
+			length *= 0.9;
+
+		}
+
+		const factor = clamp( 0.88 + v * 0.1 + random.range( - 0.05, 0.05 ), 0.7, 1.05 );
+		drawFirPinna( random, colorData, normalData, colorFactors, width, height, start, angle, curl, length, Math.min( needleLength, length * 0.5 ), needleWidth, factor, twigs );
+
+	}
+
+	// 先端は中軸の延長に直接針葉を付ける。
+	drawFirPinna( random, colorData, normalData, colorFactors, width, height, [ centerX, height * 0.86 ], Math.PI * 0.5, 0, height * 0.1, width * 0.07, needleWidth, 1, twigs );
+
+	for ( const points of twigs ) {
+
+		for ( let index = 1; index < points.length; index ++ ) {
+			const t = ( index - 1 ) / ( points.length - 1 );
+			drawFirTwig( colorData, colorFactors, width, height, points[ index - 1 ]!, points[ index ]!, needleWidth * ( 0.42 - 0.22 * t ), needleWidth * ( 0.42 - 0.22 * ( t + 1 / ( points.length - 1 ) ) ) );
+		}
+
+	}
+
+	// 中軸を最後に描き、葉の絵の上から赤茶を残す。
+	drawFirTwig( colorData, colorFactors, width, height, [ centerX, height * 0.005 ], [ centerX, height * 0.95 ], needleWidth * 1.3, needleWidth * 0.4 );
+	let colorPixelCount = 0;
+	for ( let pixel = 0; pixel < pixels; pixel ++ ) if ( colorFactors[ pixel ]! > 0 ) colorPixelCount ++;
+	const colorPixelIndices = new Uint32Array( colorPixelCount );
+	for ( let pixel = 0, index = 0; pixel < pixels; pixel ++ ) if ( colorFactors[ pixel ]! > 0 ) colorPixelIndices[ index ++ ] = pixel;
+	const texture: TextureData = { width, height, data: colorData, colorFactors, colorPixelIndices };
+
+	return {
+		color: composeFirFrondTexture( texture, color ),
+		normal: { width, height, data: normalData },
+	};
+
+}
+
+/** 針葉の画素だけを塗り直し、中軸と小枝の赤茶を保つ。 */
+export function composeFirFrondTexture( texture: TextureData, color: number ): TextureData {
+
+	if ( texture.colorFactors === undefined || texture.colorPixelIndices === undefined ) {
+		throw new Error( 'Fir frond texture has no color-independent inputs' );
+	}
+
+	const data = texture.data.slice();
+	const colorOffsets = texture.colorOffsets?.slice() ?? new Float32Array( texture.colorFactors.length * 3 );
+	const defaultColor = [ defaultFirFrondColor >> 16 & 0xff, defaultFirFrondColor >> 8 & 0xff, defaultFirFrondColor & 0xff ];
+	const targetColor = [ color >> 16 & 0xff, color >> 8 & 0xff, color & 0xff ];
+
+	for ( const pixel of texture.colorPixelIndices ) {
+
+		const factor = texture.colorFactors[ pixel ]!;
+		const offset = pixel * 4;
+		const colorOffset = pixel * 3;
+
+		if ( texture.colorOffsets === undefined ) {
+			for ( let channel = 0; channel < 3; channel ++ ) colorOffsets[ colorOffset + channel ] = texture.data[ offset + channel ]! - defaultColor[ channel ]! * factor;
+		}
+
+		for ( let channel = 0; channel < 3; channel ++ ) data[ offset + channel ] = Math.round( clamp( targetColor[ channel ]! * factor + colorOffsets[ colorOffset + channel ]!, 0, 255 ) );
+
+	}
+
+	return { ...texture, data, colorOffsets };
 
 }
 

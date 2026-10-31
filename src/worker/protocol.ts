@@ -2,7 +2,7 @@ import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation
 import type { TextureData } from '../core/types';
 import type { UastcEncodeOptions } from '../core/uastc';
 
-export type VegetationWorkerKind = 'tree' | 'broadleaf-tree' | 'willow-tree' | 'pine-tree' | 'bush' | 'rock' | 'pebbles' | 'grass' | 'flowers';
+export type VegetationWorkerKind = 'tree' | 'broadleaf-tree' | 'willow-tree' | 'pine-tree' | 'fir-tree' | 'bush' | 'rock' | 'pebbles' | 'grass' | 'flowers';
 
 export interface VegetationGenerateRequest {
 	id: number;
