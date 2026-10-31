@@ -529,7 +529,9 @@ export function createNeedleSprayTextures( seed: number, size = LEAF_SPRAY_TEXTU
 
 	// 茶色い小枝がカードを下から上へ通り、左右互い違いに出た脇枝の先に房が付く。房と房の間に小枝と隙間が見える。
 	// カードの上（v = 1、画像の下端の行）は世界の上に近いので、房は上向きの筆になる。付け根は縁から離して塊の中に隠す。
-	const direction = Math.PI * 0.5 + random.range( - 0.35, 0.35 );
+	// テクスチャの乱数列を保つため、以前の傾き用の値は引いて捨てる。
+	void random.range( - 0.35, 0.35 );
+	const direction = Math.PI * 0.5;
 	const dx = Math.cos( direction );
 	const dy = Math.sin( direction );
 	const baseX = size * 0.5 - dx * size * 0.28;

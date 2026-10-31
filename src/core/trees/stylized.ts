@@ -254,10 +254,13 @@ export interface FoliageCardOptions {
 	/** カードの向きを外向きからどれだけばらすか。省略時 0.9。小さいほど真横を向いたカードが減る。 */
 	jitter?: number;
 	/**
-	 * 指定するとカードの上（v = 1）を塊の中心から外へ向け、この値だけ世界の上へ寄せる。
+	 * 指定するとカードの上（v = 1）を塊の中心から外へ向け、この値だけ世界の上へ寄せて面に射影する。
+	 * 射影が弱く、lobe.branch があるときは枝の始点から終点への向きをカードの上に使う。
 	 * テクスチャの下に小枝の付け根を描いたとき、付け根が枝のある塊の内側を向く。省略時はカードの上を世界の上にそろえる。
 	 */
 	outwardUp?: number;
+	/** テクスチャの小枝の付け根が、カード中心からカードの下へどれだけ離れているか（cardSize に対する比）。lobe.branch と outwardUp があるとき、付け根が枝の上に来るようにカードを動かす。 */
+	rootOffset?: number;
 }
 
 export interface FoliageLobe {
@@ -265,7 +268,12 @@ export interface FoliageLobe {
 	radius: number;
 	/** 軸ごとの縮尺。低木の平たいドームなどに使う。 */
 	scale?: Vec3;
+	/** 塊を支える枝の折れ線。2 点以上を指定すると outwardUp のカードの外向きと、射影が弱いときの枝方向を決める。 */
+	branch?: Vec3[];
 }
+
+const MAX_OUTWARD_UP_CARD_NORMAL_Y = 0.7; // 上下どちらを向いても、カードを水平から約 45° 起こしておく（枝の高さに寝た板が横から見えないように）。
+const MIN_OUTWARD_UP_TUFT_Y = 0.15; // 房の上向き成分を保つ最小値。
 
 function randomUnitVector( random: Random ): Vec3 {
 
@@ -273,6 +281,45 @@ function randomUnitVector( random: Random ): Vec3 {
 	const angle = random.range( 0, Math.PI * 2 );
 	const ring = Math.sqrt( 1 - y * y );
 	return [ ring * Math.cos( angle ), y, ring * Math.sin( angle ) ];
+
+}
+
+function closestPointOnSegment( point: Vec3, start: Vec3, end: Vec3 ): Vec3 {
+
+	const segment = subtractVec3( end, start );
+	const lengthSquared = dotVec3( segment, segment );
+
+	if ( lengthSquared <= 1e-12 ) {
+		return start;
+	}
+
+	const amount = clamp( dotVec3( subtractVec3( point, start ), segment ) / lengthSquared, 0, 1 );
+	return addVec3( start, scaleVec3( segment, amount ) );
+
+}
+
+function closestPointOnPolyline( point: Vec3, points: Vec3[] ): Vec3 {
+
+	let nearest = closestPointOnSegment( point, points[ 0 ]!, points[ 1 ]! );
+	const initialOffset = subtractVec3( point, nearest );
+	let nearestDistanceSquared = dotVec3( initialOffset, initialOffset );
+
+	for ( let index = 2; index < points.length; index ++ ) {
+
+		const candidate = closestPointOnSegment( point, points[ index - 1 ]!, points[ index ]! );
+		const offset = subtractVec3( point, candidate );
+		const distanceSquared = dotVec3( offset, offset );
+
+		if ( distanceSquared < nearestDistanceSquared ) {
+
+			nearest = candidate;
+			nearestDistanceSquared = distanceSquared;
+
+		}
+
+	}
+
+	return nearest;
 
 }
 
@@ -303,23 +350,99 @@ export function addFoliageLobeCards(
 		const direction = normalizeVec3( [ ring * Math.cos( angle ) + random.range( - 0.15, 0.15 ), y * 0.85 + random.range( - 0.15, 0.15 ), ring * Math.sin( angle ) + random.range( - 0.15, 0.15 ) ] );
 		const depth = options.depth === undefined ? 1 - 0.5 * random.next() * random.next() : random.range( options.depth[ 0 ], options.depth[ 1 ] );
 		const offset = scaleVec3( direction, lobe.radius * depth * 0.78 );
-		const center = addVec3( lobe.center, [ offset[ 0 ] * scale[ 0 ], offset[ 1 ] * scale[ 1 ], offset[ 2 ] * scale[ 2 ] ] );
+		let center = addVec3( lobe.center, [ offset[ 0 ] * scale[ 0 ], offset[ 1 ] * scale[ 1 ], offset[ 2 ] * scale[ 2 ] ] );
 		// 外向き寄りのランダムな向き。真横を向いたカードが輪郭から線として飛び出さないようにする。
-		const cardNormal = normalizeVec3( addVec3( direction, scaleVec3( randomUnitVector( random ), options.jitter ?? 0.9 ) ) );
+		let cardNormal = normalizeVec3( addVec3( direction, scaleVec3( randomUnitVector( random ), options.jitter ?? 0.9 ) ) );
+
+		if ( options.outwardUp !== undefined && Math.abs( cardNormal[ 1 ] ) > MAX_OUTWARD_UP_CARD_NORMAL_Y ) {
+
+			let x = cardNormal[ 0 ];
+			let z = cardNormal[ 2 ];
+			let xzLength = Math.hypot( x, z );
+
+			if ( xzLength <= 1e-6 ) {
+
+				x = direction[ 0 ];
+				z = direction[ 2 ];
+				xzLength = Math.hypot( x, z );
+
+				if ( xzLength <= 1e-6 ) {
+					x = 1;
+					z = 0;
+					xzLength = 1;
+				}
+
+			}
+
+			const xzScale = Math.sqrt( 1 - MAX_OUTWARD_UP_CARD_NORMAL_Y ** 2 ) / xzLength;
+			cardNormal = [ x * xzScale, Math.sign( cardNormal[ 1 ] ) * MAX_OUTWARD_UP_CARD_NORMAL_Y, z * xzScale ];
+
+		}
+
 		const reference: Vec3 = Math.abs( cardNormal[ 1 ] ) > 0.9 ? [ 1, 0, 0 ] : [ 0, 1, 0 ];
 		let right = scaleVec3( normalizeVec3( crossVec3( reference, cardNormal ) ), cardSize * 0.5 );
 		let up = scaleVec3( normalizeVec3( crossVec3( cardNormal, right ) ), cardSize * 0.5 );
 
 		if ( options.outwardUp !== undefined ) {
 
-			// 外向き（＋上寄せ）をカードの面へ射影して上とする。面とほぼ直交するときは世界の上のまま。
-			const outward = addVec3( direction, [ 0, options.outwardUp, 0 ] );
-			const inPlane = subtractVec3( outward, scaleVec3( cardNormal, dotVec3( outward, cardNormal ) ) );
+			// 外向き（＋上寄せ）を正規化して面へ射影する。射影が弱いときは枝先方向を使い、それも弱ければ既定の上を保つ。
+			let outwardDirection = direction;
+			let nearestBranchPoint: Vec3 | undefined;
+
+			if ( lobe.branch !== undefined ) {
+
+				nearestBranchPoint = closestPointOnPolyline( center, lobe.branch );
+				const branchOutward = subtractVec3( center, nearestBranchPoint );
+
+				if ( Math.hypot( ...branchOutward ) > 1e-8 ) {
+					outwardDirection = normalizeVec3( branchOutward );
+				}
+
+			}
+
+			const outward = normalizeVec3( addVec3( outwardDirection, [ 0, options.outwardUp, 0 ] ) );
+			let inPlane = subtractVec3( outward, scaleVec3( cardNormal, dotVec3( outward, cardNormal ) ) );
+
+			if ( Math.hypot( ...inPlane ) <= 0.2 && lobe.branch !== undefined ) {
+
+				const branchDirection = subtractVec3( lobe.branch[ lobe.branch.length - 1 ]!, lobe.branch[ 0 ]! );
+
+				if ( Math.hypot( ...branchDirection ) > 1e-8 ) {
+
+					const normalizedBranchDirection = normalizeVec3( branchDirection );
+					const branchInPlane = subtractVec3( normalizedBranchDirection, scaleVec3( cardNormal, dotVec3( normalizedBranchDirection, cardNormal ) ) );
+
+					if ( Math.hypot( ...branchInPlane ) > 0.2 ) {
+						inPlane = branchInPlane;
+					}
+
+				}
+
+			}
 
 			if ( Math.hypot( ...inPlane ) > 0.2 ) {
 
 				up = scaleVec3( normalizeVec3( inPlane ), cardSize * 0.5 );
 				right = scaleVec3( normalizeVec3( crossVec3( up, cardNormal ) ), cardSize * 0.5 );
+
+			}
+
+			if ( normalizeVec3( up )[ 1 ] < MIN_OUTWARD_UP_TUFT_Y ) {
+
+				const worldUpInPlane = subtractVec3( [ 0, 1, 0 ], scaleVec3( cardNormal, cardNormal[ 1 ] ) );
+
+				if ( Math.hypot( ...worldUpInPlane ) > 1e-6 ) {
+
+					up = scaleVec3( normalizeVec3( worldUpInPlane ), cardSize * 0.5 );
+					right = scaleVec3( normalizeVec3( crossVec3( up, cardNormal ) ), cardSize * 0.5 );
+
+				}
+
+			}
+
+			if ( nearestBranchPoint !== undefined && options.rootOffset !== undefined ) {
+
+				center = addVec3( nearestBranchPoint, scaleVec3( normalizeVec3( up ), options.rootOffset * cardSize ) );
 
 			}
 

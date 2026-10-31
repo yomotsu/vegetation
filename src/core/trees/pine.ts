@@ -25,6 +25,7 @@ const needleTextureSize = 256;
 
 interface Branch {
 	base: Vec3;
+	middle: Vec3;
 	tip: Vec3;
 	radius: number;
 	lobes: FoliageLobe[];
@@ -97,18 +98,23 @@ function createBranches( random: Random, height: number, spine: readonly Vec3[],
 		const relative = ( y - crownBase ) / ( height - crownBase );
 		const length = height * random.range( 0.13, 0.2 ) * ( 1.05 - relative * 0.55 );
 		const tip: Vec3 = [ point[ 0 ] + Math.cos( angle ) * length, y + length * random.range( 0.15, 0.45 ), point[ 2 ] + Math.sin( angle ) * length ];
+		const middle = lerpVec3( point, tip, 0.5 );
+		middle[ 1 ] -= ( tip[ 1 ] - point[ 1 ] ) * 0.25;
 		const lobeRadius = height * random.range( 0.1, 0.13 ) * ( 1.05 - relative * 0.35 );
 		// 塊は枝先に 1 個だけ。小さな塊は割り当てるカードが少なく、浮いて見えた。
-		const lobes: FoliageLobe[] = [ { center: addVec3( tip, [ 0, lobeRadius * 0.25, 0 ] ), radius: lobeRadius, scale: [ 1.45, 0.62, 1.45 ] } ];
+		const lobes: FoliageLobe[] = [ { center: addVec3( tip, [ 0, lobeRadius * 0.25, 0 ] ), radius: lobeRadius, scale: [ 1.45, 0.62, 1.45 ], branch: [ point, middle, tip ] } ];
 
-		branches.push( { base: point, tip, radius: trunkRadius * 0.42, lobes } );
+		branches.push( { base: point, middle, tip, radius: trunkRadius * 0.42, lobes } );
 
 	}
 
 	// 頂上の塊。
 	const top = spine[ spine.length - 1 ]!;
 	const topRadius = height * random.range( 0.08, 0.1 );
-	branches.push( { base: top, tip: [ top[ 0 ], height - topRadius * 0.9, top[ 2 ] ], radius: radii[ radii.length - 1 ]!, lobes: [ { center: [ top[ 0 ], height - topRadius * 0.9, top[ 2 ] ], radius: topRadius, scale: [ 1.1, 0.85, 1.1 ] } ] } );
+	const topTip: Vec3 = [ top[ 0 ], height - topRadius * 0.9, top[ 2 ] ];
+	const topMiddle = lerpVec3( top, topTip, 0.5 );
+	topMiddle[ 1 ] -= ( topTip[ 1 ] - top[ 1 ] ) * 0.25;
+	branches.push( { base: top, middle: topMiddle, tip: topTip, radius: radii[ radii.length - 1 ]!, lobes: [ { center: topTip, radius: topRadius, scale: [ 1.1, 0.85, 1.1 ], branch: [ spine[ spine.length - 2 ]!, top ] } ] } );
 
 	return branches;
 
@@ -186,10 +192,8 @@ function buildPineMesh( seed: number, height: number, detail: PineDetail ): { me
 
 	for ( const branch of detail.branchSides > 0 ? branches.slice( 0, - 1 ) : [] ) {
 
-		const middle = lerpVec3( branch.base, branch.tip, 0.5 );
-		middle[ 1 ] -= ( branch.tip[ 1 ] - branch.base[ 1 ] ) * 0.25;
 		// 枝は葉にほぼ隠れるので、周の分割は少なく、曲線の分割なしで足りる。
-		addStylizedLimb( builder, [ branch.base, middle, branch.tip ], [ branch.radius, branch.radius * 0.7, branch.radius * 0.35 ], detail.branchSides, barkPartIndex, ( t ) => 0.2 + t * 0.6, 1 );
+		addStylizedLimb( builder, [ branch.base, branch.middle, branch.tip ], [ branch.radius, branch.radius * 0.7, branch.radius * 0.35 ], detail.branchSides, barkPartIndex, ( t ) => 0.2 + t * 0.6, 1 );
 
 	}
 
@@ -201,7 +205,7 @@ function buildPineMesh( seed: number, height: number, detail: PineDetail ): { me
 	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
 	// カードは塊の面に沿う向きに寄せて少し内側に置く。真横を向いたカードの角が塊の外へ飛び出すと板の集まりに見える。
 	// 房の付け根（テクスチャの下）が枝のある塊の内側を向くよう、カードの上を外向きにする。
-	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( detail.cards * lobe.radius * lobe.radius / totalWeight ), lobe.radius * detail.cardSize, { depth: [ 0.55, 0.95 ], jitter: 0.4, outwardUp: 0.5 } );
+	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( detail.cards * lobe.radius * lobe.radius / totalWeight ), lobe.radius * detail.cardSize, { depth: [ 0.55, 0.95 ], jitter: 0.4, outwardUp: 0.5, rootOffset: 0.28 } );
 
 	return { mesh: builder.build(), trunk };
 
