@@ -491,11 +491,12 @@ export function createNeedleSprayTextures( seed: number, size = LEAF_SPRAY_TEXTU
 				if ( along > localRadius ) continue;
 				const offset = ( y * size + x ) * 4;
 				const across = clamp( cross / localRadius, - 1, 1 );
-				const shade = value * ( 0.82 + 0.18 * t );
+				// 針葉は先ほど明るい（小枝は一様）。
+				const shade = twig ? value : value * Math.min( 1.1, 0.7 + 0.45 * t );
 				const byte = Math.round( clamp( shade, 0, 1 ) * 235 );
-				color[ offset ] = twig ? Math.round( byte * 0.95 ) : byte;
-				color[ offset + 1 ] = twig ? Math.round( byte * 0.8 ) : byte;
-				color[ offset + 2 ] = twig ? Math.round( byte * 0.65 ) : byte;
+				color[ offset ] = byte;
+				color[ offset + 1 ] = twig ? Math.round( byte * 0.55 ) : byte;
+				color[ offset + 2 ] = twig ? Math.round( byte * 0.4 ) : byte;
 				color[ offset + 3 ] = 255;
 				// 針葉の断面を半円として、幅方向へ法線を傾ける。
 				const tilt = across * 0.8;
@@ -507,58 +508,57 @@ export function createNeedleSprayTextures( seed: number, size = LEAF_SPRAY_TEXTU
 
 	};
 
-	// 小枝が放射状に出て先に針葉の房が付いたスプレーを、1 枚に 4 つずらして重ねる。
-	// 大きなカード 1 枚で房が交差して見え、頂点を増やさずに塊が詰まって見える。
-	const drawSpray = ( cx: number, cy: number, radius: number, twigCount: number ): void => {
+	// 針葉の房（筆の穂先のように、付け根から前へ扇状に開く）。
+	const drawTuft = ( x: number, y: number, angle: number, length: number, needleCount: number ): void => {
 
-		const startAngle = random.range( 0, Math.PI * 2 );
-		const tufts: { x: number; y: number; angle: number; reach: number }[] = [];
+		for ( let needle = 0; needle < needleCount; needle ++ ) {
 
-		for ( let twig = 0; twig < twigCount; twig ++ ) {
-
-			const angle = startAngle + twig / twigCount * Math.PI * 2 + random.range( - 0.25, 0.25 );
-			const reach = radius * random.range( 0.3, 0.5 );
-			tufts.push( { x: cx + Math.cos( angle ) * reach, y: cy + Math.sin( angle ) * reach, angle, reach } );
-
-		}
-
-		tufts.push( { x: cx, y: cy, angle: startAngle, reach: 0 } );
-
-		for ( const tuft of tufts ) {
-
-			if ( tuft.reach > 0 ) drawSegment( cx, cy, tuft.x, tuft.y, size * 0.005, 0.75, true );
-
-		}
-
-		for ( const tuft of tufts ) {
-
-			const needleCount = tuft.reach === 0 ? 34 : 26;
-			const spread = tuft.reach === 0 ? Math.PI : 0.95;
-
-			for ( let needle = 0; needle < needleCount; needle ++ ) {
-
-				const angle = tuft.angle + random.range( - spread, spread );
-				const length = radius * random.range( 0.36, 0.5 ) * Math.min( 1, ( radius - tuft.reach ) / ( radius * 0.5 ) );
-				const tone = random.range( 0.72, 1 );
-				drawSegment( tuft.x, tuft.y, tuft.x + Math.cos( angle ) * length, tuft.y + Math.sin( angle ) * length, size * 0.0052, tone, false );
-
-			}
+			// 中央に寄せた扇。両端の針葉ほど短い。
+			const offset = ( random.next() + random.next() - 1 ) * 1.05;
+			const needleAngle = angle + offset;
+			const needleLength = length * random.range( 0.7, 1 ) * ( 1 - Math.abs( offset ) * 0.3 );
+			// 付け根を少しずらして、房の根元を太くする。
+			const back = random.range( 0, length * 0.12 );
+			const x0 = x - Math.cos( angle ) * back;
+			const y0 = y - Math.sin( angle ) * back;
+			drawSegment( x0, y0, x0 + Math.cos( needleAngle ) * needleLength, y0 + Math.sin( needleAngle ) * needleLength, size * 0.0055, random.range( 0.7, 1 ), false );
 
 		}
 
 	};
 
-	const sprayRadius = size * 0.25;
-	const sprayAngle = random.range( 0, Math.PI * 2 );
+	// 茶色い小枝がカードを下から上へ通り、左右互い違いに出た脇枝の先に房が付く。房と房の間に小枝と隙間が見える。
+	// カードの上（v = 1、画像の下端の行）は世界の上に近いので、房は上向きの筆になる。付け根は縁から離して塊の中に隠す。
+	const direction = Math.PI * 0.5 + random.range( - 0.35, 0.35 );
+	const dx = Math.cos( direction );
+	const dy = Math.sin( direction );
+	const baseX = size * 0.5 - dx * size * 0.28;
+	const baseY = size * 0.5 - dy * size * 0.28;
+	const tipX = size * 0.5 + dx * size * 0.12;
+	const tipY = size * 0.5 + dy * size * 0.12;
+	const tufts: { x: number; y: number; angle: number; length: number }[] = [ { x: tipX, y: tipY, angle: direction, length: size * random.range( 0.26, 0.3 ) } ];
+	const sideCount = 4;
+	const branchlets: [ number, number, number, number ][] = [];
 
-	for ( let spray = 0; spray < 4; spray ++ ) {
+	for ( let side = 0; side < sideCount; side ++ ) {
 
-		// 中心から少しずつ離して 4 方向へ。外側ほど小さくして、カードの縁で切れないようにする。
-		const angle = sprayAngle + spray / 4 * Math.PI * 2 + random.range( - 0.3, 0.3 );
-		const distance = size * random.range( 0.16, 0.21 );
-		drawSpray( size * 0.5 + Math.cos( angle ) * distance, size * 0.5 + Math.sin( angle ) * distance, sprayRadius * random.range( 0.85, 1 ), 6 );
+		const t = 0.1 + side / sideCount * 0.78 + random.range( - 0.04, 0.04 );
+		const fromX = baseX + ( tipX - baseX ) * t;
+		const fromY = baseY + ( tipY - baseY ) * t;
+		const sideAngle = direction + ( side % 2 === 0 ? 1 : - 1 ) * random.range( 0.75, 1.05 );
+		// 付け根に近い脇枝ほど長く、房も大きい。
+		const scale = 1.15 - side / sideCount * 0.35;
+		const reach = size * random.range( 0.13, 0.17 ) * scale;
+		const toX = fromX + Math.cos( sideAngle ) * reach;
+		const toY = fromY + Math.sin( sideAngle ) * reach;
+		branchlets.push( [ fromX, fromY, toX, toY ] );
+		tufts.push( { x: toX, y: toY, angle: sideAngle, length: size * random.range( 0.2, 0.24 ) * scale } );
 
 	}
+
+	drawSegment( baseX, baseY, tipX, tipY, size * 0.008, 0.95, true );
+	for ( const [ fromX, fromY, toX, toY ] of branchlets ) drawSegment( fromX, fromY, toX, toY, size * 0.0055, 0.95, true );
+	for ( const tuft of tufts ) drawTuft( tuft.x, tuft.y, tuft.angle, tuft.length, 70 );
 
 	return {
 		color: { width: size, height: size, data: color },

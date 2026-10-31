@@ -99,7 +99,7 @@ function createBranches( random: Random, height: number, spine: readonly Vec3[],
 		const tip: Vec3 = [ point[ 0 ] + Math.cos( angle ) * length, y + length * random.range( 0.15, 0.45 ), point[ 2 ] + Math.sin( angle ) * length ];
 		const lobeRadius = height * random.range( 0.1, 0.13 ) * ( 1.05 - relative * 0.35 );
 		// 塊は枝先に 1 個だけ。小さな塊は割り当てるカードが少なく、浮いて見えた。
-		const lobes: FoliageLobe[] = [ { center: addVec3( tip, [ 0, lobeRadius * 0.25, 0 ] ), radius: lobeRadius, scale: [ 1.3, 0.8, 1.3 ] } ];
+		const lobes: FoliageLobe[] = [ { center: addVec3( tip, [ 0, lobeRadius * 0.25, 0 ] ), radius: lobeRadius, scale: [ 1.45, 0.62, 1.45 ] } ];
 
 		branches.push( { base: point, tip, radius: trunkRadius * 0.42, lobes } );
 
@@ -114,21 +114,29 @@ function createBranches( random: Random, height: number, spine: readonly Vec3[],
 
 }
 
-// 幹の下の方に残る折れた枝の跡。
+// 樹冠の下に残る枯れ枝。横へ伸びてから先が上へ反り、先へ向かって細くなる。尖らせず、折れた先は平らに閉じる。
 function addStubs( builder: MeshBuilder, random: Random, height: number, spine: readonly Vec3[], radii: readonly number[], sides: number ): void {
 
 	const count = random.int( 2, 4 );
 
 	for ( let index = 0; index < count; index ++ ) {
 
-		const y = height * random.range( 0.18, 0.45 );
+		const y = height * random.range( 0.28, 0.46 );
 		const { point, index: spineIndex } = trunkPoint( spine, y );
 		const angle = random.range( 0, Math.PI * 2 );
-		const length = height * random.range( 0.04, 0.08 );
-		const radius = radii[ Math.max( 0, spineIndex - 1 ) ]! * random.range( 0.3, 0.4 );
-		const tip: Vec3 = [ point[ 0 ] + Math.cos( angle ) * length, y + length * random.range( 0.2, 0.8 ), point[ 2 ] + Math.sin( angle ) * length ];
+		const length = height * random.range( 0.07, 0.12 );
+		const radius = radii[ Math.max( 0, spineIndex - 1 ) ]! * random.range( 0.2, 0.28 );
+		const rise = random.range( 0.2, 0.8 );
+		// 先へ行くほど横へ少し曲げる（向きは乱数を増やさず rise から決める）。
+		const bend = ( rise - 0.5 ) * 1.2;
+		const along = ( distance: number, turn: number, up: number ): Vec3 => [
+			point[ 0 ] + Math.cos( angle + bend * turn ) * length * distance,
+			y + length * up,
+			point[ 2 ] + Math.sin( angle + bend * turn ) * length * distance,
+		];
+		const points = [ point, along( 0.38, 0.1, - 0.04 ), along( 0.72, 0.45, 0.01 + rise * 0.07 ), along( 0.95, 1, 0.08 + rise * 0.27 ) ];
 		// sides が 0 なら描かない（乱数は同じだけ使う）。
-		if ( sides > 0 ) addStylizedLimb( builder, [ point, lerpVec3( point, tip, 0.5 ), tip ], [ radius, radius * 0.8, radius * 0.45 ], sides, barkPartIndex, () => 0, 1 );
+		if ( sides > 0 ) addStylizedLimb( builder, points, [ radius, radius * 0.72, radius * 0.5, radius * 0.34 ], sides, barkPartIndex, () => 0, 1, true );
 
 	}
 
@@ -161,8 +169,8 @@ interface PineDetail {
 
 // LOD1 / LOD2 は枚数を減らした分だけカードを大きくし、覆う量を保つ。LOD2 は葉に隠れる枝を描かない。
 const lodDetails: PineDetail[] = [
-	{ trunkSides: 7, trunkSamples: 2, branchSides: 4, stubSides: 4, cards: 154, cardSize: 2.1 },
-	{ trunkSides: 5, trunkSamples: 1, branchSides: 3, stubSides: 3, cards: 80, cardSize: 2.7 },
+	{ trunkSides: 7, trunkSamples: 2, branchSides: 4, stubSides: 5, cards: 154, cardSize: 2.1 },
+	{ trunkSides: 5, trunkSamples: 1, branchSides: 3, stubSides: 4, cards: 80, cardSize: 2.7 },
 	{ trunkSides: 4, trunkSamples: 1, branchSides: 0, stubSides: 0, cards: 46, cardSize: 3.3 },
 ];
 
@@ -192,7 +200,8 @@ function buildPineMesh( seed: number, height: number, detail: PineDetail ): { me
 	const lobes = branches.flatMap( ( branch ) => branch.lobes );
 	const totalWeight = lobes.reduce( ( sum, lobe ) => sum + lobe.radius * lobe.radius, 0 );
 	// カードは塊の面に沿う向きに寄せて少し内側に置く。真横を向いたカードの角が塊の外へ飛び出すと板の集まりに見える。
-	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( detail.cards * lobe.radius * lobe.radius / totalWeight ), lobe.radius * detail.cardSize, { depth: [ 0.55, 0.95 ], jitter: 0.4 } );
+	// 房の付け根（テクスチャの下）が枝のある塊の内側を向くよう、カードの上を外向きにする。
+	for ( const lobe of lobes ) addFoliageLobeCards( builder, random, lobe, crownCenter, crownRadius, Math.round( detail.cards * lobe.radius * lobe.radius / totalWeight ), lobe.radius * detail.cardSize, { depth: [ 0.55, 0.95 ], jitter: 0.4, outwardUp: 0.5 } );
 
 	return { mesh: builder.build(), trunk };
 

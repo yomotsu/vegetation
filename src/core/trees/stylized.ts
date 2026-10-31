@@ -22,6 +22,12 @@ export function scaleVec3( vector: Vec3, scale: number ): Vec3 {
 
 }
 
+export function dotVec3( a: Vec3, b: Vec3 ): number {
+
+	return a[ 0 ] * b[ 0 ] + a[ 1 ] * b[ 1 ] + a[ 2 ] * b[ 2 ];
+
+}
+
 export function crossVec3( a: Vec3, b: Vec3 ): Vec3 {
 
 	return [
@@ -189,22 +195,33 @@ export function addStylizedLimb(
 	partIndex: number,
 	wind: ( t: number ) => number = ( t ) => t,
 	samplesPerSegment = 3,
+	flatEnd = false,
 ): { spine: Vec3[]; radii: number[] } {
 
 	const sampled = sampleLimbCurve( points, radii, samplesPerSegment );
 	const local = new MeshBuilder();
 	local.beginGroup( partIndex );
-	// 枝先は細い輪のまま開けず、1 点に閉じる（輪 1 つ分の頂点が減り、形はほぼ同じ）。
-	// 管は最後の 1 点を除いて作り、風の重みは元の点の並びと同じ値になるよう t を縮める。
 	const last = sampled.spine.length - 1;
-	const tubeScale = ( last - 1 ) / last;
-	addTube( local, sampled.spine.slice( 0, last ), sampled.radii.slice( 0, last ), sides, { color: [ 1, 1, 1 ], wind: ( t ) => wind( t * tubeScale ), capEnd: false } );
-	const tangent = normalizeVec3( subtractVec3( sampled.spine[ last ]!, sampled.spine[ last - 1 ]! ) );
-	const tip = local.addVertex( sampled.spine[ last ]!, tangent, [ 0.5, 1 ], [ 1, 1, 1 ], wind( 1 ) );
 
-	for ( let side = 0; side < sides; side ++ ) {
+	if ( flatEnd ) {
 
-		local.addTriangle( ( last - 1 ) * ( sides + 1 ) + side, ( last - 1 ) * ( sides + 1 ) + side + 1, tip );
+		// 先を平らな面で閉じる（短い枝が尖ってトゲに見えないように）。
+		addTube( local, sampled.spine, sampled.radii, sides, { color: [ 1, 1, 1 ], wind, capEnd: true } );
+
+	} else {
+
+		// 枝先は細い輪のまま開けず、1 点に閉じる（輪 1 つ分の頂点が減り、形はほぼ同じ）。
+		// 管は最後の 1 点を除いて作り、風の重みは元の点の並びと同じ値になるよう t を縮める。
+		const tubeScale = ( last - 1 ) / last;
+		addTube( local, sampled.spine.slice( 0, last ), sampled.radii.slice( 0, last ), sides, { color: [ 1, 1, 1 ], wind: ( t ) => wind( t * tubeScale ), capEnd: false } );
+		const tangent = normalizeVec3( subtractVec3( sampled.spine[ last ]!, sampled.spine[ last - 1 ]! ) );
+		const tip = local.addVertex( sampled.spine[ last ]!, tangent, [ 0.5, 1 ], [ 1, 1, 1 ], wind( 1 ) );
+
+		for ( let side = 0; side < sides; side ++ ) {
+
+			local.addTriangle( ( last - 1 ) * ( sides + 1 ) + side, ( last - 1 ) * ( sides + 1 ) + side + 1, tip );
+
+		}
 
 	}
 
@@ -236,6 +253,11 @@ export interface FoliageCardOptions {
 	quadrant?: boolean;
 	/** カードの向きを外向きからどれだけばらすか。省略時 0.9。小さいほど真横を向いたカードが減る。 */
 	jitter?: number;
+	/**
+	 * 指定するとカードの上（v = 1）を塊の中心から外へ向け、この値だけ世界の上へ寄せる。
+	 * テクスチャの下に小枝の付け根を描いたとき、付け根が枝のある塊の内側を向く。省略時はカードの上を世界の上にそろえる。
+	 */
+	outwardUp?: number;
 }
 
 export interface FoliageLobe {
@@ -285,8 +307,24 @@ export function addFoliageLobeCards(
 		// 外向き寄りのランダムな向き。真横を向いたカードが輪郭から線として飛び出さないようにする。
 		const cardNormal = normalizeVec3( addVec3( direction, scaleVec3( randomUnitVector( random ), options.jitter ?? 0.9 ) ) );
 		const reference: Vec3 = Math.abs( cardNormal[ 1 ] ) > 0.9 ? [ 1, 0, 0 ] : [ 0, 1, 0 ];
-		const right = scaleVec3( normalizeVec3( crossVec3( reference, cardNormal ) ), cardSize * 0.5 );
-		const up = scaleVec3( normalizeVec3( crossVec3( cardNormal, right ) ), cardSize * 0.5 );
+		let right = scaleVec3( normalizeVec3( crossVec3( reference, cardNormal ) ), cardSize * 0.5 );
+		let up = scaleVec3( normalizeVec3( crossVec3( cardNormal, right ) ), cardSize * 0.5 );
+
+		if ( options.outwardUp !== undefined ) {
+
+			// 外向き（＋上寄せ）をカードの面へ射影して上とする。面とほぼ直交するときは世界の上のまま。
+			const outward = addVec3( direction, [ 0, options.outwardUp, 0 ] );
+			const inPlane = subtractVec3( outward, scaleVec3( cardNormal, dotVec3( outward, cardNormal ) ) );
+
+			if ( Math.hypot( ...inPlane ) > 0.2 ) {
+
+				up = scaleVec3( normalizeVec3( inPlane ), cardSize * 0.5 );
+				right = scaleVec3( normalizeVec3( crossVec3( up, cardNormal ) ), cardSize * 0.5 );
+
+			}
+
+		}
+
 		const corners: Vec3[] = [
 			subtractVec3( subtractVec3( center, right ), up ),
 			subtractVec3( addVec3( center, right ), up ),
