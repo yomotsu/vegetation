@@ -1,6 +1,5 @@
 import type { PebblesOptions } from '../core/generators/pebbles';
 import type { RockOptions } from '../core/generators/rock';
-import type { TreeOptions } from '../core/generators/tree';
 import { prepareVegetationAsset } from '../core/vegetationAssetPreparation';
 import type { PreparedVegetationAsset } from '../core/vegetationAssetPreparation';
 import type { GrassOptions } from '../core/generators/grass';
@@ -34,10 +33,6 @@ function createWorkerGenerator<Options>(
 }
 
 const generatorLoaders: Record<VegetationWorkerKind, () => Promise<WorkerGenerator>> = {
-	tree: async () => {
-		const [ generator, options ] = await Promise.all( [ import( '../core/generators/tree' ), import( '../core/generationOptions/tree' ) ] );
-		return createWorkerGenerator<TreeOptions>( generator.generateTreeData, options.normalizeTreeGenerationOptions );
-	},
 	'broadleaf-tree': async () => {
 		const generator = await import( '../core/trees/broadleaf' );
 		return createWorkerGenerator<BroadleafTreeOptions>( generator.generateBroadleafTreeData, generator.normalizeBroadleafTreeGenerationOptions );

@@ -1,7 +1,5 @@
-import { generateBroadleafTree, generateBroadleafTreeAsync, generateBush, generateBushAsync, generatePineTree, generatePineTreeAsync, generateFirTree, generateFirTreeAsync, generateWillowTree, generateWillowTreeAsync, generateFlowers, generateFlowersAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync, generateTree, generateTreeAsync } from '../src/index';
-import type { BroadleafTreeMeshOptions, BushMeshOptions, PineTreeMeshOptions, FirTreeMeshOptions, WillowTreeMeshOptions, FlowersMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, TreeMeshOptions, VegetationAsset } from '../src/index';
-import { DEFAULT_BARK_COLOR } from '../src/core/barkTexture';
-import { DEFAULT_LEAF_COLOR } from '../src/core/leafTexture';
+import { generateBroadleafTree, generateBroadleafTreeAsync, generateBush, generateBushAsync, generatePineTree, generatePineTreeAsync, generateFirTree, generateFirTreeAsync, generateWillowTree, generateWillowTreeAsync, generateFlowers, generateFlowersAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync } from '../src/index';
+import type { BroadleafTreeMeshOptions, BushMeshOptions, PineTreeMeshOptions, FirTreeMeshOptions, WillowTreeMeshOptions, FlowersMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, VegetationAsset } from '../src/index';
 import { DEFAULT_BROADLEAF_TREE_BARK_COLOR, DEFAULT_BROADLEAF_TREE_HEIGHT, DEFAULT_BROADLEAF_TREE_LEAF_COLOR } from '../src/core/trees/broadleaf';
 import { DEFAULT_BUSH_BARK_COLOR, DEFAULT_BUSH_HEIGHT, DEFAULT_BUSH_LEAF_COLOR } from '../src/core/trees/bush';
 import { DEFAULT_PINE_TREE_BARK_COLOR, DEFAULT_PINE_TREE_HEIGHT, DEFAULT_PINE_TREE_LEAF_COLOR } from '../src/core/trees/pine';
@@ -59,20 +57,6 @@ function toColorHex( color: number ): string {
 }
 
 export const kinds: VegetationKind[] = [
-	{
-		name: 'Tree',
-		create: ( opts ) => generateTree( opts as TreeMeshOptions ),
-		createAsync: ( opts ) => generateTreeAsync( opts as TreeMeshOptions ),
-		colorParts: [ 'leaf', 'bark' ],
-		colorOptions: { leaf: 'leafColor', bark: 'barkColor' },
-		defaultColors: { leaf: toColorHex( DEFAULT_LEAF_COLOR ), bark: toColorHex( DEFAULT_BARK_COLOR ) },
-		options: {
-			seed: 1,
-			height: 7.5,
-			crownSize: 1,
-			branchCount: 10,
-		},
-	},
 	{
 		name: 'Broadleaf',
 		create: ( opts ) => generateBroadleafTree( opts as BroadleafTreeMeshOptions ),

@@ -249,16 +249,6 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 		return [ 2, 14, 0.1 ];
 
 	}
-	if ( name === 'crownSize' ) {
-
-		return [ 0.5, 1.5, 0.01 ];
-
-	}
-	if ( name === 'branchCount' ) {
-
-		return [ 1, 18, 1 ];
-
-	}
 	if ( name === 'size' ) {
 
 		return [ 1, 12, 0.1 ];
@@ -296,7 +286,7 @@ function makeAsset( kind: VegetationKind, options: Record<string, number | boole
 
 function supportsCompressionCompare(): boolean {
 
-	return activeKind.name === 'Rock' || activeKind.name === 'Tree' || ( activeKind.name === 'Flowers' && state.options.variety === 'allium' );
+	return activeKind.name === 'Rock' || activeKind.name === 'Fir' || ( activeKind.name === 'Flowers' && state.options.variety === 'allium' );
 
 }
 
@@ -345,7 +335,6 @@ function updateGrassScene(): void {
 function setPartColor( part: string, color: string ): void {
 
 	scheduleColorUpdate( part, color );
-	if ( part === 'leaf' ) scheduleColorUpdate( 'leafRing', color );
 	if ( part === 'blade' ) updateGrassScene();
 
 }
@@ -534,8 +523,8 @@ function rebuildPreview(): void {
 			const comparedAsset = compressionTwin ?? asset;
 			const spacing = activeKind.name === 'Flowers'
 				? Math.max( 0.85, Number( state.options.spread ?? 0.29 ) * 2.5 )
-				: activeKind.name === 'Tree'
-				? Math.max( 4.5, Number( state.options.height ?? 7.5 ) * 0.72 )
+				: activeKind.name === 'Fir'
+				? Math.max( 4.5, Number( state.options.height ?? 6 ) * 0.72 )
 				: Math.max( 4.5, Number( state.options.size ?? 6.4 ) * 1.25 );
 			const left = new VegetationMesh( asset, 0 );
 			left.position.x = - spacing / 2;
@@ -572,7 +561,7 @@ function rebuildPreview(): void {
 	lastScatterShadowUpdate = - Infinity;
 	const compressionUnavailable = state.mode === 'compression' && ( ! supportsCompressionCompare() || ktx2Loader === null );
 	status.hidden = ! isGenerating && state.mode !== 'scatter' && ! compressionUnavailable;
-	if ( compressionUnavailable && ! isGenerating ) status.textContent = 'Choose Rock, Tree, or Flowers → allium for this comparison.';
+	if ( compressionUnavailable && ! isGenerating ) status.textContent = 'Choose Rock, Fir, or Flowers → allium for this comparison.';
 
 }
 

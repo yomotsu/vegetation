@@ -1,51 +1,34 @@
-import { BufferGeometry, InstancedMesh, LOD, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
+import { BufferGeometry, FrontSide, InstancedMesh, LOD, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { RockMesh } from '../../src/three/meshes';
-import { TreeMesh, generateTree } from '../../src/three/trees/tree';
 import { BroadleafTreeMesh, generateBroadleafTree } from '../../src/three/trees/broadleaf';
 import { BushMesh } from '../../src/three/trees/bush';
 import { PineTreeMesh } from '../../src/three/trees/pine';
-import { FirTreeMesh } from '../../src/three/trees/fir';
+import { FirTreeMesh, generateFirTree } from '../../src/three/trees/fir';
 import { WillowTreeMesh } from '../../src/three/trees/willow';
 import { orientBillboardInstances, VegetationMesh } from '../../src/three/VegetationMesh';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 
-function meanTextureColorAtV( texture: { width: number; height: number; data: Uint8Array }, v: number ): [ number, number, number ] {
+function meanTextureColor( texture: { data: Uint8Array } ): [ number, number, number ] {
 
-	const y = Math.round( v * ( texture.height - 1 ) );
 	const channels = [ 0, 0, 0 ];
 	let count = 0;
 
-	for ( let x = 16; x < texture.height - 16; x ++ ) {
-
-		const offset = ( y * texture.width + x ) * 4;
-
-		if ( texture.data[ offset + 3 ]! < 128 ) {
-
-			continue;
-
-		}
-
+	for ( let offset = 0; offset < texture.data.length; offset += 4 ) {
+		if ( texture.data[ offset + 3 ]! < 128 ) continue;
 		for ( let channel = 0; channel < 3; channel ++ ) channels[ channel ]! += texture.data[ offset + channel ]!;
 		count ++;
-
 	}
 
 	return channels.map( ( channel ) => channel / count ) as [ number, number, number ];
 
 }
 
-function textureLuminance( color: [ number, number, number ] ): number {
-
-	return color[ 0 ] * 0.2126 + color[ 1 ] * 0.7152 + color[ 2 ] * 0.0722;
-
-}
-
-describe( 'tree meshes', () => {
+describe( 'vegetation meshes', () => {
 
 	it( 'creates a mesh with a collider and wind weights', () => {
 
-		const mesh = new TreeMesh( { seed: 1 } );
+		const mesh = new FirTreeMesh( { seed: 1 } );
 
 		expect( mesh ).toBeInstanceOf( Mesh );
 		expect( mesh.lod ).toBe( 0 );
@@ -61,38 +44,37 @@ describe( 'tree meshes', () => {
 
 	it( 'clamps LOD values to integers from zero through four', () => {
 
-		expect( new TreeMesh( { seed: 1, lod: 9 } ).lod ).toBe( 4 );
-		expect( new TreeMesh( { seed: 1, lod: - 1 } ).lod ).toBe( 0 );
-		expect( new TreeMesh( { seed: 1, lod: 2.5 } ).lod ).toBe( 2 );
+		expect( new FirTreeMesh( { seed: 1, lod: 9 } ).lod ).toBe( 4 );
+		expect( new FirTreeMesh( { seed: 1, lod: - 1 } ).lod ).toBe( 0 );
+		expect( new FirTreeMesh( { seed: 1, lod: 2.5 } ).lod ).toBe( 2 );
 
 	} );
 
 	it( 'exposes part colors and disposes assets owned by generated meshes', () => {
 
-		const mesh = new TreeMesh( { seed: 1 } );
+		const mesh = new FirTreeMesh( { seed: 1 } );
 		const disposeAsset = vi.spyOn( mesh.asset, 'dispose' );
 
-		expect( mesh.getColor( 'leaf' ).getHex() ).toBe( 0x2f7d1f );
+		expect( mesh.getColor( 'leaf' ).getHex() ).toBe( 0x4b6c56 );
 		mesh.setColor( 'leaf', 0xc0392b );
 		expect( mesh.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
-		expect( mesh.getColor( 'leafRing' ).getHex() ).toBe( 0xc0392b );
 
 		mesh.dispose();
 		expect( disposeAsset ).toHaveBeenCalledOnce();
 
 	} );
 
-	it( 'reports bark as brown and uses barkColor as a material tint', () => {
+	it( 'reports the bark default and uses barkColor as a material tint', () => {
 
-		const defaultTree = new TreeMesh( { seed: 1 } );
-		const customTree = new TreeMesh( { seed: 1, barkColor: '#855537' } );
+		const defaultFir = new FirTreeMesh( { seed: 1 } );
+		const customFir = new FirTreeMesh( { seed: 1, barkColor: '#855537' } );
 
-		expect( defaultTree.getColor( 'bark' ).getHex() ).toBe( 0x6b4c32 );
-		expect( customTree.getColor( 'bark' ).getHex() ).toBe( 0x855537 );
-		expect( customTree.asset.materials[ 0 ]!.color.getHex() ).toBe( 0x855537 );
+		expect( defaultFir.getColor( 'bark' ).getHex() ).toBe( 0x9a9183 );
+		expect( customFir.getColor( 'bark' ).getHex() ).toBe( 0x855537 );
+		expect( customFir.asset.materials[ 0 ]!.color.getHex() ).toBe( 0x855537 );
 
-		defaultTree.dispose();
-		customTree.dispose();
+		defaultFir.dispose();
+		customFir.dispose();
 
 	} );
 
@@ -140,7 +122,7 @@ describe( 'tree meshes', () => {
 
 	it( 'uses a private, non-drawing LOD4 root geometry with shader attributes', () => {
 
-		const asset = generateTree( { seed: 1 } );
+		const asset = generateFirTree( { seed: 1 } );
 		const mesh = new VegetationMesh( asset, 4 );
 		const emptyGeometry = mesh.geometry;
 		const disposeGeometry = vi.fn();
@@ -164,7 +146,7 @@ describe( 'tree meshes', () => {
 
 	it( 'turns only the LOD4 side quad toward the camera, and toward the light for shadows', () => {
 
-		const asset = generateTree( { seed: 1 } );
+		const asset = generateFirTree( { seed: 1 } );
 		const mesh = new VegetationMesh( asset, 4 );
 		const camera = new PerspectiveCamera();
 		mesh.position.set( 3, 1, - 2 );
@@ -190,7 +172,7 @@ describe( 'tree meshes', () => {
 		expect( mesh.rotation.y ).toBeCloseTo( 0.4 );
 		expect( part.rotation.y ).toBeCloseTo( Math.PI / 2 );
 		expect( topCard.rotation.y ).toBe( 0 );
-		expect( topCard.geometry.getIndex()!.count ).toBe( 6 );
+		expect( topCard.geometry.getIndex()!.count ).toBeGreaterThan( 0 );
 
 		asset.dispose();
 
@@ -230,38 +212,46 @@ describe( 'tree meshes', () => {
 
 	} );
 
-	it( 'shares per-part materials between meshes and applies setColor to every part mesh', () => {
+	it( 'shares source materials and updates part colors across meshes', () => {
 
-		const asset = generateTree( { seed: 1 } );
+		const asset = generateFirTree( { seed: 1 } );
 		const first = new VegetationMesh( asset );
 		const second = new VegetationMesh( asset, 1 );
 		const impostorTexture = asset.materials[ 3 ]!.map as { image: { data: Uint8Array } };
 		const originalPixels = impostorTexture.image.data.slice();
 
 		first.setColor( 'leaf', 0xff0000 );
+		first.setColor( 'bark', 0x855537 );
 
+		const firstBark = first.parts.find( ( part ) => part.name === 'bark' )!;
+		const secondBark = second.parts.find( ( part ) => part.name === 'bark' )!;
 		const firstLeaf = first.parts.find( ( part ) => part.name === 'leaf' )!;
 		const secondLeaf = second.parts.find( ( part ) => part.name === 'leaf' )!;
-		expect( firstLeaf.material ).toBe( secondLeaf.material );
+		expect( firstBark.material ).toBe( secondBark.material );
+		expect( firstBark.material ).toBe( asset.materials[ 0 ] );
+		expect( ( firstBark.material as MeshStandardMaterial ).color.getHex() ).toBe( 0x855537 );
+		expect( ( firstLeaf.material as MeshStandardMaterial ).map ).toBe( ( secondLeaf.material as MeshStandardMaterial ).map );
 		expect( ( firstLeaf.material as MeshStandardMaterial ).color.getHex() ).toBe( 0xffffff );
 		expect( asset.getColor( 'leaf' ).getHex() ).toBe( 0xff0000 );
 		expect( impostorTexture.image.data ).not.toEqual( originalPixels );
-		expect( ( first.parts[ 0 ]!.material as MeshStandardMaterial ) ).toBe( asset.materials[ 0 ] );
-		expect( ( firstLeaf.material as MeshStandardMaterial ) ).toBe( asset.materials[ 1 ] );
 
 	} );
 
-	it( 'creates owned per-part LOD levels scaled from the real default tree height', () => {
+	it( 'creates owned per-part LOD levels for every detail level', () => {
 
-		const lod = TreeMesh.createLOD( { seed: 1 } );
+		const lod = FirTreeMesh.createLOD( { seed: 1 } );
 		const levels = lod.levels;
 		const asset = ( levels[ 0 ]!.object as VegetationMesh ).asset;
 
 		expect( lod ).toBeInstanceOf( LOD );
 		expect( levels ).toHaveLength( 5 );
 		expect( levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 15, 30, 60, 120 ] );
-		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => part.material === asset.materials[ asset.data.parts.findIndex( ( definition ) => definition.name === part.name ) ] ) ) ).toBe( true );
-		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 3, 3, 2, 2 ] );
+		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => {
+			const definition = asset.data.parts.find( ( candidate ) => candidate.name === part.name );
+			const materialIndex = asset.data.parts.findIndex( ( candidate ) => candidate.name === part.name );
+			return part.material === asset.materials[ materialIndex ] || definition?.upNormalCards === true && part.material.side === FrontSide;
+		} ) ) ).toBe( true );
+		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).parts.length ) ).toEqual( [ 2, 2, 2, 2, 2 ] );
 		expect( levels.every( ( level ) => ( level.object as VegetationMesh ).parts.every( ( part ) => Array.isArray( part.material ) === false ) ) ).toBe( true );
 		expect( levels.map( ( level ) => ( level.object as VegetationMesh ).lod ) ).toEqual( [ 0, 1, 2, 3, 4 ] );
 		const disposeAsset = vi.spyOn( asset, 'dispose' );
@@ -272,7 +262,7 @@ describe( 'tree meshes', () => {
 
 	it( 'scales default LOD distances from each mesh height', () => {
 
-		const firLod = TreeMesh.createLOD( { height: 15 } );
+		const firLod = FirTreeMesh.createLOD( { height: 12 } );
 		const broadleafLod = BroadleafTreeMesh.createLOD( { height: 12 } );
 		expect( firLod.levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 30, 60, 120, 240 ] );
 		expect( broadleafLod.levels.map( ( level ) => level.distance ) ).toEqual( [ 0, 30, 60, 120, 240 ] );
@@ -283,7 +273,7 @@ describe( 'tree meshes', () => {
 
 	it( 'propagates shadow flags to all part meshes', () => {
 
-		const mesh = new TreeMesh( { seed: 1 } );
+		const mesh = new FirTreeMesh( { seed: 1 } );
 
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
@@ -299,27 +289,20 @@ describe( 'tree meshes', () => {
 
 	} );
 
-	it( 'applies leafColor and exposes the leaf texture', () => {
+	it( 'applies leafColor and exposes the colorized leaf texture', () => {
 
-		const mesh = new TreeMesh( { seed: 1, leafColor: '#c0392b' } );
+		const mesh = new FirTreeMesh( { seed: 1, leafColor: '#c0392b' } );
 		const leafTexture = mesh.asset.data.textures.leaf!;
-		const base = meanTextureColorAtV( leafTexture, 0.05 );
-		const tip = meanTextureColorAtV( leafTexture, 0.9 );
+		const leafMaterial = mesh.parts.find( ( part ) => part.name === 'leaf' )!.material as MeshStandardMaterial;
+		const color = meanTextureColor( leafTexture );
 
 		expect( mesh.asset ).toBeInstanceOf( VegetationAsset );
 		expect( mesh.asset.getColor( 'leaf' ).getHex() ).toBe( 0xc0392b );
-		expect( mesh.parts.find( ( part ) => part.name === 'leaf' )!.material ).toBe( mesh.asset.materials[ 1 ] );
-		expect( ( mesh.parts.find( ( part ) => part.name === 'leaf' )!.material as MeshStandardMaterial ).map ).not.toBeNull();
-		expect( textureLuminance( base ) ).toBeLessThan( textureLuminance( tip ) );
+		expect( leafMaterial.map ).toBe( mesh.asset.materials[ 1 ]!.map );
+		expect( leafMaterial.side ).toBe( FrontSide );
+		expect( color[ 0 ] ).toBeGreaterThan( color[ 1 ] );
 
-		for ( const v of [ 0.05, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1 ] ) {
-
-			const color = meanTextureColorAtV( leafTexture, v );
-			expect( color[ 0 ] ).toBeGreaterThan( color[ 1 ] );
-
-		}
-
-		const repeated = new TreeMesh( { seed: 1, leafColor: '#c0392b' } );
+		const repeated = new FirTreeMesh( { seed: 1, leafColor: '#c0392b' } );
 		expect( repeated.asset.data.textures.leaf!.data ).toEqual( leafTexture.data );
 
 	} );

@@ -1,6 +1,6 @@
 # プロジェクト概要
 
-vegetation: three.js 向けのランタイム植生メッシュ生成ライブラリ（tree〈旧モミ〉/ stylized な木 broadleaf・bush・pine・willow・fir〈モミ〉/ rock / pebbles / grass / flowers）。各種類に LOD0〜4 を持ち、LOD3/4 はインポスター。木（bush 以外）と rock はコライダも生成する。
+vegetation: three.js 向けのランタイム植生メッシュ生成ライブラリ（stylized な木 fir〈モミ〉・broadleaf・bush・pine・willow / rock / pebbles / grass / flowers）。各種類に LOD0〜4 を持ち、LOD3/4 はインポスター。木（bush 以外）と rock はコライダも生成する。
 
 - 決定事項の正本は `docs/superpowers/specs/2026-10-24-vegetation-design.md` の「実装で確定したこと」。見た目や仕様を変えたらここに追記する
 - 試作はユーザーが採用するまでコミットしない。不採用の差分は `.superpowers/sdd/2026-10-24-vegetation/*.patch`（git 管理外）に残す
@@ -9,11 +9,10 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 ## ファイル構成
 
 - `src/core/generators/*.ts`: 種類ごとの生成（純粋関数、`generate*Data` が `VegetationData` を返す）。花の品種ごとの形は `src/core/flowers/*.ts`、allium / daisy の花テクスチャは `src/core/flowersTexture.ts`
-- `src/core/trees/*.ts`: stylized な木（`broadleaf` / `bush` / `pine` / `willow` / `fir`）。共通の部品は `stylized.ts`（管・葉カード・インポスター LOD）、テクスチャは `stylizedTextures.ts`（葉の房・針葉・ヤナギの垂れ枝・モミの羽根・樹皮）。three 層は `src/three/trees/*.ts`（旧モミ `TreeMesh` は `tree.ts`）
+- `src/core/trees/*.ts`: stylized な木（`broadleaf` / `bush` / `pine` / `willow` / `fir`）。共通の部品は `stylized.ts`（管・葉カード・インポスター LOD）、テクスチャは `stylizedTextures.ts`（葉の房・針葉・ヤナギの垂れ枝・モミの羽根・樹皮）。three 層は `src/three/trees/*.ts`
 - `src/core/impostor.ts`: インポスターの焼き込み（`bakeImpostor`）とカード生成。LOD3/4 は LOD0 から焼く。タイルは 2 のべき乗の格子に並べる
 - `src/core/textureMipmaps.ts`: alpha test 用の CPU ミップ（カバレッジ保持）
 - `src/core/uastc.ts` / `src/core/ktx2.ts`: 自作 UASTC エンコーダーと KTX2 書き出し（GPU 圧縮、既定 on・opt-out）
-- `src/core/leafTexture.ts`: モミの小枝テクスチャ（`createFirSprigTexture`）と `padTextureEdges`（横一列の正方形タイルの縁埋め。アルファは変えない）
 - `src/three/VegetationAsset.ts`: マテリアル・テクスチャ・色変更・UASTC 差し替え。`VegetationMesh.ts`: LOD ごとのパーツ Mesh、LOD4 ビルボードの向き、`upNormalCards` の両向き化
 - `src/webgpu/index.ts`: WebGPU 用インポスターマテリアル（TSL）。`src/worker/*`: 非同期生成と UASTC エンコード（共有 Worker プール）
 - `demo/`: `npm run demo`（vite, 5173）。view = single / compare（LOD0〜4 を頂点数付きで並べる）/ compression（RGBA と UASTC の左右比較）/ scatter。「UASTC textures」で圧縮を切り替え。`demo/grassBlueNoise.ts` はデモ専用
@@ -21,9 +20,9 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 ## API（2026-10-30 に絞った）
 
 - メイン `vegetation`: `*Mesh`、`generate*` / `generate*Async`、`VegetationAsset`、`VegetationMesh`、`orientBillboardInstances`、`disposeVegetationWorkers` と型だけ。乱数・ノイズ・色変換などの部品は公開しない（デモは `../src/...` を直接 import）
-- `vegetation/core`: `generate{Tree,BroadleafTree,Bush,PineTree,WillowTree,Rock,Pebbles,Grass,Flowers}Data` と型だけ。`vegetation/webgpu`: 読み込むと TSL マテリアルを登録
+- `vegetation/core`: `generate{FirTree,BroadleafTree,Bush,PineTree,WillowTree,Rock,Pebbles,Grass,Flowers}Data` と型だけ。`vegetation/webgpu`: 読み込むと TSL マテリアルを登録
 - 公開リストは `tests/publicApi.test.ts` で固定している。export を増やしたらここも直す
-- stylized な木（broadleaf / bush / pine / willow）は種類ごとに別クラス・別モジュール（`src/core/trees/*.ts`、`src/three/trees/*.ts`）。tree shaking のため種類のモジュール同士は import しない（共通は `stylized.ts` / `stylizedTextures.ts`）。Worker も kind ごとに動的 import して chunk を分ける
+- stylized な木（fir / broadleaf / bush / pine / willow）は種類ごとに別クラス・別モジュール（`src/core/trees/*.ts`、`src/three/trees/*.ts`）。tree shaking のため種類のモジュール同士は import しない（共通は `stylized.ts` / `stylizedTextures.ts`）。Worker も kind ごとに動的 import して chunk を分ける
 - GPU 圧縮: 既定 on。`compressTextures: false` で opt-out。通常は `VegetationMesh` が最初に描画されたとき renderer に対応する共有 `KTX2Loader` を遅延生成し、`detectSupport( renderer )` を呼ぶ。`getParts()` / `InstancedMesh` では `asset.setRenderer( renderer )` を呼ぶ。利用者が loader を渡した場合はそちらを使う
 
 ## アルゴリズム・設計
@@ -31,7 +30,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 ### テクスチャ全般
 - 植生は半透明を使わない。抜きは alpha test（discard）のみ
 - alpha test の色テクスチャは CPU でミップを作り、各段で alphaTest 以上の画素の割合を元にそろえる（倍率で合わせ、届かない段は不透明度の高い順にちょうど目標の数だけ閾値以上にする）。遠くで細い茎・針葉が消えないため。補正は誤差 0.2% 超の段だけ（生成予算 50 ms のため）
-- テクスチャは 2 のべき乗。例外は tree の leafRing（1 段 128px を横一列、1280×128）。正方形に詰めると 1 段 64px になり LOD1/2 がまばらになった
+- テクスチャは 2 のべき乗
 - 花のまとめたカード（allium / tulip / calla）は描いた後に縦だけ下の 2 のべき乗へ縮める。上へ伸ばすと縦の画素密度が上がり GPU が粗いミップを選んで細い茎が消えた
 - rock / pebbles の石テクスチャは 512²（`ROCK_TEXTURE_SIZE`）。1024² は 1 アセット 8MB だった
 
@@ -51,25 +50,15 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - `upNormalCards` の部品は裏向きの三角形を足して FrontSide で描く（両面だと裏で法線が反転して黒くなる）。primrose のお椀は `doubleSided: false`
 - 葉の付け根は地面から 3 mm 埋める。allium の既定色は紫 `#8b5fbf`。pebbles の既定 `burial` は 0.48
 
-### tree の LOD1/2: 段ごとのお椀（2026-10-29 採用）
-- 各段の 5 枚の枝葉を 1 枚の扇形メッシュにまとめる。テクスチャ `leafRing` は各段の LOD0 の枝葉を真上から焼いたアトラス（1 段 128px の横一列）。UV は水平位置そのままなので LOD1/2 で共有
-- 焼き込みは「不透明な面同士だけで高さを比較」する。透明な隙間が上に来て下の葉を消すと、付け根が空いて幹から浮いて見えた
-- 縁は 10 頂点（枝葉方向 5 + 間 5）。間の頂点を `lodFrondFoldRatio × 3.5` × 幅だけ持ち上げて V 字の折れの代わりにする（真横の葉の量を LOD0 の 70% 以上にするため値を振って決定）
-- 頂上の 1 枚（leader）だけ従来の `leaf` カード。色変更時は `tree-leaf-ring` 生成器で焼き直す（`TextureGeneratorDef` に height / crownSize / branchCount を持たせる）
-- LOD0 への適用は不採用: 近距離用に 1 段 512px が必要でアトラス約 12MB、生成約 166ms、段がスカート状になる
-
 ### インポスター
 - パートの `impostorFade: false` で視線角度のディザ切り替えをやめ、全カードを常に描く。現在は全種類 false
 - 焼き込みの速さ（2026-10-31、出力はバイト一致のまま）: 行ごとに三角形が掛かる x 範囲だけを回し、視線ごとに三角形を手前から奥へ並べて塗る。時間は塗る面積で決まる（重なった大きな葉の板）。焼き込みの元を LOD1/2 にしても 1〜2 割しか速くならない
 - カメラを向く LOD4 縦カードは、影パスでは光源（影カメラ）へ向ける。WebGL は `onBeforeShadow` より前に modelViewMatrix を計算するので、向きを変えた後に再計算している。WebGPU は影でも `onBeforeRender` が影カメラで呼ばれる
 
-### tree のその他
-- `rootDepth` はオプションではなく固定: 0.3 ×（樹高 / 7.55）m 幹を y=0 より下へ伸ばす（コライダも）
-
 ### stylized な木（2026-10-30〜）
 - 参考: CGTrader「Simple Trees Pack」と、ユーザーの Blender 素材 `~/Library/CloudStorage/Dropbox/works/_material/3d/models/vegitation-mountain/`（Forest の Tree01〜03 / Bush01、Leaf01 / Trunk01 テクスチャ）。フォルダの一覧は TCC で拒否されるが、ファイルはパス指定で読める（Blender は `/Applications/Blender.app/Contents/MacOS/Blender -b` で調べられる）
 - 葉は大きな正方形カードに房テクスチャを丸ごと貼り、法線は塊の中心から外向き（カードの向きではない）。`upNormalCards: true`
-- LOD1/2 は同じ骨格から分割数と葉の枚数だけ落とす（`*Detail` の表）。LOD3/4 はモミと同じインポスター（`buildStylizedImpostorLods`、板は `upNormalCards`）
+- LOD1/2 は同じ骨格から分割数と葉の枚数だけ落とす（`*Detail` の表）。LOD3/4 は共通のインポスター（`buildStylizedImpostorLods`、板は `upNormalCards`）
 - 頂点数の目標: broadleaf ≤ 800、pine ≤ 1000、willow ≤ 900、fir < 800（bush 約 450）。葉カードは木全体の枚数を固定して塊の大きさで配分する。broadleaf / bush は房 4 つの大カード（内側）＋房 1 つの小カード（表面）
 - willow の葉は枝先に置く釣り鐘形の殻にシェブロンの垂れ枝テクスチャを巻く（YouTube「Stylized Willow Tree Tutorial」の Leaf_E 方式）。主枝は 2 方向にまとめ、幹は太くぐねっと曲げる。殻の数は LOD0 の頂点上限 900 から決め、LOD1/2 も同じ数・位置
 - 表面の葉カードは塊の球面に沿わせて少し内側に置く（向きのばらつき 0.4 前後）。0.9 だと角が外へ飛び出して板の集まりに見えた
@@ -77,26 +66,30 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - LOD1/2 は乱数の並びを LOD0 とそろえる（骨格の乱数は葉より先に引く。描かない部品も乱数は同じだけ引く）。高さ合わせの倍率は LOD0 から求めて全 LOD に掛ける
 - 不採用: willow の「枝に沿って垂れ枝の帯」方式（付け根の区画・「く」の字の折り・縦に繰り返すテクスチャまで試した。`.superpowers/sdd/2026-10-24-vegetation/willow-ribbon-strands.patch`）、broadleaf の species オプション（種類ごとの別クラスにした）
 
-### stylized なモミ fir（2026-10-31 採用。旧 `tree` の置き換え候補）
+### stylized なモミ fir（2026-10-31 正式採用。旧 `tree`〈TreeMesh〉は削除）
 - 詳細は仕様書の「stylized なモミ fir」。既定は樹高 6 m、葉 `#4b6c56`、幹 `#9a9183`、枝 `#5c5446`
 - 枝は不揃いな段（輪生）。中心線は幹からやや下向きに出て先で上へ反り、葉は枝を稜線にした左右 2 枚の帯で両側へ垂らす。帯に羽根テクスチャ（512×1024）の左右半分を貼る
-- テクスチャはいちばん長い枝 1 本分として扱い、短い枝は先端側だけ同じ縮尺で貼る（針葉の大きさをそろえる）。針葉は旧 `tree` の小枝と同じ描き方（前へ反る 2 次曲線、付け根が太い）
+- テクスチャはいちばん長い枝 1 本分として扱い、短い枝は先端側だけ同じ縮尺で貼る（針葉の大きさをそろえる）。針葉は旧 `tree`（削除済み）の小枝と同じ描き方（前へ反る 2 次曲線、付け根が太い）
 - LOD0 791 / LOD1 436 / LOD2 207 頂点。枝の本数は LOD ごとの上限まで等間隔に間引く（`thinFirFronds`）。LOD3/4 の水平板は一番下の葉の近く
 - 羽根テクスチャの画素ループは生成時間の大半を占める。距離は 2 乗で比べ、`Math.hypot` を使わない。テストで大きなテクスチャを `toEqual` で比べると並列実行でタイムアウトする（ループで比べる）
 
 ## 注意事項
 
 - テストの `bakeLod( data, lod, topDown )` の topDown は真上視点ではない。真上は `LOD4_IMPOSTOR_VIEWS[ 1 ]` を `bakeImpostor` に渡す
-- `bakeLod( …, solidLeafCoverage )` は `leaf` テクスチャだけ不透明化する。`leafRing` には効かない
 - vitest は console.log を表示しない。調査用の probe テストは `appendFileSync` でファイルへ書き出す
-- 処理時間のテスト（50ms / 500ms 予算）は全体並列実行だと落ちることがある。ファイル単体で再実行して判断する。三層の tree 予算は 50ms ぎりぎりなので、テクスチャ処理を足したら単体で計測する
-- `tests/three/generationBudget.test.ts`（三層 tree）は単体でも 51〜63ms で落ちる回がある（HEAD でも同程度）。変更の影響を見るときは HEAD と交互に数回回して比べる。Node にはグローバル `Worker` がないので、テストでは既定の UASTC 圧縮は走らない
+- 処理時間のテスト（50ms / 500ms 予算）は全体並列実行だと落ちることがある。ファイル単体で再実行して判断する。三層の fir 予算は 50ms に近いので、テクスチャ処理を足したら単体で計測する
+- `tests/three/generationBudget.test.ts`（三層 fir）は単体でも予算付近で揺れる。変更の影響を見るときは HEAD と交互に数回回して比べる。Node にはグローバル `Worker` がないので、テストでは既定の UASTC 圧縮は走らない
 - rock の「HEAD とバイト一致」テストはパーツ定義もハッシュする（`impostorFade` は除外済み）。パーツに項目を足すとき注意
 - HEAD と見た目を比べるときは、HEAD の detached worktree（node_modules をシンボリックリンク）を別ポートで `vite --config vite.demo.config.ts --port 5180` として立てる。worktree から three の `libs/basis` を読むと Vite が 403 を返すので、`server.fs.strict: false` の一時設定で立てる
 - 見た目の変更はブラウザで確認してからコミットする（テストが通るだけでは不可）
 - デモの seed などの数値は lil-gui の入力欄をクリック → 打鍵 → Enter で変える（JS で value を入れても再生成されない）。ソースを編集すると HMR でページが既定の kind に戻る
 - 焼き込みを変えたら、HEAD の `impostor.ts` を scratch にコピーして import 先を絶対パスに書き換え、モミ・岩・花・stylized の焼き込み結果をバイト比較する
 - Codex（`codex exec`）のサンドボックス内では `npx vitest run` の全体実行が 1 時間止まる。対象ファイルだけ実行させ、全体はこちらで回す。ブラウザ操作もさせない（ループして止まった）
+- 見た目の調整（参考モデルへの寄せ）は Codex に任せず、こちらでブラウザを見ながら数値を詰める。Codex には形の決まった機械的な作業（登録・削除・テストの差し替え）を渡す
+- Sketchfab の参考は `https://sketchfab.com/models/<id>/embed?autostart=1&ui_infos=0&ui_controls=0&ui_stop=0` で開くと操作しやすい（ダブルクリックで寄る、ドラッグで回す）。バックグラウンドのタブはスクリーンショットが固まるので、表示中のタブで開く
+- ユーザーは参考を「寄って見た細部」で比べる。遠景で似ていても、枝・葉 1 枚の形や付き方が違うと不可。最初に参考へ寄って構造（枝の出方・葉の付き方・反り・色）を確かめてから作る
+- 頂点数などの案を比べるときは、`lodDetails` の LOD0〜2 の枠に案を一時的に入れてデモの compare で並べると、同じ seed で頂点数付きで見比べられる
+- テクスチャを画像で確かめる probe は、zlib で PNG を書き出して scratch に置く。probe は Node の型がないので `tsc` が落ちる。型チェックの前に消す
 
 ## 未解決の課題
 
@@ -104,5 +97,4 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - willow の LOD3/4 は樹冠が横長（約 14 × 7 m）で、128px の正方形タイルだと縦に約 64px しか使えず粗い
 - インスタンス用の `orientBillboardInstances( mesh, camera )` は影もカメラ向きのまま（影がオービットで動く）
 - 利用者が `getParts()` で自前の `InstancedMesh` を作ると `upNormalCards` の部品の裏が黒くなる（デモの scatter は対処済み。公開の手段はまだない）
-- tree の LOD1/2 は真上から見ると LOD0 より葉が 15〜20% 少ない（128px 焼きで細い針葉が欠ける）
 - UASTC の ETC2（古い Android など）と BC7（Windows デスクトップ）は実機で未確認

@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { CompressedTexture, RGBA_ASTC_4x4_Format, UnsignedByteType } from 'three';
 import { generateRockData } from '../src/core/generators/rock.ts';
 import { generateFlowersData } from '../src/core/generators/flowers.ts';
-import { generateTreeData } from '../src/core/generators/tree.ts';
+import { generateFirTreeData } from '../src/core/trees/fir.ts';
 import { generateTextureMipmaps } from '../src/core/textureMipmaps.ts';
 import { encodeUastcTexture, encodeUastcTextureAsync } from '../src/core/uastc.ts';
 import { writeUastcKtx2, writeUastcKtx2Async } from '../src/core/ktx2.ts';
@@ -405,9 +405,7 @@ async function measureTexture( basis, target ) {
 		? { width: 128, height: 128, x: 248, y: 135 }
 		: target.label === 'allium plantCard'
 			? { width: 128, height: 256, x: 0, y: 0 }
-			: target.label === 'tree leaf ring'
-				? { width: 256, height: 128 }
-				: { width: 256, height: 256 };
+		: { width: 256, height: 256 };
 	const cropSize = [ cropRegion.width, cropRegion.height, cropRegion.x, cropRegion.y ];
 	const slug = textureSlug( target.label );
 	await writePng( crop( { width: target.texture.width, height: target.texture.height, data: source }, ...cropSize ), path.join( scratchPath, `${ slug }-source.png` ) );
@@ -510,13 +508,12 @@ async function measureTexture( basis, target ) {
 async function getPrototypeTargets() {
 	const rock = generateRockData( { seed: 1 } );
 	const allium = generateFlowersData( { seed: 1, variety: 'allium' } );
-	const tree = generateTreeData( { seed: 1 } );
+	const fir = generateFirTreeData( { seed: 1 } );
 	return [
 		{ label: 'rock albedo', data: rock, textureName: 'albedo', normalMap: false },
 		{ label: 'rock normal', data: rock, textureName: 'normal', normalMap: true },
 		{ label: 'allium plantCard', data: allium, textureName: 'plantCard', normalMap: false },
-		{ label: 'tree leaf', data: tree, textureName: 'leaf', normalMap: false },
-		{ label: 'tree leaf ring', data: tree, textureName: 'leafRing', normalMap: false },
+		{ label: 'fir leaf', data: fir, textureName: 'leaf', normalMap: false },
 	].map( ( target ) => {
 		const texture = target.data.textures[ target.textureName ];
 		if ( texture === undefined ) throw new Error( `Missing ${ target.textureName } for ${ target.label }; available: ${ Object.keys( target.data.textures ).join( ', ' ) }` );
@@ -528,7 +525,7 @@ async function measureRecolor( target ) {
 	const { VegetationAsset } = await import( '../src/three/VegetationAsset.ts' );
 	const asset = new VegetationAsset( target.data );
 	const partName = target.label.startsWith( 'rock' ) ? 'rock' : target.label.startsWith( 'allium' ) ? 'petal' : 'leaf';
-	const partNames = partName === 'leaf' ? [ 'leaf', 'leafRing' ] : [ partName ];
+	const partNames = [ partName ];
 	const colorParts = partNames.map( ( name ) => asset.data.parts.find( ( part ) => part.name === name ) ).filter( Boolean );
 	const colorPart = colorParts[ 0 ] ?? asset.data.parts[ 0 ];
 	const color = ( ( colorPart.defaultColor ^ 0x001f40 ) & 0xffffff ) || 0x527733;
@@ -553,7 +550,8 @@ async function measureRecolor( target ) {
 }
 
 async function measureFullSwap( basis, kind ) {
-	const { disposeVegetationWorkers, generateFlowersAsync, generateRockAsync, generateTreeAsync } = await import( '../src/three/meshes.ts' );
+	const { disposeVegetationWorkers, generateFlowersAsync, generateRockAsync } = await import( '../src/three/meshes.ts' );
+	const { generateFirTreeAsync } = await import( '../src/three/trees/fir.ts' );
 	const loader = {
 		parse( buffer, onLoad, onError ) {
 			try {
@@ -574,8 +572,8 @@ async function measureFullSwap( basis, kind ) {
 	const start = performance.now();
 	const asset = kind === 'rock'
 		? await generateRockAsync( { seed: 1, ktx2Loader: loader } )
-		: kind === 'tree'
-			? await generateTreeAsync( { seed: 1, ktx2Loader: loader } )
+		: kind === 'fir'
+			? await generateFirTreeAsync( { seed: 1, ktx2Loader: loader } )
 			: await generateFlowersAsync( { seed: 1, variety: 'allium', ktx2Loader: loader } );
 	const expectedBindings = asset.textureBindings.length;
 	const deadline = Date.now() + 60_000;
@@ -647,7 +645,7 @@ try {
 	const recolorResults = [];
 	for ( const target of [ targets[ 0 ], targets[ 2 ], targets[ 3 ] ] ) recolorResults.push( await measureRecolor( target ) );
 	const fullSwapResults = [];
-	for ( const kind of [ 'rock', 'tree', 'allium' ] ) fullSwapResults.push( await measureFullSwap( basis, kind ) );
+	for ( const kind of [ 'rock', 'fir', 'allium' ] ) fullSwapResults.push( await measureFullSwap( basis, kind ) );
 	const result = {
 		basisTranscoder: 'three r186 bundled basis_transcoder.js/.wasm',
 		targets: textureResults,

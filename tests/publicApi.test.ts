@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BroadleafTreeMeshOptions, FirTreeMeshOptions, FirTreeOptions, KTX2LoaderLike, TreeMeshOptions } from '../src/index';
+import type { BroadleafTreeMeshOptions, FirTreeMeshOptions, FirTreeOptions, KTX2LoaderLike } from '../src/index';
 
 describe( 'public entry points', () => {
 
@@ -9,13 +9,12 @@ describe( 'public entry points', () => {
 		expect( exports ).toEqual( [
 			'BroadleafTreeMesh',
 			'BushMesh',
-				'FirTreeMesh',
+			'FirTreeMesh',
 			'FlowersMesh',
 			'GrassMesh',
 			'PebblesMesh',
 			'PineTreeMesh',
 			'RockMesh',
-			'TreeMesh',
 			'VegetationAsset',
 			'VegetationMesh',
 			'WillowTreeMesh',
@@ -24,8 +23,8 @@ describe( 'public entry points', () => {
 			'generateBroadleafTreeAsync',
 			'generateBush',
 			'generateBushAsync',
-				'generateFirTree',
-				'generateFirTreeAsync',
+			'generateFirTree',
+			'generateFirTreeAsync',
 			'generateFlowers',
 			'generateFlowersAsync',
 			'generateGrass',
@@ -36,8 +35,6 @@ describe( 'public entry points', () => {
 			'generatePineTreeAsync',
 			'generateRock',
 			'generateRockAsync',
-			'generateTree',
-			'generateTreeAsync',
 			'generateWillowTree',
 			'generateWillowTreeAsync',
 			'orientBillboardInstances',
@@ -57,7 +54,6 @@ describe( 'public entry points', () => {
 			'generatePebblesData',
 			'generatePineTreeData',
 			'generateRockData',
-			'generateTreeData',
 			'generateWillowTreeData',
 		] );
 
@@ -72,7 +68,7 @@ describe( 'public entry points', () => {
 
 	it( 'accepts the caller-owned KTX2 loader through mesh generation options', () => {
 		const loader: KTX2LoaderLike = { parse() {} };
-		const options: TreeMeshOptions = { seed: 3, ktx2Loader: loader, compressTextures: false };
+		const options: FirTreeMeshOptions = { seed: 3, ktx2Loader: loader, compressTextures: false };
 		expect( options.ktx2Loader ).toBe( loader );
 		expect( options.compressTextures ).toBe( false );
 	} );

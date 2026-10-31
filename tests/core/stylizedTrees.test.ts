@@ -33,7 +33,6 @@ describe( 'stylized trees', () => {
 		expect( data.kind ).toBe( tree.kind );
 		expect( data.lods ).toHaveLength( 5 );
 		expect( data.parts.map( ( part ) => part.name ) ).toEqual( tree.parts );
-		expect( data.parts.some( ( part ) => part.name === 'leafRing' ) ).toBe( false );
 		expect( Number.isFinite( data.bounds.radius ) ).toBe( true );
 		expect( Number.isFinite( data.bounds.height ) ).toBe( true );
 		expect( data.bounds.height ).toBe( tree.height );

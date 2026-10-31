@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import { read } from 'three/examples/jsm/libs/ktx-parse.module.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { generateFlowersData } from '../../src/core/generators/flowers';
-import { generateTreeData } from '../../src/core/generators/tree';
+import { generateFirTreeData } from '../../src/core/trees/fir';
 import { encodeUastcTexture, encodeUastcTextureAsync } from '../../src/core/uastc';
 import { writeUastcKtx2 } from '../../src/core/ktx2';
 import { generateTextureMipmaps, generateTextureMipmapsAsync } from '../../src/core/textureMipmaps';
@@ -284,12 +284,11 @@ function createTexture( width: number, height: number, alpha = false ): TextureD
 }
 
 function getGeneratedAlphaTargets(): { name: string; texture: TextureData; alphaTest: number }[] {
-	const tree = generateTreeData( { seed: 1 } );
+	const fir = generateFirTreeData( { seed: 1 } );
 	const allium = generateFlowersData( { seed: 1, variety: 'allium' } );
 	return [
 		{ name: 'allium plantCard', data: allium, textureName: 'plantCard' },
-		{ name: 'tree leaf', data: tree, textureName: 'leaf' },
-		{ name: 'tree leaf ring', data: tree, textureName: 'leafRing' },
+		{ name: 'fir leaf', data: fir, textureName: 'leaf' },
 	].map( ( target ) => {
 		const texture = target.data.textures[ target.textureName ];
 		if ( texture === undefined ) throw new Error( `Missing ${ target.textureName } texture` );

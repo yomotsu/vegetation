@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generatePebblesData } from '../../src/core/generators/pebbles';
 import { generateRockData } from '../../src/core/generators/rock';
-import { generateTreeData } from '../../src/core/generators/tree';
+import { generateFirTreeData } from '../../src/core/trees/fir';
 import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { generateRock, generateRockAsync } from '../../src/three/meshes';
@@ -17,10 +17,10 @@ function expectAssetBytesEqual( first: VegetationAsset, second: VegetationAsset 
 
 describe( 'prepared vegetation assets', () => {
 
-	it( 'matches constructor output for a recolored tree, mossy rock, and pebble', () => {
+	it( 'matches constructor output for a recolored fir, mossy rock, and pebble', () => {
 
 		const cases = [
-			{ data: generateTreeData( { seed: 1 } ), colors: { leaf: 0xc0392b } as Record<string, number>, size: 128 },
+			{ data: generateFirTreeData( { seed: 1 } ), colors: { leaf: 0xc0392b } as Record<string, number>, size: 128 },
 			{ data: generateRockData( { seed: 1, moss: 0.5 } ), colors: { rock: 0x897b6a } as Record<string, number>, size: 128 },
 			{ data: generatePebblesData( { seed: 1 } ), colors: { stone: 0x6a7b8c } as Record<string, number>, size: 128 },
 		];

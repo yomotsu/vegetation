@@ -1,7 +1,7 @@
 import { BufferGeometry, FrontSide, InstancedMesh, Matrix4, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import type { Material } from 'three';
 import { describe, expect, it } from 'vitest';
-import { generateFlowers, generateGrass, generateTree } from '../../src/index';
+import { generateFirTree, generateFlowers, generateGrass } from '../../src/index';
 import { createScatter } from '../../demo/scatter';
 import { GRASS_BLUE_NOISE_RANKS } from '../../demo/grassBlueNoise';
 import type { VegetationAsset } from '../../src/index';
@@ -31,7 +31,7 @@ describe( 'scatter preview', () => {
 
 	it( 'creates one instanced mesh per part and LOD and assigns every instance once', () => {
 
-		const asset = generateTree( { seed: 7, branchCount: 1 } );
+		const asset = generateFirTree( { seed: 7 } );
 		const scatter = createScatter( asset, 8, 21 );
 		const meshes = scatter.group.children as InstancedMesh[];
 
@@ -58,7 +58,11 @@ describe( 'scatter preview', () => {
 		}
 
 		expect( assignedInstances ).toBe( 8 );
-		expect( meshes.every( ( mesh ) => asset.materials.includes( mesh.material as typeof asset.materials[number] ) ) ).toBe( true );
+		expect( meshes.every( ( mesh ) => {
+			const partIndex = asset.data.parts.findIndex( ( part ) => part.name === mesh.userData.part );
+			const definition = asset.data.parts[ partIndex ];
+			return mesh.material === asset.materials[ partIndex ] || definition?.upNormalCards === true && ( mesh.material as Material ).side === FrontSide;
+		} ) ).toBe( true );
 		expect( meshes.filter( ( mesh ) => mesh.count === 0 ).every( ( mesh ) => mesh.visible === false ) ).toBe( true );
 
 
@@ -126,7 +130,7 @@ describe( 'scatter preview', () => {
 
 	it( 'caps scatter geometry variants at four seeds', () => {
 
-		const asset = generateTree( { seed: 7, branchCount: 1 } );
+		const asset = generateFirTree( { seed: 7 } );
 		const scatter = createScatter( [ asset, asset, asset, asset, asset ], 4, 19 );
 		const meshes = scatter.group.children as InstancedMesh[];
 
@@ -140,7 +144,7 @@ describe( 'scatter preview', () => {
 
 	it( 'turns active LOD4 instances toward a moved camera every update', () => {
 
-		const asset = generateTree( { seed: 7, branchCount: 1 } );
+		const asset = generateFirTree( { seed: 7 } );
 		const scatter = createScatter( asset, 1, 21 );
 		const camera = new PerspectiveCamera();
 		const matrix = new Matrix4();

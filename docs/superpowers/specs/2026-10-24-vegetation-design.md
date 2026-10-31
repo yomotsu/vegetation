@@ -313,7 +313,7 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
   - 不採用: 枝に沿って垂れ枝の帯を付ける方式（付け根の区画・「く」の字の折り・縦に繰り返すテクスチャまで試した）。差分は `.superpowers/sdd/2026-10-24-vegetation/willow-ribbon-strands.patch`
   - 既定: 高さ 7 m、葉 `#6cad3a`、樹皮 `#6f6a45`。690〜900 頂点、生成 20〜35 ms
 
-### stylized なモミ fir（2026-10-31 ユーザー採用。旧 `tree` の置き換え候補）
+### stylized なモミ fir（2026-10-31 ユーザー正式採用。旧 `tree`〈TreeMesh / generateTreeData〉は削除。旧 tree の節は経緯として残す）
 
 - 名前はユーザー指定で専用のモミ: `FirTreeMesh` / `generateFirTree(Async)` / `generateFirTreeData`、kind `'fir-tree'`。`TreeMesh` は一般的すぎるので入れ替えない。旧 `TreeMesh` の three 層は `src/three/trees/tree.ts` へ改名
 - 参考（葉だけ。幹は真似しない）: Sketchfab「Stylized Fir」（NianaRona）、「Fir Tree Stylized」（AnnaBelle Fibonacci）。枝と幹の色は「Fir tree stylized」（Chenchanchong）

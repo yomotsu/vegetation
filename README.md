@@ -15,9 +15,9 @@ npm install vegetation three
 ## Quick start
 
 ```js
-import { RockMesh, TreeMesh } from 'vegetation';
+import { FirTreeMesh, RockMesh } from 'vegetation';
 
-const tree = new TreeMesh( { seed: 3, height: 8 } );
+const tree = new FirTreeMesh( { seed: 3, height: 6 } );
 scene.add( tree );
 
 const rock = new RockMesh( { seed: 7, size: 4, moss: 0.4 } );
@@ -35,7 +35,7 @@ const lod = RockMesh.createLOD( { seed: 7 } );
 scene.add( lod );
 ```
 
-`TreeMesh.createLOD`, `RockMesh.createLOD`, `PebblesMesh.createLOD`, `GrassMesh.createLOD` and `FlowersMesh.createLOD` accept an optional second argument with the switch distances (five numbers, metres).
+`FirTreeMesh.createLOD`, `RockMesh.createLOD`, `PebblesMesh.createLOD`, `GrassMesh.createLOD` and `FlowersMesh.createLOD` accept an optional second argument with the switch distances (five numbers, metres).
 
 ### Generate without blocking the page
 
@@ -67,17 +67,15 @@ With `WebGPURenderer` shadows, build one mesh per part with `asset.getParts( lod
 
 All options are optional.
 
-### Tree — `TreeMesh`, `generateTree`, `generateTreeAsync`
+### Fir — `FirTreeMesh`, `generateFirTree`, `generateFirTreeAsync`
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `seed` | `1` | Random seed. |
-| `height` | `7.5` | Tree height in metres. The trunk also extends below `y = 0` by a length that scales with the height. |
-| `crownSize` | `1` | Crown width multiplier. |
-| `branchCount` | `10` | Number of branch tiers. |
-| `leafColor` | `0x2f7d1f` | Leaf color. |
-| `barkColor` | `0x6b4c32` | Bark color. |
-| `lod` | `0` | LOD level for `TreeMesh`. |
+| `height` | `6` | Tree height in metres. The trunk also extends below `y = 0` by a length that scales with the height. |
+| `leafColor` | `0x4b6c56` | Needle color. The twigs keep their own grey-brown color. |
+| `barkColor` | `0x9a9183` | Bark color. |
+| `lod` | `0` | LOD level for `FirTreeMesh`. |
 
 ### Rock — `RockMesh`, `generateRock`, `generateRockAsync`
 
@@ -159,17 +157,17 @@ UASTC texture compression is on by default. The library starts encoding texture 
 Pass `compressTextures: false` to a `*Mesh`, `generate*`, `generate*Async`, or `VegetationAsset` constructor to keep its textures as RGBA:
 
 ```js
-import { generateTreeAsync } from 'vegetation';
+import { generateFirTreeAsync } from 'vegetation';
 
-const asset = await generateTreeAsync( { seed: 7, compressTextures: false } );
+const asset = await generateFirTreeAsync( { seed: 7, compressTextures: false } );
 ```
 
 With the default internal compression, environments without Web Workers (including Node.js, SSR, and test environments) keep RGBA textures. A caller-owned loader can still use the sliced main-thread fallback. No transcoder files are fetched until an encoded texture is parsed by a renderer-backed `KTX2Loader`. The library creates and shares its own loader per renderer, calls `detectSupport( renderer )` automatically, and disposes those loaders from `disposeVegetationWorkers()`.
 
 ```js
-import { VegetationMesh, generateTreeAsync, disposeVegetationWorkers } from 'vegetation';
+import { VegetationMesh, generateFirTreeAsync, disposeVegetationWorkers } from 'vegetation';
 
-const asset = await generateTreeAsync( { seed: 7 } );
+const asset = await generateFirTreeAsync( { seed: 7 } );
 scene.add( new VegetationMesh( asset ) ); // renderer is registered on the first render
 
 // For InstancedMesh parts, call this once after renderer initialization:
@@ -183,12 +181,12 @@ The first transcode downloads Three.js's `basis_transcoder.js` and `basis_transc
 
 ```js
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
-import { generateTreeAsync } from 'vegetation';
+import { generateFirTreeAsync } from 'vegetation';
 
 const ktx2Loader = new KTX2Loader()
 	.setTranscoderPath( '/assets/basis/' )
 	.detectSupport( renderer );
-const asset = await generateTreeAsync( { seed: 7, ktx2Loader } );
+const asset = await generateFirTreeAsync( { seed: 7, ktx2Loader } );
 ```
 
 The loader module also imports `ktx-parse` and `zstddec` as normal Three.js modules, which your app bundler resolves or serves. This package keeps Three and those module paths external, so their code is not embedded in vegetation's published bundle. Passing your own loader takes precedence over the internal loader. Dispose a caller-owned loader yourself.
@@ -199,7 +197,7 @@ Opaque colour textures use UASTC mode 5; alpha-tested textures use mode 13 with 
 
 ## Core data API
 
-`vegetation/core` exposes only the data generators and their types, without a three.js dependency. `generateTreeData`, `generateRockData`, `generatePebblesData`, `generateGrassData` and `generateFlowersData` return `VegetationData` with typed arrays for positions, normals, UVs and indices per LOD, texture pixels and collider data. Their option types are `TreeOptions`, `RockOptions`, `PebblesOptions`, `GrassOptions` and `FlowersOptions`; shared data types include `VegetationData`, `MeshData`, `PartDef`, `TextureData` and `ColliderData`. Use it to bake assets offline or to feed another engine.
+`vegetation/core` exposes only the data generators and their types, without a three.js dependency. `generateFirTreeData`, `generateRockData`, `generatePebblesData`, `generateGrassData` and `generateFlowersData` return `VegetationData` with typed arrays for positions, normals, UVs and indices per LOD, texture pixels and collider data. Their option types are `FirTreeOptions`, `RockOptions`, `PebblesOptions`, `GrassOptions` and `FlowersOptions`; shared data types include `VegetationData`, `MeshData`, `PartDef`, `TextureData` and `ColliderData`. Use it to bake assets offline or to feed another engine.
 
 ```js
 import { generateRockData } from 'vegetation/core';

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { generateFlowersData } from '../../src/core/generators/flowers';
 import { generatePebblesData } from '../../src/core/generators/pebbles';
 import { generateRockData } from '../../src/core/generators/rock';
-import { generateTreeData } from '../../src/core/generators/tree';
+import { generateFirTreeData } from '../../src/core/trees/fir';
 import { VegetationAsset } from '../../src/three/VegetationAsset';
 import { registerImpostorMaterialFactory } from '../../src/three/impostorMaterialFactory';
 import { VegetationMesh } from '../../src/three/VegetationMesh';
@@ -40,9 +40,9 @@ describe( 'impostor materials', () => {
 
 	} );
 
-	it( 'draws every tree, rock and pebbles impostor card without the view-angle fade', () => {
+	it( 'draws every fir, rock and pebbles impostor card without the view-angle fade', () => {
 
-		for ( const data of [ generateTreeData( { seed: 1 } ), generateRockData( { seed: 1 } ), generatePebblesData( { seed: 1 } ) ] ) {
+		for ( const data of [ generateFirTreeData( { seed: 1 } ), generateRockData( { seed: 1 } ), generatePebblesData( { seed: 1 } ) ] ) {
 
 			const asset = new VegetationAsset( data );
 			const impostorIndices = data.parts.flatMap( ( part, index ) => part.impostorViews !== undefined || part.impostorYawAngles !== undefined ? [ index ] : [] );
@@ -61,16 +61,17 @@ describe( 'impostor materials', () => {
 
 	} );
 
-	it( 'keeps the tree LOD3 top card out of the shadow pass', () => {
+	it( 'keeps the fir LOD3 top card out of the shadow pass', () => {
 
-		const asset = new VegetationAsset( generateTreeData( { seed: 3 } ) );
+		const asset = new VegetationAsset( generateFirTreeData( { seed: 3 } ) );
 		const mesh = new VegetationMesh( asset, 3 );
 
 		expect( mesh.geometry.getAttribute( 'position' ) ).toBeDefined();
 		expect( mesh.geometry.drawRange.count ).toBe( 0 );
 		expect( mesh.parts ).toHaveLength( 2 );
-		expect( mesh.parts[ 0 ]!.geometry.getIndex()!.count ).toBe( 36 );
-		expect( mesh.parts[ 1 ]!.geometry.getIndex()!.count ).toBe( 6 );
+		expect( mesh.parts[ 0 ]!.geometry.getIndex()!.count ).toBeGreaterThan( 0 );
+		expect( mesh.parts[ 1 ]!.geometry.getIndex()!.count ).toBeGreaterThan( 0 );
+		expect( mesh.parts[ 1 ]!.userData.impostorCard ).toBe( 1 );
 		expect( mesh.parts[ 1 ]!.castShadow ).toBe( false );
 
 		mesh.castShadow = true;

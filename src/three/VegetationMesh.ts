@@ -166,7 +166,7 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 		this.ownsAsset = ownsAsset;
 		this.emptyGeometry = splitCards ? rootGeometry : null;
 		if ( upNormalCards ) {
-			this.ownedGeometries.push( rootGeometry );
+			if ( ! splitCards ) this.ownedGeometries.push( rootGeometry );
 			this.ownedMaterials.push( rootMaterial );
 		}
 		this.name = first.part;
@@ -306,11 +306,6 @@ export class VegetationMesh extends Mesh<BufferGeometry, VegetationMaterial> {
 	}
 
 	setColor( part: string, color: ColorRepresentation ): void {
-
-		if ( part === 'leaf' && this.asset.data.parts.some( ( definition ) => definition.name === 'leafRing' ) ) {
-			this.asset.setColors( { leaf: color, leafRing: color } );
-			return;
-		}
 
 		this.asset.setColor( part, color );
 

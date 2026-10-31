@@ -3,7 +3,7 @@ import { generateFlowersData } from '../../src/core/generators/flowers';
 import { generateGrassData } from '../../src/core/generators/grass';
 import { generatePebblesData } from '../../src/core/generators/pebbles';
 import { generateRockData } from '../../src/core/generators/rock';
-import { generateTreeData } from '../../src/core/generators/tree';
+import { generateFirTreeData } from '../../src/core/trees/fir';
 import { alphaTestForTexture, isPowerOfTwo } from '../../src/core/textureMipmaps';
 import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import type { TextureMipLevel, VegetationData } from '../../src/core/types';
@@ -37,8 +37,7 @@ function expectPowerOfTwoTextureSizes( data: VegetationData ): void {
 
 	const prepared = prepareVegetationAsset( data );
 	for ( const [ name, texture ] of Object.entries( prepared.data.textures ) ) {
-		// leafRing は 1 段 128 px を横一列に並べる（幅は 4 の倍数で十分）。
-		if ( name !== 'leafRing' ) expect( isPowerOfTwo( texture.width ), `${ data.kind}/${ name } width ${ texture.width }` ).toBe( true );
+		expect( isPowerOfTwo( texture.width ), `${ data.kind}/${ name } width ${ texture.width }` ).toBe( true );
 		expect( isPowerOfTwo( texture.height ), `${ data.kind}/${ name } height ${ texture.height }` ).toBe( true );
 		expect( texture.width % 4, `${ data.kind}/${ name } width alignment` ).toBe( 0 );
 		expect( texture.height % 4, `${ data.kind}/${ name } height alignment` ).toBe( 0 );
@@ -54,16 +53,16 @@ function expectPowerOfTwoTextureSizes( data: VegetationData ): void {
 
 describe( 'generated texture mipmaps', () => {
 
-	it( 'preserves level-zero alpha coverage on flower plant cards, tree leaves, and grass blades', () => {
+	it( 'preserves level-zero alpha coverage on flower plant cards, fir leaves, and grass blades', () => {
 
 		const flower = prepareVegetationAsset( generateFlowersData( { seed: 3, variety: 'allium' } ) );
 		const bluebell = prepareVegetationAsset( generateFlowersData( { seed: 3, variety: 'bluebell' } ) );
-		const tree = prepareVegetationAsset( generateTreeData( { seed: 3 } ) );
+		const fir = prepareVegetationAsset( generateFirTreeData( { seed: 3 } ) );
 		const grass = prepareVegetationAsset( generateGrassData( { seed: 3 } ) );
 		const fixtures = [
 			{ data: flower.data, texture: 'plantCard' },
 			{ data: bluebell.data, texture: 'plantCard' },
-			{ data: tree.data, texture: 'leaf' },
+			{ data: fir.data, texture: 'leaf' },
 			{ data: grass.data, texture: 'blade' },
 		];
 
@@ -77,10 +76,10 @@ describe( 'generated texture mipmaps', () => {
 
 	} );
 
-	it( 'keeps generated texture and impostor dimensions power-of-two, except the leafRing row', () => {
+	it( 'keeps generated texture and impostor dimensions power-of-two', () => {
 
 		const generated = [
-			generateTreeData( { seed: 11 } ),
+			generateFirTreeData( { seed: 11 } ),
 			generateGrassData( { seed: 11 } ),
 			generateRockData( { seed: 11 } ),
 			generatePebblesData( { seed: 11 } ),

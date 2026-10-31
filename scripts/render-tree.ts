@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import { bakeImpostor, LOD4_IMPOSTOR_VIEWS } from '../src/core/impostor';
 import { hexToLinear } from '../src/core/color';
-import { generateTreeData } from '../src/core/generators/tree';
+import { generateFirTreeData } from '../src/core/trees/fir';
 import type { TextureData, VegetationData } from '../src/core/types';
 
 const seed = Number.parseInt( process.argv[ 2 ] ?? '1', 10 );
@@ -133,24 +133,19 @@ function encodePng( width: number, height: number, pixels: Buffer ): Buffer {
 
 async function main(): Promise<void> {
 
-	const data = generateTreeData( { seed } );
+	const data = generateFirTreeData( { seed } );
 	const colors = data.parts.map( ( part ) => hexToLinear( part.defaultColor ) );
-	const suffix = `tree-seed${ seed }`;
+	const suffix = `fir-seed${ seed }`;
 	const renders: TextureData[] = [];
 
 	await mkdir( outputDirectory, { recursive: true } );
-	const leafTileWidth = data.textures.leaf.width / 3;
-	await writeFile( `${ outputDirectory }/tree-seed${ seed }-leaf.png`, encodeTextureTile( data.textures.leaf, 0, leafTileWidth ) );
-	await writeFile( `${ outputDirectory }/tree-seed${ seed }-crown.png`, encodeTextureTile( data.textures.leaf, leafTileWidth, leafTileWidth ) );
-	await writeFile( `${ outputDirectory }/tree-seed${ seed }-crown-side.png`, encodeTextureTile( data.textures.leaf, leafTileWidth * 2, leafTileWidth ) );
-	await writeFile( `${ outputDirectory }/tree-seed${ seed }-bark.png`, encodeTextureTile( data.textures.bark ) );
+	await writeFile( `${ outputDirectory }/${ suffix }-leaf.png`, encodeTextureTile( data.textures.leaf ) );
+	await writeFile( `${ outputDirectory }/${ suffix }-bark.png`, encodeTextureTile( data.textures.bark ) );
 
 	if ( seed === 1 ) {
 
-		await writeFile( `${ outputDirectory }/generated-leaf.png`, encodeTextureTile( data.textures.leaf, 0, leafTileWidth ) );
-		await writeFile( `${ outputDirectory }/generated-crown.png`, encodeTextureTile( data.textures.leaf, leafTileWidth, leafTileWidth ) );
-		await writeFile( `${ outputDirectory }/generated-crown-side.png`, encodeTextureTile( data.textures.leaf, leafTileWidth * 2, leafTileWidth ) );
-		await writeFile( `${ outputDirectory }/generated-bark.png`, encodeTextureTile( data.textures.bark ) );
+		await writeFile( `${ outputDirectory }/generated-fir-leaf.png`, encodeTextureTile( data.textures.leaf ) );
+		await writeFile( `${ outputDirectory }/generated-fir-bark.png`, encodeTextureTile( data.textures.bark ) );
 
 	}
 
