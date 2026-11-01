@@ -18,7 +18,7 @@ describe( 'demo registry', () => {
 
 		const defaultAsset = await kinds[ 0 ]!.createAsync( {} );
 
-		expect( kinds ).toHaveLength( 9 );
+		expect( kinds ).toHaveLength( 15 );
 		expect( kinds[ 0 ]!.name ).toBe( 'Broadleaf' );
 		expect( defaultAsset.data.kind ).toBe( 'broadleaf-tree' );
 		defaultAsset.dispose();
@@ -57,12 +57,14 @@ describe( 'demo registry', () => {
 		expect( kinds[ 7 ]!.defaultColors ).toEqual( { blade: '#4b942b' } );
 		expect( kinds[ 7 ]!.options ).toEqual( { seed: 1, height: 0.45 } );
 		expect( kinds[ 7 ]!.create( {} ).getColor( 'blade' ).getHex() ).toBe( 0x4b942b );
-		expect( kinds[ 8 ]!.name ).toBe( 'Flowers' );
+		expect( kinds.slice( 8 ).map( ( kind ) => kind.name ) ).toEqual( [ 'Allium', 'Daisy', 'Tulip', 'Poppy', 'Bluebell', 'Calla', 'Primrose' ] );
+		expect( kinds.slice( 8 ).every( ( kind ) => kind.group === 'Flowers' ) ).toBe( true );
+		expect( kinds[ 8 ]!.flowerVariety ).toBe( 'allium' );
 		expect( kinds[ 8 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
 		expect( kinds[ 8 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
 		expect( kinds[ 8 ]!.defaultColors ).toEqual( { petal: '#8b5fbf', stem: '#2f6f1e', centerColor: '#5c3d7a' } );
 		expect( kinds[ 8 ]!.textureColors ).toEqual( { centerColor: '#5c3d7a' } );
-		expect( kinds[ 8 ]!.options ).toEqual( { seed: 1, variety: 'allium', count: 6, spread: 0.29, height: 0.37 } );
+		expect( kinds[ 8 ]!.options ).toEqual( { seed: 1, count: 6, spread: 0.29, height: 0.37 } );
 
 	} );
 
@@ -86,7 +88,7 @@ describe( 'demo registry', () => {
 
 	} );
 
-	it( 'resets flower variety controls to their documented defaults', () => {
+	it( 'stores the documented defaults for each selectable flower type', () => {
 
 		expect( flowerVarietyDefaults ).toEqual( {
 			allium: { count: 6, spread: 0.29, height: 0.37, petal: '#8b5fbf', centerColor: '#5c3d7a' },

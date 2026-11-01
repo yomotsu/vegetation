@@ -1,8 +1,8 @@
-import { Box3, Color, FrontSide, Group, InstancedMesh, Matrix4, Quaternion, StaticDrawUsage, Vector3 } from 'three';
+import { Box3, Color, Group, InstancedMesh, Matrix4, Quaternion, StaticDrawUsage, Vector3 } from 'three';
 import type { BufferGeometry, Camera, Material } from 'three';
 import type { VegetationAsset } from '../src/index';
 import { GRASS_BLUE_NOISE_RANKS } from './grassBlueNoise';
-import { createBidirectionalCardGeometry } from '../src/three/grassCardGeometry';
+import { createBidirectionalCardGeometry, createBidirectionalCardMaterial } from '../src/three/grassCardGeometry';
 import { setPreviewShadowFlags } from './rendering';
 
 const cellSize = 0.11;
@@ -73,8 +73,7 @@ export function createGrassScatter( assets: VegetationAsset[], seed: number ): {
 		if ( partIndex < 0 || part === undefined ) throw new Error( 'Grass asset has no blade part' );
 
 		const geometry = createBidirectionalCardGeometry( part.geometry );
-		const material = part.material.clone();
-		material.side = FrontSide;
+		const material = createBidirectionalCardMaterial( part.material );
 		renderGeometries.push( geometry );
 		renderMaterials.push( material );
 		const mesh = new InstancedMesh( geometry, material, capacityPerVariant );

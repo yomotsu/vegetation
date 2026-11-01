@@ -1,7 +1,7 @@
 import { BufferGeometry, FrontSide, InstancedMesh, Matrix4, MeshStandardMaterial, PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import type { Material } from 'three';
 import { describe, expect, it } from 'vitest';
-import { generateFirTree, generateFlowers, generateGrass } from '../../src/index';
+import { generateBroadleafTree, generateFirTree, generateFlowers, generateGrass } from '../../src/index';
 import { createScatter } from '../../demo/scatter';
 import { GRASS_BLUE_NOISE_RANKS } from '../../demo/grassBlueNoise';
 import type { VegetationAsset } from '../../src/index';
@@ -65,6 +65,24 @@ describe( 'scatter preview', () => {
 		} ) ).toBe( true );
 		expect( meshes.filter( ( mesh ) => mesh.count === 0 ).every( ( mesh ) => mesh.visible === false ) ).toBe( true );
 
+
+		scatter.dispose();
+		asset.dispose();
+
+	} );
+
+	it( 'updates cloned card material colors across scatter LODs', () => {
+
+		const asset = generateBroadleafTree( { seed: 7 } );
+		const scatter = createScatter( asset, 2, 21 );
+		const leafBatches = scatter.group.children.filter( ( child ) => child.userData.part === 'leaf' );
+
+		expect( leafBatches.length ).toBeGreaterThan( 1 );
+		asset.setColor( 'leaf', '#c0392b' );
+
+		for ( const batch of leafBatches ) {
+			expect( ( ( batch as InstancedMesh ).material as MeshStandardMaterial ).color.getHex() ).toBe( 0xc0392b );
+		}
 
 		scatter.dispose();
 		asset.dispose();

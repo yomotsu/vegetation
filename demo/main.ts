@@ -26,7 +26,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import GUI from 'lil-gui';
 import { disposeVegetationWorkers, VegetationAsset, VegetationMesh } from 'vegetation';
-import { flowerPetalColorPresets, flowerVarietyDefaults, grassColorPresets, kinds, leafColorPresets } from './registry';
+import { flowerPetalColorPresets, grassColorPresets, kinds, leafColorPresets } from './registry';
 import type { VegetationKind } from './registry';
 import { createColorUpdateScheduler } from './colorUpdateScheduler';
 import { createColliderMaterialController } from './colliderVisualization';
@@ -168,8 +168,7 @@ function getGrassPreset( color: string ): string {
 
 function getCurrentFlowerVariety(): keyof typeof flowerPetalColorPresets {
 
-	const variety = state.options.variety;
-	return typeof variety === 'string' && variety in flowerPetalColorPresets ? variety as keyof typeof flowerPetalColorPresets : 'allium';
+	return activeKind.flowerVariety ?? 'allium';
 
 }
 
@@ -241,9 +240,9 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 	if ( activeKind.name === 'Grass' && name === 'height' ) {
 		return [ 0.3, 0.6, 0.01 ];
 	}
-	if ( activeKind.name === 'Flowers' && name === 'count' ) return [ 1, 6, 1 ];
-	if ( activeKind.name === 'Flowers' && name === 'spread' ) return [ 0.1, 0.8, 0.01 ];
-	if ( activeKind.name === 'Flowers' && name === 'height' ) return state.options.variety === 'primrose' ? [ 0.05, 0.25, 0.005 ] : [ 0.15, 0.6, 0.01 ];
+	if ( activeKind.group === 'Flowers' && name === 'count' ) return [ 1, 6, 1 ];
+	if ( activeKind.group === 'Flowers' && name === 'spread' ) return [ 0.1, 0.8, 0.01 ];
+	if ( activeKind.group === 'Flowers' && name === 'height' ) return activeKind.flowerVariety === 'primrose' ? [ 0.05, 0.25, 0.005 ] : [ 0.15, 0.6, 0.01 ];
 	if ( name === 'height' ) {
 
 		return [ 2, 14, 0.1 ];
@@ -286,7 +285,7 @@ function makeAsset( kind: VegetationKind, options: Record<string, number | boole
 
 function supportsCompressionCompare(): boolean {
 
-	return activeKind.name === 'Rock' || activeKind.name === 'Fir' || ( activeKind.name === 'Flowers' && state.options.variety === 'allium' );
+	return activeKind.name === 'Rock' || activeKind.name === 'Fir' || ( activeKind.flowerVariety === 'allium' );
 
 }
 
@@ -495,7 +494,7 @@ function rebuildPreview(): void {
 		root.add( mesh );
 		addCollider( 0, state.collider );
 	} else if ( state.mode === 'compare' ) {
-		const spacing = activeKind.name === 'Flowers'
+		const spacing = activeKind.group === 'Flowers'
 			? Math.max( 0.55, Number( state.options.spread ?? 0.3 ) * 2.2 )
 			: Math.max( 4.5, Number( state.options.size ?? 0 ) * 1.25 );
 
@@ -521,7 +520,7 @@ function rebuildPreview(): void {
 	} else if ( state.mode === 'compression' ) {
 		if ( supportsCompressionCompare() && ktx2Loader !== null ) {
 			const comparedAsset = compressionTwin ?? asset;
-			const spacing = activeKind.name === 'Flowers'
+			const spacing = activeKind.group === 'Flowers'
 				? Math.max( 0.85, Number( state.options.spread ?? 0.29 ) * 2.5 )
 				: activeKind.name === 'Fir'
 				? Math.max( 4.5, Number( state.options.height ?? 6 ) * 0.72 )
@@ -561,7 +560,7 @@ function rebuildPreview(): void {
 	lastScatterShadowUpdate = - Infinity;
 	const compressionUnavailable = state.mode === 'compression' && ( ! supportsCompressionCompare() || ktx2Loader === null );
 	status.hidden = ! isGenerating && state.mode !== 'scatter' && ! compressionUnavailable;
-	if ( compressionUnavailable && ! isGenerating ) status.textContent = 'Choose Rock, Fir, or Flowers → allium for this comparison.';
+	if ( compressionUnavailable && ! isGenerating ) status.textContent = 'Choose Rock, Fir, or Allium for this comparison.';
 
 }
 
@@ -648,23 +647,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 
 		const value = state.options[ key ];
 		if ( typeof value === 'string' ) {
-			const choices = key === 'variety'
-				? Object.keys( flowerPetalColorPresets )
-				: [ value ];
-			const controller = optionFolder.add( state.options, key, choices ).name( key );
-			controller.onChange( ( next: string ) => {
-				if ( activeKind.name === 'Flowers' && key === 'variety' ) {
-					const defaults = flowerVarietyDefaults[ next as keyof typeof flowerVarietyDefaults ];
-					state.options.count = defaults.count;
-					state.options.spread = defaults.spread;
-					state.options.height = defaults.height;
-					state.colors.petal = defaults.petal;
-					state.colors.centerColor = defaults.centerColor;
-					state.flowerPetalPreset = getFlowerPetalPreset( state.colors.petal, next as keyof typeof flowerPetalColorPresets );
-					rebuildOptionFolders( gui );
-				}
-				void rebuildAsset();
-			} );
+			optionFolder.add( state.options, key, [ value ] ).name( key ).onChange( () => void rebuildAsset() );
 		} else {
 			const controller = typeof value === 'boolean'
 				? optionFolder.add( state.options, key )
@@ -716,7 +699,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 	}
 
 	if ( activeKind.colorParts.includes( 'petal' ) ) {
-		const variety = state.options.variety as keyof typeof flowerPetalColorPresets;
+		const variety = getCurrentFlowerVariety();
 		const petalPresets = flowerPetalColorPresets[ variety ];
 		const presetController = colorFolder.add( state, 'flowerPetalPreset', [ ...Object.keys( petalPresets ), 'custom' ] ).name( 'petal preset' );
 		updateFlowerPetalPresetDisplay = () => presetController.updateDisplay();
@@ -769,7 +752,7 @@ function rebuildOptionFolders( gui: GUI ): void {
 	}
 
 	for ( const key of Object.keys( activeKind.textureColors ?? {} ) ) {
-		if ( activeKind.name === 'Flowers' && ( state.options.variety === 'tulip' || state.options.variety === 'bluebell' ) && key === 'centerColor' ) continue;
+		if ( ( activeKind.flowerVariety === 'tulip' || activeKind.flowerVariety === 'bluebell' ) && key === 'centerColor' ) continue;
 		colorFolder.addColor( state.colors, key ).name( key ).onFinishChange( () => void rebuildAsset() );
 	}
 
@@ -787,7 +770,25 @@ function rebuildOptionFolders( gui: GUI ): void {
 function createGui(): void {
 
 	const gui = new GUI( { title: 'Vegetation', width: 285 } );
-	gui.add( state, 'kind', kinds.map( ( kind ) => kind.name ) ).name( 'kind' ).onChange( ( name: string ) => {
+	const kindController = gui.add( state, 'kind', kinds.map( ( kind ) => kind.name ) ).name( 'kind' );
+	const kindSelect = kindController.domElement.querySelector( 'select' );
+	if ( kindSelect !== null ) {
+		kindSelect.replaceChildren();
+		for ( const groupName of [ 'Trees', 'Flowers', 'Plants', 'Rocks' ] ) {
+			const groupKinds = kinds.filter( ( kind ) => kind.group === groupName );
+			if ( groupKinds.length === 0 ) continue;
+			const group = document.createElement( 'optgroup' );
+			group.label = groupName;
+			for ( const kind of groupKinds ) {
+				const option = document.createElement( 'option' );
+				option.value = kind.name;
+				option.textContent = kind.name;
+				group.append( option );
+			}
+			kindSelect.append( group );
+		}
+	}
+	kindController.onChange( ( name: string ) => {
 
 		activeKind = kinds.find( ( kind ) => kind.name === name )!;
 		state.options = { ...activeKind.options };

@@ -13,9 +13,8 @@ import type { FlowersOptions } from '../core/generators/flowers';
 import { DEFAULT_ALLIUM_CENTER_COLOR, DEFAULT_ALLIUM_PETAL_COLOR, DEFAULT_BLUEBELL_CENTER_COLOR, DEFAULT_BLUEBELL_COUNT, DEFAULT_BLUEBELL_HEIGHT, DEFAULT_BLUEBELL_PETAL_COLOR, DEFAULT_BLUEBELL_SPREAD, DEFAULT_CALLA_CENTER_COLOR, DEFAULT_CALLA_COUNT, DEFAULT_CALLA_HEIGHT, DEFAULT_CALLA_PETAL_COLOR, DEFAULT_CALLA_SPREAD, DEFAULT_DAISY_CENTER_COLOR, DEFAULT_DAISY_PETAL_COLOR, DEFAULT_FLOWERS_COUNT, DEFAULT_FLOWERS_STEM_COLOR, DEFAULT_POPPY_CENTER_COLOR, DEFAULT_POPPY_COUNT, DEFAULT_POPPY_HEIGHT, DEFAULT_POPPY_PETAL_COLOR, DEFAULT_POPPY_SPREAD, DEFAULT_PRIMROSE_CENTER_COLOR, DEFAULT_PRIMROSE_COUNT, DEFAULT_PRIMROSE_HEIGHT, DEFAULT_PRIMROSE_PETAL_COLOR, DEFAULT_PRIMROSE_SPREAD, DEFAULT_TULIP_CENTER_COLOR, DEFAULT_TULIP_COUNT, DEFAULT_TULIP_PETAL_COLOR, generateFlowersData } from '../core/generators/flowers';
 import { DEFAULT_MOSS_COLOR } from '../core/rockTexture';
 import { normalizeFlowersGenerationOptions, normalizeGrassGenerationOptions, normalizePebblesGenerationOptions, normalizeRockGenerationOptions } from '../core/vegetationGeneration';
-import { requestVegetationWorker, VegetationWorkerUnavailableError } from '../worker/workerPool';
 import type { LodLevel } from '../core/types';
-import { colorHex, vegetationAssetOptions, workerRequest } from './meshShared';
+import { colorHex, createSmallVegetationLOD, createVegetationAsset, createVegetationLOD, generateVegetationAssetAsync } from './meshShared';
 
 export type RockMeshOptions = Omit<RockOptions, 'rockColor' | 'mossColor'> & {
 	lod?: number;
@@ -121,23 +120,14 @@ export function generateRock( options: RockMeshOptions = {} ): VegetationAsset {
 	const color = new Color( options.rockColor ?? 0xffffff );
 	const data = generateRockData( normalized.options );
 
-	return new VegetationAsset( data, { rock: color }, 128, vegetationAssetOptions( options ) );
+	return createVegetationAsset( data, { rock: color }, options );
 
 }
 
 /** 同期 API と同じ生成結果を返します。 */
 export async function generateRockAsync( options: RockMeshOptions = {} ): Promise<VegetationAsset> {
 
-	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generateRock( options ) );
-
-	const normalized = normalizeRockOptions( options );
-	const request = workerRequest( 'rock', normalized.options, normalized.colors );
-	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `rock:${ normalized.options.seed ?? 1 }` ), vegetationAssetOptions( options ) );
-	} catch ( error ) {
-		if ( error instanceof VegetationWorkerUnavailableError ) return generateRock( options );
-		throw error;
-	}
+	return generateVegetationAssetAsync( options, 'rock', normalizeRockOptions, generateRock );
 
 }
 
@@ -151,10 +141,8 @@ export class RockMesh extends VegetationMesh {
 
 	static createLOD( options: RockMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
-		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * ( options.size ?? 6.4 ) / 6.4 );
-		const asset = generateRock( options );
-
-		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances, true );
+		const size = options.size ?? 6.4;
+		return createVegetationLOD( () => generateRock( options ), distances, ( distance ) => distance * size / 6.4 );
 
 	}
 
@@ -166,23 +154,14 @@ export function generatePebbles( options: PebblesMeshOptions = {} ): VegetationA
 	const color = new Color( options.stoneColor ?? 0xffffff );
 	const data = generatePebblesData( normalized.options );
 
-	return new VegetationAsset( data, { stone: color }, 128, vegetationAssetOptions( options ) );
+	return createVegetationAsset( data, { stone: color }, options );
 
 }
 
 /** 同期 API と同じ生成結果を返します。 */
 export async function generatePebblesAsync( options: PebblesMeshOptions = {} ): Promise<VegetationAsset> {
 
-	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generatePebbles( options ) );
-
-	const normalized = normalizePebblesOptions( options );
-	const request = workerRequest( 'pebbles', normalized.options, normalized.colors );
-	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `pebbles:${ normalized.options.seed ?? 1 }` ), vegetationAssetOptions( options ) );
-	} catch ( error ) {
-		if ( error instanceof VegetationWorkerUnavailableError ) return generatePebbles( options );
-		throw error;
-	}
+	return generateVegetationAssetAsync( options, 'pebbles', normalizePebblesOptions, generatePebbles );
 
 }
 
@@ -196,10 +175,8 @@ export class PebblesMesh extends VegetationMesh {
 
 	static createLOD( options: PebblesMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
-		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * ( options.spread ?? 1.6 ) / 1.6 );
-		const asset = generatePebbles( options );
-
-		return VegetationMesh.fromAsset( asset, distances ?? defaultDistances, true );
+		const spread = options.spread ?? 1.6;
+		return createVegetationLOD( () => generatePebbles( options ), distances, ( distance ) => distance * spread / 1.6 );
 
 	}
 
@@ -209,23 +186,14 @@ export function generateGrass( options: GrassMeshOptions = {} ): VegetationAsset
 
 	const normalized = normalizeGrassOptions( options );
 	const data = generateGrassData( normalized.options );
-	return new VegetationAsset( data, { blade: options.bladeColor ?? DEFAULT_BLADE_COLOR }, 128, vegetationAssetOptions( options ) );
+	return createVegetationAsset( data, { blade: options.bladeColor ?? DEFAULT_BLADE_COLOR }, options );
 
 }
 
 /** 同期 API と同じ生成結果を返します。 */
 export async function generateGrassAsync( options: GrassMeshOptions = {} ): Promise<VegetationAsset> {
 
-	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generateGrass( options ) );
-
-	const normalized = normalizeGrassOptions( options );
-	const request = workerRequest( 'grass', normalized.options, normalized.colors );
-	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `grass:${ normalized.options.seed ?? 1 }` ), vegetationAssetOptions( options ) );
-	} catch ( error ) {
-		if ( error instanceof VegetationWorkerUnavailableError ) return generateGrass( options );
-		throw error;
-	}
+	return generateVegetationAssetAsync( options, 'grass', normalizeGrassOptions, generateGrass );
 
 }
 
@@ -240,8 +208,7 @@ export class GrassMesh extends VegetationMesh {
 	static createLOD( options: GrassMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
 		const height = options.height ?? 0.45;
-		const defaultDistances = [ 0, 1, 2, 4, 8 ].map( ( distance ) => distance * height / 0.45 );
-		return VegetationMesh.fromAsset( generateGrass( options ), distances ?? defaultDistances, true );
+		return createSmallVegetationLOD( () => generateGrass( options ), distances, ( distance ) => distance * height / 0.45 );
 
 	}
 
@@ -250,26 +217,17 @@ export class GrassMesh extends VegetationMesh {
 export function generateFlowers( options: FlowersMeshOptions = {} ): VegetationAsset {
 
 	const normalized = normalizeFlowersOptions( options );
-	return new VegetationAsset( generateFlowersData( normalized.options ), {
+	return createVegetationAsset( generateFlowersData( normalized.options ), {
 		petal: normalized.options.petalColor!,
 		stem: normalized.options.stemColor!,
-	}, 128, vegetationAssetOptions( options ) );
+	}, options );
 
 }
 
 /** 同期 API と同じ生成結果を返します。 */
 export async function generateFlowersAsync( options: FlowersMeshOptions = {} ): Promise<VegetationAsset> {
 
-	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generateFlowers( options ) );
-
-	const normalized = normalizeFlowersOptions( options );
-	const request = workerRequest( 'flowers', normalized.options, normalized.colors );
-	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `flowers:${ normalized.options.seed ?? 1 }` ), vegetationAssetOptions( options ) );
-	} catch ( error ) {
-		if ( error instanceof VegetationWorkerUnavailableError ) return generateFlowers( options );
-		throw error;
-	}
+	return generateVegetationAssetAsync( options, 'flowers', normalizeFlowersOptions, generateFlowers );
 
 }
 
@@ -285,8 +243,7 @@ export class FlowersMesh extends VegetationMesh {
 
 		const variety = options.variety ?? 'allium';
 		const defaultHeight = options.height ?? ( variety === 'daisy' ? 0.285 : variety === 'tulip' ? 0.36 : variety === 'poppy' ? DEFAULT_POPPY_HEIGHT : variety === 'bluebell' ? DEFAULT_BLUEBELL_HEIGHT : variety === 'calla' ? DEFAULT_CALLA_HEIGHT : variety === 'primrose' ? DEFAULT_PRIMROSE_HEIGHT : 0.37 );
-		const distancesForHeight = [ 0, 1, 2, 4, 8 ].map( ( distance ) => distance * defaultHeight / 0.43 );
-		return VegetationMesh.fromAsset( generateFlowers( options ), distances ?? distancesForHeight, true );
+		return createSmallVegetationLOD( () => generateFlowers( options ), distances, ( distance ) => distance * defaultHeight / 0.43 );
 
 	}
 

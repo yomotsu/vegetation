@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, FrontSide } from 'three';
+import { BufferAttribute, BufferGeometry, Color, FrontSide } from 'three';
 import type { Material } from 'three';
 
 export function createBidirectionalCardGeometry( source: BufferGeometry ): BufferGeometry {
@@ -35,6 +35,9 @@ export function createBidirectionalCardGeometry( source: BufferGeometry ): Buffe
 export function createBidirectionalCardMaterial<T extends Material>( source: T ): T {
 
 	const material = source.clone() as T;
+	const sourceColor = ( source as Material & { color?: unknown } ).color;
+	// 複製したカード材も色オブジェクトを共有し、元の素材の色変更を全 LOD へ反映します。
+	if ( sourceColor instanceof Color ) ( material as unknown as Material & { color: Color } ).color = sourceColor;
 	material.side = FrontSide;
 	// Material.clone() は impostor fade などのシェーダーコールバックをコピーしない。
 	material.onBeforeCompile = source.onBeforeCompile;

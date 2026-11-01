@@ -67,7 +67,8 @@ LOD3 は参考アセットに無いので、LOD2 と LOD4 の中間を新たに�
 
 ### 使い方の形
 
-- 種類ごとにクラスを提供する: `GrassMesh` / `TreeMesh` / `FlowersMesh` / `BushMesh` / `PebblesMesh` / `RockMesh`
+- 種類ごとにクラスを提供する。木は `BroadleafTreeMesh` / `BushMesh` / `PineTreeMesh` / `FirTreeMesh` / `WillowTreeMesh`、花は `AlliumMesh` / `DaisyMesh` / `TulipMesh` / `PoppyMesh` / `BluebellMesh` / `CallaMesh` / `PrimroseMesh`。汎用 `FlowersMesh` も後方互換のため残し、`variety` を受け取る
+- デモの kind セレクトは Trees / Flowers / Plants / Rocks の optgroup に種類別の項目を入れる
 - 各クラスは `THREE.Mesh` を継承し、`new XxxMesh( options )` で即座に使える
 - オプションで `seed` と `lod` を受け取る。同じ `seed` なら同じ形（決定的）
 - 色はオプションで指定でき、生成後もマテリアル側で変更できる（ジオメトリ再生成不要）
@@ -276,7 +277,7 @@ const instanced = new THREE.InstancedMesh( geometries[ 2 ], material, 5000 );
 
 - 参考: CGTrader「Simple Trees Pack」（広葉樹・低木・モミ・マツ・ヤナギ）と、ユーザー提供の Blender 素材（Forest の Tree01〜03 / Bush01、Leaf01 / Trunk01 テクスチャ）。モミは既存の `TreeMesh` を使い、追加は broadleaf / bush / pine / willow の 4 種
 - **種類ごとに別クラス**（ユーザー要望: 使わない種類は tree shaking で落とす）。core は `generateBroadleafTreeData` / `generateBushData` / `generatePineTreeData` / `generateWillowTreeData`、three は `BroadleafTreeMesh` / `BushMesh` / `PineTreeMesh` / `WillowTreeMesh` と `generate*` / `generate*Async`。種類のモジュール同士は import しない（共通部品は `src/core/trees/stylized.ts` と `stylizedTextures.ts`）。既定値は各モジュールに置く
-- Worker は kind ごとに generator と normalize を動的 import し、kind ごとの chunk にする（全 kind 共通。花も後で種類ごとに分ける予定）
+- Worker は kind ごとに generator と normalize を動的 import し、kind ごとの chunk にする。花の専用クラスは同じ `flowers` worker kind を使い、クラスごとに `variety` を固定する
 - **LOD1〜4（2026-10-31）**:
   - LOD1 / LOD2 は同じ seed から同じ骨格（枝・ローブ・殻の位置。乱数の並びも同じ）を作り、分割数と葉の枚数だけ減らす。減らした枚数の分だけカードを大きくして覆う量を保つ。高さ合わせの倍率は LOD0 と共通。目安は LOD1 ≈ LOD0 の 50〜57%、LOD2 ≈ 17〜33%
     - broadleaf / bush: LOD1 は大小カードとも減らして大きく、LOD2 は房 4 つの大カードだけ（bush は茎もなし）

@@ -1,11 +1,10 @@
 import type { ColorRepresentation } from 'three';
 import type { KTX2LoaderLike } from '../VegetationAsset';
-import { VegetationAsset } from '../VegetationAsset';
+import type { VegetationAsset } from '../VegetationAsset';
 import { VegetationMesh } from '../VegetationMesh';
 import { DEFAULT_PINE_TREE_BARK_COLOR, DEFAULT_PINE_TREE_HEIGHT, DEFAULT_PINE_TREE_LEAF_COLOR, generatePineTreeData, normalizePineTreeGenerationOptions } from '../../core/trees/pine';
 import type { PineTreeOptions } from '../../core/trees/pine';
-import { requestVegetationWorker, VegetationWorkerUnavailableError } from '../../worker/workerPool';
-import { colorHex, vegetationAssetOptions, workerRequest } from '../meshShared';
+import { createVegetationAsset, createVegetationLOD, generateVegetationAssetAsync, normalizeTreeMeshOptions } from '../meshShared';
 
 export type PineTreeMeshOptions = Omit<PineTreeOptions, 'leafColor' | 'barkColor'> & {
 	lod?: number;
@@ -17,32 +16,24 @@ export type PineTreeMeshOptions = Omit<PineTreeOptions, 'leafColor' | 'barkColor
 
 function normalizeOptions( options: PineTreeMeshOptions ) {
 
-	const leafColor = colorHex( options.leafColor, DEFAULT_PINE_TREE_LEAF_COLOR );
-	const barkColor = colorHex( options.barkColor, DEFAULT_PINE_TREE_BARK_COLOR );
-	return normalizePineTreeGenerationOptions( { seed: options.seed, height: options.height, leafColor, barkColor }, { leaf: leafColor, bark: barkColor } );
+	return normalizeTreeMeshOptions<PineTreeOptions>( options, {
+		leaf: DEFAULT_PINE_TREE_LEAF_COLOR,
+		bark: DEFAULT_PINE_TREE_BARK_COLOR,
+	}, normalizePineTreeGenerationOptions );
 
 }
 
 export function generatePineTree( options: PineTreeMeshOptions = {} ): VegetationAsset {
 
 	const normalized = normalizeOptions( options );
-	return new VegetationAsset( generatePineTreeData( normalized.options ), normalized.colors, 128, vegetationAssetOptions( options ) );
+	return createVegetationAsset( generatePineTreeData( normalized.options ), normalized.colors, options );
 
 }
 
 /** 同期 API と同じ生成結果を返します。 */
 export async function generatePineTreeAsync( options: PineTreeMeshOptions = {} ): Promise<VegetationAsset> {
 
-	if ( typeof Worker === 'undefined' ) return Promise.resolve().then( () => generatePineTree( options ) );
-
-	const normalized = normalizeOptions( options );
-	const request = workerRequest( 'pine-tree', normalized.options, normalized.colors );
-	try {
-		return VegetationAsset.fromPrepared( await requestVegetationWorker( request, `pine-tree:${ normalized.options.seed ?? 1 }` ), vegetationAssetOptions( options ) );
-	} catch ( error ) {
-		if ( error instanceof VegetationWorkerUnavailableError ) return generatePineTree( options );
-		throw error;
-	}
+	return generateVegetationAssetAsync( options, 'pine-tree', normalizeOptions, generatePineTree );
 
 }
 
@@ -56,9 +47,8 @@ export class PineTreeMesh extends VegetationMesh {
 
 	static createLOD( options: PineTreeMeshOptions = {}, distances?: number[] ): import( 'three' ).LOD {
 
-		const defaultHeight = options.height ?? DEFAULT_PINE_TREE_HEIGHT;
-		const defaultDistances = [ 0, 15, 30, 60, 120 ].map( ( distance ) => distance * defaultHeight / DEFAULT_PINE_TREE_HEIGHT );
-		return VegetationMesh.fromAsset( generatePineTree( options ), distances ?? defaultDistances, true );
+		const height = options.height ?? DEFAULT_PINE_TREE_HEIGHT;
+		return createVegetationLOD( () => generatePineTree( options ), distances, ( distance ) => distance * height / DEFAULT_PINE_TREE_HEIGHT );
 
 	}
 

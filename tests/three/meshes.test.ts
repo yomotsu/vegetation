@@ -64,6 +64,21 @@ describe( 'vegetation meshes', () => {
 
 	} );
 
+	it( 'updates bidirectional card material colors across LODs', () => {
+
+		const asset = generateBroadleafTree( { seed: 1 } );
+		const meshes = [ 0, 1, 2 ].map( ( lod ) => new VegetationMesh( asset, lod ) );
+		const leafMaterials = meshes.map( ( mesh ) => mesh.parts.find( ( part ) => part.name === 'leaf' )!.material );
+
+		asset.setColor( 'leaf', '#c0392b' );
+
+		expect( leafMaterials.map( ( material ) => material.color.getHex() ) ).toEqual( [ 0xc0392b, 0xc0392b, 0xc0392b ] );
+
+		for ( const mesh of meshes ) mesh.dispose();
+		asset.dispose();
+
+	} );
+
 	it( 'reports the bark default and uses barkColor as a material tint', () => {
 
 		const defaultFir = new FirTreeMesh( { seed: 1 } );

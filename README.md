@@ -35,7 +35,7 @@ const lod = RockMesh.createLOD( { seed: 7 } );
 scene.add( lod );
 ```
 
-`FirTreeMesh.createLOD`, `RockMesh.createLOD`, `PebblesMesh.createLOD`, `GrassMesh.createLOD` and `FlowersMesh.createLOD` accept an optional second argument with the switch distances (five numbers, metres).
+`FirTreeMesh.createLOD`, `RockMesh.createLOD`, `PebblesMesh.createLOD`, `GrassMesh.createLOD`, and each flower mesh's `createLOD` accept an optional second argument with the switch distances (five numbers, metres).
 
 ### Generate without blocking the page
 
@@ -118,19 +118,32 @@ All options are optional.
 | `bladeColor` | `0x4b942b` | Blade color. |
 | `lod` | `0` | LOD level for `GrassMesh`. |
 
-### Flowers — `FlowersMesh`, `generateFlowers`, `generateFlowersAsync`
+### Flowers
+
+Use a class for each flower type, just as for the tree types:
+
+```js
+import { TulipMesh, generateBluebellAsync } from 'vegetation';
+
+const tulips = new TulipMesh( { seed: 3, count: 4, petalColor: 0xd8322a } );
+const bluebells = await generateBluebellAsync( { seed: 8 } );
+```
+
+The available pairs are `AlliumMesh` / `generateAllium`, `DaisyMesh` / `generateDaisy`, `TulipMesh` / `generateTulip`, `PoppyMesh` / `generatePoppy`, `BluebellMesh` / `generateBluebell`, `CallaMesh` / `generateCalla`, and `PrimroseMesh` / `generatePrimrose`. Each also has a `generate*Async` function and an options type named `*MeshOptions`.
+
+`FlowersMesh`, `generateFlowers`, and `generateFlowersAsync` remain available as generic APIs. Set `variety` to choose a type when using them.
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `seed` | `1` | Random seed. |
-| `variety` | `'allium'` | `'allium'`, `'daisy'`, `'tulip'`, `'poppy'`, `'bluebell'`, `'calla'` or `'primrose'`. |
-| `count` | Varies by variety | Number of flowers (1–6). |
-| `spread` | Varies by variety | Scatter radius in metres. |
-| `height` | Varies by variety | Flower height in metres. |
-| `petalColor` | Varies by variety | Petal color. |
-| `centerColor` | Varies by variety | Center or flower stalk color, depending on variety. |
+| `variety` | `'allium'` | Generic API only: `'allium'`, `'daisy'`, `'tulip'`, `'poppy'`, `'bluebell'`, `'calla'` or `'primrose'`. |
+| `count` | Varies by type | Number of flowers (1–6). |
+| `spread` | Varies by type | Scatter radius in metres. |
+| `height` | Varies by type | Flower height in metres. |
+| `petalColor` | Varies by type | Petal color. |
+| `centerColor` | Varies by type | Center or flower stalk color, depending on type. |
 | `stemColor` | `0x2f6f1e` | Stem color. |
-| `lod` | `0` | LOD level for `FlowersMesh`. |
+| `lod` | `0` | LOD level for the selected flower mesh. |
 
 ## VegetationAsset
 
@@ -210,7 +223,7 @@ console.log( data.lods[ 0 ].positions.length / 3, 'vertices' );
 
 ## Public entry points
 
-`vegetation` exports the five `*Mesh` classes, the corresponding `generate*` and `generate*Async` functions, `VegetationAsset`, `VegetationMesh`, `orientBillboardInstances`, `disposeVegetationWorkers`, and the option and data types. Internal utilities such as random-number generators, color conversion helpers and impostor material registration are not part of the public API.
+`vegetation` exports the vegetation `*Mesh` classes, corresponding `generate*` and `generate*Async` functions, `VegetationAsset`, `VegetationMesh`, `orientBillboardInstances`, `disposeVegetationWorkers`, and the option and data types. Internal utilities such as random-number generators, color conversion helpers and impostor material registration are not part of the public API.
 
 `vegetation/webgpu` is a side-effect entry point with no named exports. Import it once to register the WebGPU impostor materials.
 
