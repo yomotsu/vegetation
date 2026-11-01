@@ -682,12 +682,15 @@ function rebuildOptionFolders( gui: GUI ): void {
 function createGui(): void {
 
 	const gui = new GUI( { title: 'Vegetation', width: 285 } );
-	const kindController = gui.add( state, 'kind', kinds.map( ( kind ) => kind.name ) ).name( 'kind' );
+	const kindGroupNames = [ 'Trees', 'Flowers', 'Plants', 'Rocks' ];
+	// lil-gui は selectedIndex で値を引くので、表示する optgroup と同じ順で選択肢を作る。
+	const groupedKinds = kindGroupNames.flatMap( ( groupName ) => kinds.filter( ( kind ) => kind.group === groupName ) );
+	const kindController = gui.add( state, 'kind', groupedKinds.map( ( kind ) => kind.name ) ).name( 'kind' );
 	const kindSelect = kindController.domElement.querySelector( 'select' );
 	if ( kindSelect !== null ) {
 		kindSelect.replaceChildren();
-		for ( const groupName of [ 'Trees', 'Flowers', 'Plants', 'Rocks' ] ) {
-			const groupKinds = kinds.filter( ( kind ) => kind.group === groupName );
+		for ( const groupName of kindGroupNames ) {
+			const groupKinds = groupedKinds.filter( ( kind ) => kind.group === groupName );
 			if ( groupKinds.length === 0 ) continue;
 			const group = document.createElement( 'optgroup' );
 			group.label = groupName;

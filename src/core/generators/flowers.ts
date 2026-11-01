@@ -43,6 +43,7 @@ export const DEFAULT_PRIMROSE_CENTER_COLOR = 0xc0a020;
 export const DEFAULT_PRIMROSE_COUNT = 4;
 export const DEFAULT_PRIMROSE_HEIGHT = 0.12;
 export const DEFAULT_PRIMROSE_SPREAD = 0.26;
+const FLOWER_ROOT_EXTENSION = 0.01;
 
 export type FlowersVariety = 'allium' | 'daisy' | 'tulip' | 'poppy' | 'bluebell' | 'calla' | 'primrose';
 
@@ -67,6 +68,17 @@ function positive( value: number, name: string ): number {
 function validateColor( value: number, name: string ): void {
 
 	if ( ! Number.isInteger( value ) || value < 0 || value > 0xffffff ) throw new RangeError( `Flowers ${ name } must be a 24-bit integer` );
+
+}
+
+function extendFlowerRootsBelowGround( mesh: MeshData ): void {
+
+	// 地面のわずかな段差で根元が浮いて見えないよう、底面を 1 cm 埋める。
+	for ( let offset = 1; offset < mesh.positions.length; offset += 3 ) {
+
+		if ( mesh.positions[ offset ] === 0 ) mesh.positions[ offset ] = - FLOWER_ROOT_EXTENSION;
+
+	}
 
 }
 
@@ -705,6 +717,7 @@ export function generateFlowersData( options: FlowersOptions = {} ): VegetationD
 	const lod4TopHeight = variety === 'daisy' ? daisyHeadHeight : variety === 'poppy' ? poppyHeadHeight : variety === 'primrose' ? bounds.height * 0.55 : bounds.height * 0.75;
 	const includeLod4TopCard = variety !== 'allium' && variety !== 'tulip' && variety !== 'calla' && variety !== 'bluebell';
 	const lod4 = buildBillboard( bounds, lod4Index, lod0, lod4TopHeight, includeLod4TopCard, variety === 'poppy' ? poppyHeadFootprint : undefined );
+	for ( const mesh of [ lod0, lod1, lod2, lod3, lod4 ] ) extendFlowerRootsBelowGround( mesh );
 	if ( variety !== 'primrose' ) setUpNormals( lod3 );
 	setUpNormals( lod4 );
 	// allium / tulip / calla / bluebell は petal / stem の色キーを残し、描画テクスチャを plantCard にまとめます。
