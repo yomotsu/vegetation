@@ -87,6 +87,10 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - 焼き込みを変えたら、HEAD の `impostor.ts` を scratch にコピーして import 先を絶対パスに書き換え、モミ・岩・花・stylized の焼き込み結果をバイト比較する
 - Codex（`codex exec`）のサンドボックス内では `npx vitest run` の全体実行が 1 時間止まる。対象ファイルだけ実行させ、全体はこちらで回す。ブラウザ操作もさせない（ループして止まった）
 - コードを書く作業は Codex（gpt-6-luna、reasoning max）に任せ、できたらこちらがブラウザ・レビュー・テストで評価する。既存の数値の微調整だけは、こちらがブラウザを見ながら直接詰めてよい
+- Codex の MCP がつながらないときはシェルから `codex exec -m gpt-6-luna -c model_reasoning_effort=max -s workspace-write -C . -o <報告.md> - < <依頼.md>` をバックグラウンドで回す。依頼は scratch に書き、原因を診断してから具体的に渡す
+- rtk 経由の `npx vitest run` は出力の解析に失敗して結果が出ないことがある。失敗の一覧は `.vitest/json/output.json`（または `--reporter=json --outputFile=…`）を node で読む
+- デモの kind / view の select は JS で `value`（kind は 'Pine' など先頭大文字）を入れて `change` を dispatch すれば切り替わる。テクスチャやカード配置の変更は HMR だと古いまま見えることがあるので、ページを開き直して確かめる
+- 葉カードの向きの問題は、LOD0 の葉グループの四角形ごとに幾何法線・v 方向・付け根（v = 0 の辺の中点）を probe で書き出すと原因を絞れる
 - Sketchfab の参考は `https://sketchfab.com/models/<id>/embed?autostart=1&ui_infos=0&ui_controls=0&ui_stop=0` で開くと操作しやすい（ダブルクリックで寄る、ドラッグで回す）。バックグラウンドのタブはスクリーンショットが固まるので、表示中のタブで開く
 - ユーザーは参考を「寄って見た細部」で比べる。遠景で似ていても、枝・葉 1 枚の形や付き方が違うと不可。最初に参考へ寄って構造（枝の出方・葉の付き方・反り・色）を確かめてから作る
 - 頂点数などの案を比べるときは、`lodDetails` の LOD0〜2 の枠に案を一時的に入れてデモの compare で並べると、同じ seed で頂点数付きで見比べられる
