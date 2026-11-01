@@ -15,7 +15,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 - `src/core/uastc.ts` / `src/core/ktx2.ts`: 自作 UASTC エンコーダーと KTX2 書き出し（GPU 圧縮、既定 on・opt-out）
 - `src/three/VegetationAsset.ts`: マテリアル・テクスチャ・色変更・UASTC 差し替え。`VegetationMesh.ts`: LOD ごとのパーツ Mesh、LOD4 ビルボードの向き、`upNormalCards` の両向き化
 - `src/webgpu/index.ts`: WebGPU 用インポスターマテリアル（TSL）。`src/worker/*`: 非同期生成と UASTC エンコード（共有 Worker プール）
-- `demo/`: `npm run demo`（vite, 5173）。view = single / compare（LOD0〜4 を頂点数付きで並べる）/ compression（RGBA と UASTC の左右比較）/ scatter。「UASTC textures」で圧縮を切り替え。`demo/grassBlueNoise.ts` はデモ専用
+- `demo/`: `npm run demo`（vite, 5173）。view = single / compare（LOD0〜4 を頂点数付きで並べる）/ scatter。「UASTC textures」で圧縮を切り替え。`demo/grassBlueNoise.ts` はデモ専用
 
 ## API（2026-10-30 に絞った）
 

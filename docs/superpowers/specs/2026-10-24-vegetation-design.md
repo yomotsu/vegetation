@@ -96,6 +96,7 @@ LOD3 は参考アセットに無いので、LOD2 と LOD4 の中間を新たに�
 
 ### デモ
 
+- view は single / compare / scatter。RGBA と UASTC の左右比較は Rock / Fir / Allium に限られ、既定の Grass では何も表示されないため廃止した。通常表示の「UASTC textures」切り替えは残す（2026-11-01）
 - ブラウザで開いて以下ができる:
   - 種類を選んで表示
   - `seed`、色を変える
