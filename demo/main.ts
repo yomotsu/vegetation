@@ -72,9 +72,11 @@ let controls: OrbitControls;
 const root = new Group();
 scene.add( root );
 
+const initialKind = kinds.find( ( kind ) => kind.name === 'Bamboo' ) ?? kinds[ 0 ]!;
+
 const state: DemoState = {
-	kind: kinds[ 0 ]!.name,
-	mode: 'compare',
+	kind: initialKind.name,
+	mode: 'single',
 	compression: true,
 	lod: 0,
 	wireframe: false,
@@ -84,11 +86,11 @@ const state: DemoState = {
 	leafPreset: 'green',
 	grassPreset: 'green',
 	flowerPetalPreset: 'purple',
-	options: { ...kinds[ 0 ]!.options },
-	colors: { ...kinds[ 0 ]!.defaultColors },
+	options: { ...initialKind.options },
+	colors: { ...initialKind.defaultColors },
 };
 
-let activeKind: VegetationKind = kinds[ 0 ]!;
+let activeKind: VegetationKind = initialKind;
 let asset: VegetationAsset;
 let scatter: ScatterController | null = null;
 let scatterVariants: VegetationAsset[] = [];
@@ -686,6 +688,11 @@ function createGui(): void {
 	// lil-gui は selectedIndex で値を引くので、表示する optgroup と同じ順で選択肢を作る。
 	const groupedKinds = kindGroupNames.flatMap( ( groupName ) => kinds.filter( ( kind ) => kind.group === groupName ) );
 	const kindController = gui.add( state, 'kind', groupedKinds.map( ( kind ) => kind.name ) ).name( 'kind' );
+	const modeController = gui.add( state, 'mode', [ 'single', 'compare', 'scatter' ] ).name( 'view' ).onChange( () => {
+		updateViewControls();
+		void rebuildAsset();
+
+	} );
 	const kindSelect = kindController.domElement.querySelector( 'select' );
 	if ( kindSelect !== null ) {
 		kindSelect.replaceChildren();
@@ -703,9 +710,12 @@ function createGui(): void {
 			kindSelect.append( group );
 		}
 	}
+	kindController.updateDisplay();
 	kindController.onChange( ( name: string ) => {
 
 		activeKind = kinds.find( ( kind ) => kind.name === name )!;
+		modeController.enable();
+		lodController.enable();
 		state.options = { ...activeKind.options };
 		state.colors = { ...activeKind.defaultColors };
 		state.leafPreset = getLeafPreset( state.colors.leaf ?? '' );
@@ -717,12 +727,6 @@ function createGui(): void {
 
 	} );
 
-	gui.add( state, 'mode', [ 'single', 'compare', 'scatter' ] ).name( 'view' ).onChange( () => {
-
-		updateViewControls();
-		void rebuildAsset();
-
-	} );
 	gui.add( state, 'compression' ).name( 'UASTC textures' ).onChange( () => void rebuildAsset() );
 	const lodController = gui.add( state, 'lod', 0, 4, 1 ).name( 'LOD' ).onChange( () => {
 

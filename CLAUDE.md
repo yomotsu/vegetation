@@ -1,6 +1,6 @@
 # プロジェクト概要
 
-vegetation: three.js 向けのランタイム植生メッシュ生成ライブラリ（stylized な木 fir〈モミ〉・broadleaf・bush・pine・willow / rock / pebbles / grass / flowers）。各種類に LOD0〜4 を持ち、LOD3/4 はインポスター。木（bush 以外）と rock はコライダも生成する。
+vegetation: three.js 向けのランタイム植生メッシュ生成ライブラリ（stylized な木 fir〈モミ〉・broadleaf・bush・pine・willow・bamboo / rock / pebbles / grass / flowers）。通常は各種類に LOD0〜4 を持ち、LOD3/4 はインポスター。竹はLOD0〜2がメッシュ、LOD3/4がインポスター。木（bush 以外）と rock はコライダも生成する。
 
 - 決定事項の正本は `docs/superpowers/specs/2026-10-24-vegetation-design.md` の「実装で確定したこと」。見た目や仕様を変えたらここに追記する
 - 試作はユーザーが採用するまでコミットしない。不採用の差分は `.superpowers/sdd/2026-10-24-vegetation/*.patch`（git 管理外）に残す
@@ -9,7 +9,7 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 ## ファイル構成
 
 - `src/core/generators/*.ts`: 種類ごとの生成（純粋関数、`generate*Data` が `VegetationData` を返す）。花の品種ごとの形は `src/core/flowers/*.ts`、allium / daisy の花テクスチャは `src/core/flowersTexture.ts`
-- `src/core/trees/*.ts`: stylized な木（`broadleaf` / `bush` / `pine` / `willow` / `fir`）。共通の部品は `stylized.ts`（管・葉カード・インポスター LOD）、テクスチャは `stylizedTextures.ts`（葉の房・針葉・ヤナギの垂れ枝・モミの羽根・樹皮）。three 層は `src/three/trees/*.ts`
+- `src/core/trees/*.ts`: stylized な木（`broadleaf` / `bush` / `pine` / `willow` / `fir` / `bamboo`）。共通の部品は `stylized.ts`（管・葉カード・インポスター LOD）、テクスチャは `stylizedTextures.ts`（葉の房・針葉・ヤナギの垂れ枝・モミの羽根・樹皮）。three 層は `src/three/trees/*.ts`
 - `src/core/impostor.ts`: インポスターの焼き込み（`bakeImpostor`）とカード生成。LOD3/4 は LOD0 から焼く。タイルは 2 のべき乗の格子に並べる
 - `src/core/textureMipmaps.ts`: alpha test 用の CPU ミップ（カバレッジ保持）
 - `src/core/uastc.ts` / `src/core/ktx2.ts`: 自作 UASTC エンコーダーと KTX2 書き出し（GPU 圧縮、既定 on・opt-out）
@@ -20,9 +20,9 @@ vegetation: three.js 向けのランタイム植生メッシュ生成ライブ�
 ## API（2026-10-30 に絞った）
 
 - メイン `vegetation`: `*Mesh`、`generate*` / `generate*Async`、`VegetationAsset`、`VegetationMesh`、`orientBillboardInstances`、`disposeVegetationWorkers` と型だけ。乱数・ノイズ・色変換などの部品は公開しない（デモは `../src/...` を直接 import）
-- `vegetation/core`: `generate{FirTree,BroadleafTree,Bush,PineTree,WillowTree,Rock,Pebbles,Grass,Flowers}Data` と型だけ。`vegetation/webgpu`: 読み込むと TSL マテリアルを登録
+- `vegetation/core`: `generate{FirTree,BroadleafTree,Bush,PineTree,WillowTree,BambooTree,Rock,Pebbles,Grass,Flowers}Data` と型だけ。stylized tree の LOD0〜2 は形状、LOD3/4 は共通インポスター builder を使う。`vegetation/webgpu`: 読み込むと TSL マテリアルを登録
 - 公開リストは `tests/publicApi.test.ts` で固定している。export を増やしたらここも直す
-- stylized な木（fir / broadleaf / bush / pine / willow）は種類ごとに別クラス・別モジュール（`src/core/trees/*.ts`、`src/three/trees/*.ts`）。tree shaking のため種類のモジュール同士は import しない（共通は `stylized.ts` / `stylizedTextures.ts`）。Worker も kind ごとに動的 import して chunk を分ける
+- stylized な木（fir / broadleaf / bush / pine / willow / bamboo）は種類ごとに別クラス・別モジュール（`src/core/trees/*.ts`、`src/three/trees/*.ts`）。tree shaking のため種類のモジュール同士は import しない（共通は `stylized.ts` / `stylizedTextures.ts`）。Worker も kind ごとに動的 import して chunk を分ける
 - GPU 圧縮: 既定 on。`compressTextures: false` で opt-out。通常は `VegetationMesh` が最初に描画されたとき renderer に対応する共有 `KTX2Loader` を遅延生成し、`detectSupport( renderer )` を呼ぶ。`getParts()` / `InstancedMesh` では `asset.setRenderer( renderer )` を呼ぶ。利用者が loader を渡した場合はそちらを使う
 
 ## アルゴリズム・設計

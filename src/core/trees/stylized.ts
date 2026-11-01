@@ -196,6 +196,8 @@ export function addStylizedLimb(
 	wind: ( t: number ) => number = ( t ) => t,
 	samplesPerSegment = 3,
 	flatEnd = false,
+	uvDistanceScale = 1,
+	uvOffset = 0,
 ): { spine: Vec3[]; radii: number[] } {
 
 	const sampled = sampleLimbCurve( points, radii, samplesPerSegment );
@@ -238,7 +240,8 @@ export function addStylizedLimb(
 
 	for ( let vertex = 0; vertex < mesh.positions.length / 3; vertex ++ ) {
 		const ring = Math.min( sampled.spine.length - 1, Math.floor( vertex / ringSize ) );
-		mesh.uvs[ vertex * 2 + 1 ] = distances[ ring ]! / vScale;
+		mesh.uvs[ vertex * 2 ] = mesh.uvs[ vertex * 2 ]! + uvOffset;
+		mesh.uvs[ vertex * 2 + 1 ] = distances[ ring ]! / vScale * uvDistanceScale;
 	}
 
 	appendMesh( target, mesh, partIndex );

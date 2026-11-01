@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BroadleafTreeMeshOptions, FirTreeMeshOptions, FirTreeOptions, KTX2LoaderLike } from '../src/index';
+import type { BambooTreeMeshOptions, BambooTreeOptions, BroadleafTreeMeshOptions, FirTreeMeshOptions, FirTreeOptions, KTX2LoaderLike } from '../src/index';
 
 describe( 'public entry points', () => {
 
@@ -8,6 +8,7 @@ describe( 'public entry points', () => {
 		const exports = Object.keys( await import( '../src/index' ) ).sort();
 		expect( exports ).toEqual( [
 			'AlliumMesh',
+			'BambooTreeMesh',
 			'BluebellMesh',
 			'BroadleafTreeMesh',
 			'BushMesh',
@@ -28,6 +29,8 @@ describe( 'public entry points', () => {
 			'disposeVegetationWorkers',
 			'generateAllium',
 			'generateAlliumAsync',
+			'generateBambooTree',
+			'generateBambooTreeAsync',
 			'generateBluebell',
 			'generateBluebellAsync',
 			'generateBroadleafTree',
@@ -67,6 +70,7 @@ describe( 'public entry points', () => {
 
 		const exports = Object.keys( await import( '../src/core/index' ) ).sort();
 		expect( exports ).toEqual( [
+			'generateBambooTreeData',
 			'generateBroadleafTreeData',
 			'generateBushData',
 			'generateFirTreeData',
@@ -98,9 +102,13 @@ describe( 'public entry points', () => {
 		const options: BroadleafTreeMeshOptions = { seed: 3, height: 4, leafColor: 0x336633, barkColor: 0x775533 };
 		const firOptions: FirTreeMeshOptions = { seed: 3, height: 4, leafColor: 0x336633, barkColor: 0x775533 };
 		const coreOptions: FirTreeOptions = { seed: 3, height: 4 };
+		const bambooOptions: BambooTreeMeshOptions = { seed: 3, height: 8, leafColor: 0x70a94b, barkColor: 0x477f48 };
+		const bambooCoreOptions: BambooTreeOptions = { seed: 3, height: 8 };
 		expect( options.seed ).toBe( 3 );
 		expect( firOptions.seed ).toBe( 3 );
 		expect( coreOptions.height ).toBe( 4 );
+		expect( bambooOptions.height ).toBe( 8 );
+		expect( bambooCoreOptions.height ).toBe( 8 );
 	} );
 
 } );

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateFlowers, generateGrass, generateRock } from '../../src/three/meshes';
 import { generateFlowersData } from '../../src/core/generators/flowers';
 import { generateFirTreeData } from '../../src/core/trees/fir';
+import { generateBambooTreeData } from '../../src/core/trees/bamboo';
 import { prepareVegetationAsset } from '../../src/core/vegetationAssetPreparation';
 import { alphaTestForTexture } from '../../src/core/textureMipmaps';
 import { getPreparedTransferables, handleVegetationWorkerMessage } from '../../src/worker/vegetationWorker';
@@ -68,6 +69,7 @@ describe( 'vegetation worker handler', () => {
 			{ kind: 'pine-tree', height: 9, leafColor: 0x3f8a4c, barkColor: 0xb8653a, impostors: [ 'impostor', 'impostor-lod3' ] },
 			{ kind: 'fir-tree', height: 6, leafColor: 0x4b6c56, barkColor: 0x9a9183, impostors: [ 'impostor', 'impostor-lod3' ] },
 			{ kind: 'willow-tree', height: 7, leafColor: 0x6cad3a, barkColor: 0x6f6a45, impostors: [ 'impostor', 'impostor-lod3' ] },
+			{ kind: 'bamboo-tree', height: 8, leafColor: 0x70a94b, barkColor: 0x477f48, impostors: [] },
 		] as const;
 
 		for ( const [ index, tree ] of cases.entries() ) {
@@ -90,6 +92,9 @@ describe( 'vegetation worker handler', () => {
 			expect( Object.keys( result.prepared.impostorTextures ).sort() ).toEqual( tree.impostors );
 			if ( tree.kind === 'fir-tree' ) {
 				const synchronous = prepareVegetationAsset( generateFirTreeData( { seed: 9 } ), { leaf: tree.leafColor, bark: tree.barkColor }, 128 );
+				expect( areStructurallyByteIdentical( result.prepared.data, synchronous.data ) ).toBe( true );
+			} else if ( tree.kind === 'bamboo-tree' ) {
+				const synchronous = prepareVegetationAsset( generateBambooTreeData( { seed: 9 } ), {}, 128 );
 				expect( areStructurallyByteIdentical( result.prepared.data, synchronous.data ) ).toBe( true );
 			}
 		}

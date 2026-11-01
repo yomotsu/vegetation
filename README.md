@@ -77,6 +77,18 @@ All options are optional.
 | `barkColor` | `0x9a9183` | Bark color. |
 | `lod` | `0` | LOD level for `FirTreeMesh`. |
 
+### Bamboo — `BambooTreeMesh`, `generateBambooTree`, `generateBambooTreeAsync`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `seed` | `1` | Random seed. |
+| `height` | `8` | Tree height in metres. The single culm extends a little below `y = 0`; taller trees gain naturally spaced upper tiers while keeping culm and leaf size stable. |
+| `leafColor` | `0x70a94b` | Leaf blade color. |
+| `barkColor` | `0x477f48` | Culm and node color. |
+| `lod` | `0` | LOD level for `BambooTreeMesh`. |
+
+Bamboo uses an 8 m default height, a segmented single culm, paired upper-node branches, and a 512-pixel atlas of seed-selected leaf sprays. Its culm diameter and individual leaf size stay stable as height adds upper tiers. LOD1 preserves the culm and node silhouette while reducing sprays; LOD2 also thins branch detail; LOD3/4 use the shared six-plane and camera-facing impostors. The demo supports Bamboo LOD selection and compare view.
+
 ### Rock — `RockMesh`, `generateRock`, `generateRockAsync`
 
 | Option | Default | Description |
@@ -210,7 +222,7 @@ Opaque colour textures use UASTC mode 5; alpha-tested textures use mode 13 with 
 
 ## Core data API
 
-`vegetation/core` exposes only the data generators and their types, without a three.js dependency. `generateFirTreeData`, `generateRockData`, `generatePebblesData`, `generateGrassData` and `generateFlowersData` return `VegetationData` with typed arrays for positions, normals, UVs and indices per LOD, texture pixels and collider data. Their option types are `FirTreeOptions`, `RockOptions`, `PebblesOptions`, `GrassOptions` and `FlowersOptions`; shared data types include `VegetationData`, `MeshData`, `PartDef`, `TextureData` and `ColliderData`. Use it to bake assets offline or to feed another engine.
+`vegetation/core` exposes only the data generators and their types, without a three.js dependency. `generateFirTreeData`, `generateBambooTreeData`, `generateRockData`, `generatePebblesData`, `generateGrassData` and `generateFlowersData` return `VegetationData` with typed arrays for positions, normals, UVs and indices per LOD, texture pixels and collider data. Their option types are `FirTreeOptions`, `BambooTreeOptions`, `RockOptions`, `PebblesOptions`, `GrassOptions` and `FlowersOptions`; shared data types include `VegetationData`, `MeshData`, `PartDef`, `TextureData` and `ColliderData`. Use it to bake assets offline or to feed another engine.
 
 ```js
 import { generateRockData } from 'vegetation/core';

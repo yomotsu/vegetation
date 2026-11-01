@@ -18,18 +18,26 @@ describe( 'demo registry', () => {
 
 		const defaultAsset = await kinds[ 0 ]!.createAsync( {} );
 
-		expect( kinds ).toHaveLength( 15 );
+		expect( kinds ).toHaveLength( 16 );
 		expect( kinds[ 0 ]!.name ).toBe( 'Broadleaf' );
 		expect( defaultAsset.data.kind ).toBe( 'broadleaf-tree' );
 		defaultAsset.dispose();
 		expect( kinds[ 0 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
 		expect( kinds[ 0 ]!.options ).toEqual( { seed: 1, height: expect.any( Number ) } );
 		expect( kinds[ 0 ]!.defaultColors ).toEqual( { leaf: '#4f9a2a', bark: '#8a7350' } );
-		expect( kinds.slice( 0, 5 ).map( ( kind ) => kind.name ) ).toEqual( [ 'Broadleaf', 'Bush', 'Pine', 'Fir', 'Willow' ] );
-		expect( kinds[ 5 ]!.name ).toBe( 'Rock' );
-		expect( kinds[ 5 ]!.colorParts ).toEqual( [ 'rock' ] );
-		expect( kinds[ 5 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
-		expect( kinds[ 5 ]!.options ).toEqual( {
+		expect( kinds.slice( 0, 6 ).map( ( kind ) => kind.name ) ).toEqual( [ 'Broadleaf', 'Bush', 'Pine', 'Fir', 'Willow', 'Bamboo' ] );
+		expect( kinds[ 5 ]!.group ).toBe( 'Trees' );
+		expect( kinds[ 5 ]!.colorParts ).toEqual( [ 'leaf', 'bark' ] );
+		expect( kinds[ 5 ]!.colorOptions ).toEqual( { leaf: 'leafColor', bark: 'barkColor' } );
+		expect( kinds[ 5 ]!.options ).toEqual( { seed: 1, height: 8 } );
+		const bambooAsset = kinds[ 5 ]!.create( { seed: 4 } );
+		expect( bambooAsset.data.kind ).toBe( 'bamboo-tree' );
+		expect( bambooAsset.data.lods ).toHaveLength( 5 );
+		bambooAsset.dispose();
+		expect( kinds[ 6 ]!.name ).toBe( 'Rock' );
+		expect( kinds[ 6 ]!.colorParts ).toEqual( [ 'rock' ] );
+		expect( kinds[ 6 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
+		expect( kinds[ 6 ]!.options ).toEqual( {
 			seed: 1,
 			size: 6.4,
 			roughness: 1.2,
@@ -38,10 +46,10 @@ describe( 'demo registry', () => {
 			closeBottom: false,
 			moss: 0,
 		} );
-		expect( kinds[ 6 ]!.name ).toBe( 'Pebbles' );
-		expect( kinds[ 6 ]!.colorParts ).toEqual( [ 'stone' ] );
-		expect( kinds[ 6 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
-		expect( kinds[ 6 ]!.options ).toEqual( {
+		expect( kinds[ 7 ]!.name ).toBe( 'Pebbles' );
+		expect( kinds[ 7 ]!.colorParts ).toEqual( [ 'stone' ] );
+		expect( kinds[ 7 ]!.textureColors ).toEqual( { mossColor: '#7cb83a' } );
+		expect( kinds[ 7 ]!.options ).toEqual( {
 			seed: 1,
 			count: 16,
 			spread: 1.6,
@@ -50,21 +58,21 @@ describe( 'demo registry', () => {
 			burial: 0.48,
 			moss: 0,
 		} );
-		expect( kinds[ 6 ]!.create( {} ).getColor( 'stone' ).getHex() ).toBe( 0xffffff );
-		expect( kinds[ 7 ]!.name ).toBe( 'Grass' );
-		expect( kinds[ 7 ]!.colorParts ).toEqual( [ 'blade' ] );
-		expect( kinds[ 7 ]!.colorOptions ).toEqual( { blade: 'bladeColor' } );
-		expect( kinds[ 7 ]!.defaultColors ).toEqual( { blade: '#4b942b' } );
-		expect( kinds[ 7 ]!.options ).toEqual( { seed: 1, height: 0.45 } );
-		expect( kinds[ 7 ]!.create( {} ).getColor( 'blade' ).getHex() ).toBe( 0x4b942b );
-		expect( kinds.slice( 8 ).map( ( kind ) => kind.name ) ).toEqual( [ 'Allium', 'Daisy', 'Tulip', 'Poppy', 'Bluebell', 'Calla', 'Primrose' ] );
-		expect( kinds.slice( 8 ).every( ( kind ) => kind.group === 'Flowers' ) ).toBe( true );
-		expect( kinds[ 8 ]!.flowerVariety ).toBe( 'allium' );
-		expect( kinds[ 8 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
-		expect( kinds[ 8 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
-		expect( kinds[ 8 ]!.defaultColors ).toEqual( { petal: '#8b5fbf', stem: '#2f6f1e', centerColor: '#5c3d7a' } );
-		expect( kinds[ 8 ]!.textureColors ).toEqual( { centerColor: '#5c3d7a' } );
-		expect( kinds[ 8 ]!.options ).toEqual( { seed: 1, count: 6, spread: 0.29, height: 0.37 } );
+		expect( kinds[ 7 ]!.create( {} ).getColor( 'stone' ).getHex() ).toBe( 0xffffff );
+		expect( kinds[ 8 ]!.name ).toBe( 'Grass' );
+		expect( kinds[ 8 ]!.colorParts ).toEqual( [ 'blade' ] );
+		expect( kinds[ 8 ]!.colorOptions ).toEqual( { blade: 'bladeColor' } );
+		expect( kinds[ 8 ]!.defaultColors ).toEqual( { blade: '#4b942b' } );
+		expect( kinds[ 8 ]!.options ).toEqual( { seed: 1, height: 0.45 } );
+		expect( kinds[ 8 ]!.create( {} ).getColor( 'blade' ).getHex() ).toBe( 0x4b942b );
+		expect( kinds.slice( 9 ).map( ( kind ) => kind.name ) ).toEqual( [ 'Allium', 'Daisy', 'Tulip', 'Poppy', 'Bluebell', 'Calla', 'Primrose' ] );
+		expect( kinds.slice( 9 ).every( ( kind ) => kind.group === 'Flowers' ) ).toBe( true );
+		expect( kinds[ 9 ]!.flowerVariety ).toBe( 'allium' );
+		expect( kinds[ 9 ]!.colorParts ).toEqual( [ 'petal', 'stem' ] );
+		expect( kinds[ 9 ]!.colorOptions ).toEqual( { petal: 'petalColor', stem: 'stemColor' } );
+		expect( kinds[ 9 ]!.defaultColors ).toEqual( { petal: '#8b5fbf', stem: '#2f6f1e', centerColor: '#5c3d7a' } );
+		expect( kinds[ 9 ]!.textureColors ).toEqual( { centerColor: '#5c3d7a' } );
+		expect( kinds[ 9 ]!.options ).toEqual( { seed: 1, count: 6, spread: 0.29, height: 0.37 } );
 
 	} );
 

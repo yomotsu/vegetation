@@ -8,6 +8,8 @@ export { generateFirTreeData } from './trees/fir';
 export type { FirTreeOptions } from './trees/fir';
 export { generateWillowTreeData } from './trees/willow';
 export type { WillowTreeOptions } from './trees/willow';
+export { generateBambooTreeData } from './trees/bamboo';
+export type { BambooTreeOptions } from './trees/bamboo';
 export { generateRockData } from './generators/rock';
 export type { RockOptions } from './generators/rock';
 export { generatePebblesData } from './generators/pebbles';

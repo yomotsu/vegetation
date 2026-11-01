@@ -15,6 +15,7 @@ export { BushMesh, generateBush, generateBushAsync } from './three/trees/bush';
 export { PineTreeMesh, generatePineTree, generatePineTreeAsync } from './three/trees/pine';
 export { FirTreeMesh, generateFirTree, generateFirTreeAsync } from './three/trees/fir';
 export { WillowTreeMesh, generateWillowTree, generateWillowTreeAsync } from './three/trees/willow';
+export { BambooTreeMesh, generateBambooTree, generateBambooTreeAsync } from './three/trees/bamboo';
 export type {
 	ColliderData,
 	Color3,
@@ -41,3 +42,4 @@ export type { BushMeshOptions, BushOptions } from './three/trees/bush';
 export type { PineTreeMeshOptions, PineTreeOptions } from './three/trees/pine';
 export type { FirTreeMeshOptions, FirTreeOptions } from './three/trees/fir';
 export type { WillowTreeMeshOptions, WillowTreeOptions } from './three/trees/willow';
+export type { BambooTreeMeshOptions, BambooTreeOptions } from './three/trees/bamboo';

@@ -8,6 +8,7 @@ import type { BroadleafTreeOptions } from '../core/trees/broadleaf';
 import type { WillowTreeOptions } from '../core/trees/willow';
 import type { PineTreeOptions } from '../core/trees/pine';
 import type { FirTreeOptions } from '../core/trees/fir';
+import type { BambooTreeOptions } from '../core/trees/bamboo';
 import type { BushOptions } from '../core/trees/bush';
 import type { VegetationData } from '../core/types';
 import type { NormalizedVegetationGeneration } from '../core/generationOptions';
@@ -48,6 +49,10 @@ const generatorLoaders: Record<VegetationWorkerKind, () => Promise<WorkerGenerat
 	'fir-tree': async () => {
 		const generator = await import( '../core/trees/fir' );
 		return createWorkerGenerator<FirTreeOptions>( generator.generateFirTreeData, generator.normalizeFirTreeGenerationOptions );
+	},
+	'bamboo-tree': async () => {
+		const generator = await import( '../core/trees/bamboo' );
+		return createWorkerGenerator<BambooTreeOptions>( generator.generateBambooTreeData, generator.normalizeBambooTreeGenerationOptions );
 	},
 	bush: async () => {
 		const generator = await import( '../core/trees/bush' );

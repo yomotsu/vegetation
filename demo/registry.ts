@@ -1,10 +1,11 @@
-import { generateAllium, generateAlliumAsync, generateBluebell, generateBluebellAsync, generateCalla, generateCallaAsync, generateDaisy, generateDaisyAsync, generatePoppy, generatePoppyAsync, generatePrimrose, generatePrimroseAsync, generateTulip, generateTulipAsync, generateBroadleafTree, generateBroadleafTreeAsync, generateBush, generateBushAsync, generatePineTree, generatePineTreeAsync, generateFirTree, generateFirTreeAsync, generateWillowTree, generateWillowTreeAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync } from '../src/index';
-import type { AlliumMeshOptions, BluebellMeshOptions, CallaMeshOptions, DaisyMeshOptions, PoppyMeshOptions, PrimroseMeshOptions, TulipMeshOptions, BroadleafTreeMeshOptions, BushMeshOptions, PineTreeMeshOptions, FirTreeMeshOptions, WillowTreeMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, VegetationAsset } from '../src/index';
+import { generateAllium, generateAlliumAsync, generateBluebell, generateBluebellAsync, generateCalla, generateCallaAsync, generateDaisy, generateDaisyAsync, generatePoppy, generatePoppyAsync, generatePrimrose, generatePrimroseAsync, generateTulip, generateTulipAsync, generateBroadleafTree, generateBroadleafTreeAsync, generateBush, generateBushAsync, generatePineTree, generatePineTreeAsync, generateFirTree, generateFirTreeAsync, generateWillowTree, generateWillowTreeAsync, generateBambooTree, generateBambooTreeAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync } from '../src/index';
+import type { AlliumMeshOptions, BluebellMeshOptions, CallaMeshOptions, DaisyMeshOptions, PoppyMeshOptions, PrimroseMeshOptions, TulipMeshOptions, BroadleafTreeMeshOptions, BushMeshOptions, PineTreeMeshOptions, FirTreeMeshOptions, WillowTreeMeshOptions, BambooTreeMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, VegetationAsset } from '../src/index';
 import { DEFAULT_BROADLEAF_TREE_BARK_COLOR, DEFAULT_BROADLEAF_TREE_HEIGHT, DEFAULT_BROADLEAF_TREE_LEAF_COLOR } from '../src/core/trees/broadleaf';
 import { DEFAULT_BUSH_BARK_COLOR, DEFAULT_BUSH_HEIGHT, DEFAULT_BUSH_LEAF_COLOR } from '../src/core/trees/bush';
 import { DEFAULT_PINE_TREE_BARK_COLOR, DEFAULT_PINE_TREE_HEIGHT, DEFAULT_PINE_TREE_LEAF_COLOR } from '../src/core/trees/pine';
 import { DEFAULT_FIR_TREE_BARK_COLOR, DEFAULT_FIR_TREE_HEIGHT, DEFAULT_FIR_TREE_LEAF_COLOR } from '../src/core/trees/fir';
 import { DEFAULT_WILLOW_TREE_BARK_COLOR, DEFAULT_WILLOW_TREE_HEIGHT, DEFAULT_WILLOW_TREE_LEAF_COLOR } from '../src/core/trees/willow';
+import { DEFAULT_BAMBOO_TREE_BARK_COLOR, DEFAULT_BAMBOO_TREE_HEIGHT, DEFAULT_BAMBOO_TREE_LEAF_COLOR } from '../src/core/trees/bamboo';
 
 export interface VegetationKind {
 	group: string;
@@ -162,6 +163,16 @@ export const kinds: VegetationKind[] = [
 		colorOptions: { leaf: 'leafColor', bark: 'barkColor' },
 		defaultColors: { leaf: toColorHex( DEFAULT_WILLOW_TREE_LEAF_COLOR ), bark: toColorHex( DEFAULT_WILLOW_TREE_BARK_COLOR ) },
 		options: { seed: 1, height: DEFAULT_WILLOW_TREE_HEIGHT },
+	},
+	{
+		group: 'Trees',
+		name: 'Bamboo',
+		create: ( opts ) => generateBambooTree( opts as BambooTreeMeshOptions ),
+		createAsync: ( opts ) => generateBambooTreeAsync( opts as BambooTreeMeshOptions ),
+		colorParts: [ 'leaf', 'bark' ],
+		colorOptions: { leaf: 'leafColor', bark: 'barkColor' },
+		defaultColors: { leaf: toColorHex( DEFAULT_BAMBOO_TREE_LEAF_COLOR ), bark: toColorHex( DEFAULT_BAMBOO_TREE_BARK_COLOR ) },
+		options: { seed: 1, height: DEFAULT_BAMBOO_TREE_HEIGHT },
 	},
 	{
 		group: 'Rocks',
