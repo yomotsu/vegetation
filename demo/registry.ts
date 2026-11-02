@@ -1,15 +1,18 @@
-import { generateAllium, generateAlliumAsync, generateBluebell, generateBluebellAsync, generateCalla, generateCallaAsync, generateDaisy, generateDaisyAsync, generatePoppy, generatePoppyAsync, generatePrimrose, generatePrimroseAsync, generateTulip, generateTulipAsync, generateBroadleafTree, generateBroadleafTreeAsync, generateBush, generateBushAsync, generatePineTree, generatePineTreeAsync, generateFirTree, generateFirTreeAsync, generateWillowTree, generateWillowTreeAsync, generateBambooTree, generateBambooTreeAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync } from '../src/index';
-import type { AlliumMeshOptions, BluebellMeshOptions, CallaMeshOptions, DaisyMeshOptions, PoppyMeshOptions, PrimroseMeshOptions, TulipMeshOptions, BroadleafTreeMeshOptions, BushMeshOptions, PineTreeMeshOptions, FirTreeMeshOptions, WillowTreeMeshOptions, BambooTreeMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, VegetationAsset } from '../src/index';
+import { generateAllium, generateAlliumAsync, generateBluebell, generateBluebellAsync, generateCalla, generateCallaAsync, generateDaisy, generateDaisyAsync, generatePoppy, generatePoppyAsync, generatePrimrose, generatePrimroseAsync, generateTulip, generateTulipAsync, generateBroadleafTree, generateBroadleafTreeAsync, generateBush, generateBushAsync, generatePineTree, generatePineTreeAsync, generateFirTree, generateFirTreeAsync, generateWillowTree, generateWillowTreeAsync, generateBambooTree, generateBambooTreeAsync, generateBambooShoot, generateBambooShootAsync, generateGrass, generateGrassAsync, generatePebbles, generatePebblesAsync, generateRock, generateRockAsync } from '../src/index';
+import type { AlliumMeshOptions, BluebellMeshOptions, CallaMeshOptions, DaisyMeshOptions, PoppyMeshOptions, PrimroseMeshOptions, TulipMeshOptions, BroadleafTreeMeshOptions, BushMeshOptions, PineTreeMeshOptions, FirTreeMeshOptions, WillowTreeMeshOptions, BambooTreeMeshOptions, BambooShootMeshOptions, GrassMeshOptions, PebblesMeshOptions, RockMeshOptions, VegetationAsset } from '../src/index';
 import { DEFAULT_BROADLEAF_TREE_BARK_COLOR, DEFAULT_BROADLEAF_TREE_HEIGHT, DEFAULT_BROADLEAF_TREE_LEAF_COLOR } from '../src/core/trees/broadleaf';
 import { DEFAULT_BUSH_BARK_COLOR, DEFAULT_BUSH_HEIGHT, DEFAULT_BUSH_LEAF_COLOR } from '../src/core/trees/bush';
 import { DEFAULT_PINE_TREE_BARK_COLOR, DEFAULT_PINE_TREE_HEIGHT, DEFAULT_PINE_TREE_LEAF_COLOR } from '../src/core/trees/pine';
 import { DEFAULT_FIR_TREE_BARK_COLOR, DEFAULT_FIR_TREE_HEIGHT, DEFAULT_FIR_TREE_LEAF_COLOR } from '../src/core/trees/fir';
 import { DEFAULT_WILLOW_TREE_BARK_COLOR, DEFAULT_WILLOW_TREE_HEIGHT, DEFAULT_WILLOW_TREE_LEAF_COLOR } from '../src/core/trees/willow';
 import { DEFAULT_BAMBOO_TREE_BARK_COLOR, DEFAULT_BAMBOO_TREE_HEIGHT, DEFAULT_BAMBOO_TREE_LEAF_COLOR } from '../src/core/trees/bamboo';
+import { DEFAULT_BAMBOO_SHOOT_CORE_COLOR, DEFAULT_BAMBOO_SHOOT_HEIGHT, DEFAULT_BAMBOO_SHOOT_SHEATH_COLOR } from '../src/core/trees/bambooShoot';
 
 export interface VegetationKind {
 	group: string;
 	name: string;
+	/** Number of implemented LODs (missing runtime slots duplicate LOD0). */
+	lodCount?: number;
 	flowerVariety?: keyof typeof flowerPetalColorPresets;
 	create: ( opts: Record<string, unknown> ) => VegetationAsset;
 	createAsync: ( opts: Record<string, unknown> ) => Promise<VegetationAsset>;
@@ -173,6 +176,17 @@ export const kinds: VegetationKind[] = [
 		colorOptions: { leaf: 'leafColor', bark: 'barkColor' },
 		defaultColors: { leaf: toColorHex( DEFAULT_BAMBOO_TREE_LEAF_COLOR ), bark: toColorHex( DEFAULT_BAMBOO_TREE_BARK_COLOR ) },
 		options: { seed: 1, height: DEFAULT_BAMBOO_TREE_HEIGHT },
+	},
+	{
+		group: 'Trees',
+		name: 'Bamboo Shoot',
+		lodCount: 5,
+		create: ( opts ) => generateBambooShoot( opts as BambooShootMeshOptions ),
+		createAsync: ( opts ) => generateBambooShootAsync( opts as BambooShootMeshOptions ),
+		colorParts: [ 'sheath', 'core' ],
+		colorOptions: { sheath: 'sheathColor', core: 'coreColor' },
+		defaultColors: { sheath: toColorHex( DEFAULT_BAMBOO_SHOOT_SHEATH_COLOR ), core: toColorHex( DEFAULT_BAMBOO_SHOOT_CORE_COLOR ) },
+		options: { seed: 1, height: DEFAULT_BAMBOO_SHOOT_HEIGHT },
 	},
 	{
 		group: 'Rocks',

@@ -1,8 +1,8 @@
 # vegetation
 
-Procedural stylized trees, rocks, pebbles, grass and flowers for [three.js](https://threejs.org/).
+Procedural stylized trees, bamboo shoots, rocks, pebbles, grass and flowers for [three.js](https://threejs.org/).
 
-Every asset is generated from a seed and has five LODs (LOD0–LOD3 meshes and an LOD4 billboard impostor) with procedural textures. Trees, rocks and pebbles also include collider meshes; grass and flowers do not. Rocks and pebbles can grow moss. Generation can run in Web Workers so the page keeps rendering. Works with `WebGLRenderer` and `WebGPURenderer`.
+Assets are generated from a seed. Most have five LODs (LOD0–LOD3 meshes and an LOD4 billboard impostor); Bamboo Shoot uses detailed LOD0, reduced LOD1–2, a six-plane LOD3 impostor, and an LOD4 billboard. Trees, rocks, Bamboo Shoot, and pebbles also include collider meshes; grass and flowers do not. Rocks and pebbles can grow moss. Generation can run in Web Workers so the page keeps rendering. Works with `WebGLRenderer` and `WebGPURenderer`.
 
 ## Install
 
@@ -88,6 +88,18 @@ All options are optional.
 | `lod` | `0` | LOD level for `BambooTreeMesh`. |
 
 Bamboo uses an 8 m default height, a segmented single culm, paired upper-node branches, and a 512-pixel atlas of seed-selected leaf sprays. Its culm diameter and individual leaf size stay stable as height adds upper tiers. LOD1 preserves the culm and node silhouette while reducing sprays; LOD2 also thins branch detail; LOD3/4 use the shared six-plane and camera-facing impostors. The demo supports Bamboo LOD selection and compare view.
+
+### Bamboo Shoot — `BambooShootMesh`, `generateBambooShoot`, `generateBambooShootAsync`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `seed` | `1` | Random seed for small shape and sheath variation. |
+| `height` | `0.3` | Shoot height in metres above ground. The lower sheath and collider extend 0.1 m below `y = 0`. |
+| `coreColor` | `0x9bb347` | Bright yellow-green upper shoot and buds. |
+| `sheathColor` | `0x806c64` | Desaturated reddish gray-brown protective sheaths. |
+| `lod` | `0` | LOD level from 0 (full detail) through 4 (billboard impostor). |
+
+Bamboo Shoot is a narrow, tapered sprout with a constant capped base radius and five overlapping outer sheaths with alternating exposed rims. The core and inner skin are omitted where fully hidden by those sheaths. A softly textured alpha sleeve forms the small green apex tuft without separate leaf polygons. LOD1 keeps all sheath tiers with fewer mesh rows and boundary samples; LOD2 retains three alternating tiers with coarser sheath meshes. LOD3 uses six directional cards with a small top-edge atlas crop; LOD4 uses the shared camera-facing impostor. One cylindrical collider spans from below ground through the shoot body and is shared across all LODs. The demo exposes all five levels and compare mode.
 
 ### Rock — `RockMesh`, `generateRock`, `generateRockAsync`
 

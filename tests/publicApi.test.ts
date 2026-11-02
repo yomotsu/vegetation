@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BambooTreeMeshOptions, BambooTreeOptions, BroadleafTreeMeshOptions, FirTreeMeshOptions, FirTreeOptions, KTX2LoaderLike } from '../src/index';
+import type { BambooShootMeshOptions, BambooShootOptions, BambooTreeMeshOptions, BambooTreeOptions, BroadleafTreeMeshOptions, FirTreeMeshOptions, FirTreeOptions, KTX2LoaderLike } from '../src/index';
 
 describe( 'public entry points', () => {
 
@@ -8,6 +8,7 @@ describe( 'public entry points', () => {
 		const exports = Object.keys( await import( '../src/index' ) ).sort();
 		expect( exports ).toEqual( [
 			'AlliumMesh',
+			'BambooShootMesh',
 			'BambooTreeMesh',
 			'BluebellMesh',
 			'BroadleafTreeMesh',
@@ -29,6 +30,8 @@ describe( 'public entry points', () => {
 			'disposeVegetationWorkers',
 			'generateAllium',
 			'generateAlliumAsync',
+			'generateBambooShoot',
+			'generateBambooShootAsync',
 			'generateBambooTree',
 			'generateBambooTreeAsync',
 			'generateBluebell',
@@ -70,6 +73,7 @@ describe( 'public entry points', () => {
 
 		const exports = Object.keys( await import( '../src/core/index' ) ).sort();
 		expect( exports ).toEqual( [
+			'generateBambooShootData',
 			'generateBambooTreeData',
 			'generateBroadleafTreeData',
 			'generateBushData',
@@ -104,11 +108,15 @@ describe( 'public entry points', () => {
 		const coreOptions: FirTreeOptions = { seed: 3, height: 4 };
 		const bambooOptions: BambooTreeMeshOptions = { seed: 3, height: 8, leafColor: 0x70a94b, barkColor: 0x477f48 };
 		const bambooCoreOptions: BambooTreeOptions = { seed: 3, height: 8 };
+		const shootOptions: BambooShootMeshOptions = { seed: 3, height: 0.84, sheathColor: 0x91a24a };
+		const shootCoreOptions: BambooShootOptions = { seed: 3, height: 0.84 };
 		expect( options.seed ).toBe( 3 );
 		expect( firOptions.seed ).toBe( 3 );
 		expect( coreOptions.height ).toBe( 4 );
 		expect( bambooOptions.height ).toBe( 8 );
 		expect( bambooCoreOptions.height ).toBe( 8 );
+		expect( shootOptions.height ).toBe( 0.84 );
+		expect( shootCoreOptions.height ).toBe( 0.84 );
 	} );
 
 } );

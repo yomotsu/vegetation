@@ -72,7 +72,7 @@ let controls: OrbitControls;
 const root = new Group();
 scene.add( root );
 
-const initialKind = kinds.find( ( kind ) => kind.name === 'Bamboo' ) ?? kinds[ 0 ]!;
+const initialKind = kinds.find( ( kind ) => kind.name === 'Bamboo Shoot' ) ?? kinds[ 0 ]!;
 
 const state: DemoState = {
 	kind: initialKind.name,
@@ -213,6 +213,9 @@ function getOptionBounds( name: string ): [ number, number, number ] {
 	}
 	if ( activeKind.name === 'Grass' && name === 'height' ) {
 		return [ 0.3, 0.6, 0.01 ];
+	}
+	if ( activeKind.name === 'Bamboo Shoot' && name === 'height' ) {
+		return [ 0.3, 1.5, 0.1 ];
 	}
 	if ( activeKind.group === 'Flowers' && name === 'count' ) return [ 1, 6, 1 ];
 	if ( activeKind.group === 'Flowers' && name === 'spread' ) return [ 0.1, 0.8, 0.01 ];
@@ -766,7 +769,21 @@ function createGui(): void {
 	// 選択中のviewで効く項目だけを表示する。
 	const updateViewControls = (): void => {
 
-		lodController.show( state.mode === 'single' );
+		const lodCount = activeKind.lodCount ?? 5;
+		if ( lodCount === 1 ) {
+			if ( state.mode !== 'single' ) {
+				state.mode = 'single';
+				modeController.updateDisplay();
+			}
+			state.lod = 0;
+			lodController.updateDisplay();
+			modeController.disable();
+			lodController.disable();
+		} else {
+			modeController.enable();
+			lodController.enable();
+		}
+		lodController.show( state.mode === 'single' && lodCount > 1 );
 		scatterCountController.show( state.mode === 'scatter' && activeKind.name !== 'Grass' );
 		seedVariantsController.show( state.mode === 'scatter' );
 

@@ -10,6 +10,8 @@ export { generateWillowTreeData } from './trees/willow';
 export type { WillowTreeOptions } from './trees/willow';
 export { generateBambooTreeData } from './trees/bamboo';
 export type { BambooTreeOptions } from './trees/bamboo';
+export { generateBambooShootData } from './trees/bambooShoot';
+export type { BambooShootOptions } from './trees/bambooShoot';
 export { generateRockData } from './generators/rock';
 export type { RockOptions } from './generators/rock';
 export { generatePebblesData } from './generators/pebbles';
