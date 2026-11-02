@@ -275,7 +275,10 @@ function createBambooSkeleton( seed: number, height: number ): BambooSkeleton {
 				} );
 			}
 
-			branches.push( { base, middle, tip, radii: [ twigRadius, twigRadius * 0.62, twigRadius * 0.18 ], azimuth: branchSpec.azimuth, tier, pairIndex: branchSpec.pairIndex, sprays } );
+			// Keep the highest node's paired branch structure but leave its sprays
+			// empty so the leader tip remains an open, leaf-free shoot.
+			const visibleSprays = tier === upperNodes.length - 1 ? [] : sprays;
+			branches.push( { base, middle, tip, radii: [ twigRadius, twigRadius * 0.62, twigRadius * 0.18 ], azimuth: branchSpec.azimuth, tier, pairIndex: branchSpec.pairIndex, sprays: visibleSprays } );
 
 		}
 
@@ -294,19 +297,6 @@ function createBambooSkeleton( seed: number, height: number ): BambooSkeleton {
 	const terminalBase = addVec3( culmCenterAt( { height, lean }, terminalBaseY ), scaleVec3( terminalRadial, terminalBaseRadius * 0.8 ) );
 	const terminalMiddle = addVec3( culmCenterAt( { height, lean }, terminalMiddleY ), scaleVec3( terminalRadial, terminalMiddleRadius + 0.035 ) );
 	const terminalTip = addVec3( culmCenterAt( { height, lean }, terminalTipY ), scaleVec3( terminalRadial, terminalTipRadius + 0.09 ) );
-	const terminalSprays: BambooBranch['sprays'] = [ 0.55, 0.9 ].map( ( attachment, index ) => {
-		const sideSign = ( index + tierPhase ) % 2 === 0 ? - 1 : 1;
-		return {
-			attachment,
-			rotation: sideSign * random.range( 0.2, 0.34 ),
-			sideSign,
-			roll: random.range( 0.95, 1.15 ),
-			scale: 0.82,
-			shade: random.range( 0.9, 1.08 ),
-			cardCount: 1,
-			variant: ( tierPhase + index + 2 ) % 4,
-		};
-	} );
 	branches.push( {
 		base: terminalBase,
 		middle: terminalMiddle,
@@ -315,7 +305,7 @@ function createBambooSkeleton( seed: number, height: number ): BambooSkeleton {
 		azimuth: terminalAzimuth,
 		tier: upperNodes.length,
 		pairIndex: 2,
-		sprays: terminalSprays,
+		sprays: [],
 	} );
 
 	return { height, rootDepth, baseRadius, lean, culmTone, nodes, branches };
@@ -504,7 +494,8 @@ function createBambooLeafSprayTile( seed: number, variant: number ): Uint8Array 
 	const layout = bambooSprayVariantLayouts[ variant ]!;
 	const random = createRandom( seed * 53 + 19 + variant * 997 );
 	const sidePhase = ( Math.abs( Math.trunc( seed ) ) + variant ) % 2;
-	const mainStemAt = ( t: number ): [ number, number ] => [ bambooSprayRootX + bambooSprayStemLength * t, bambooSprayRootY - layout.mainDrop * t - layout.sag * Math.sin( Math.PI * t ) ];
+	const twigSag = layout.sag * 0.45;
+	const mainStemAt = ( t: number ): [ number, number ] => [ bambooSprayRootX + bambooSprayStemLength * t, bambooSprayRootY - layout.mainDrop * t - twigSag * Math.sin( Math.PI * t ) ];
 
 	function drawTwig( start: [ number, number ], control: [ number, number ], end: [ number, number ], thickness: number, shade: number, greenLift = 8, blueOffset = - 12 ): void {
 		const left: [ number, number ][] = [];
@@ -525,7 +516,7 @@ function createBambooLeafSprayTile( seed: number, variant: number ): Uint8Array 
 	}
 
 	const mainRoot = mainStemAt( 0 );
-	const mainRootTangentY = - layout.mainDrop - layout.sag * Math.PI;
+	const mainRootTangentY = - layout.mainDrop - twigSag * Math.PI;
 	const mainRootTangentLength = Math.hypot( bambooSprayStemLength, mainRootTangentY ) || 1;
 	const mainRootOverlap: [ number, number ] = [
 		mainRoot[ 0 ] - 5 * bambooSprayStemLength / mainRootTangentLength,
@@ -605,7 +596,7 @@ function createBambooLeafSprayTile( seed: number, variant: number ): Uint8Array 
 		// Extend the petiole several pixels into the blade base instead of capping it.
 		const petioleEnd: [ number, number ] = [ baseX + direction[ 0 ] * 4, baseY + direction[ 1 ] * 4 ];
 		drawTwig( petioleStart, [ midX, midY ], petioleEnd, 0.7, Math.max( 164, leafShade - 24 ), greenLift, blueOffset );
-		drawBlade( baseX, baseY, direction, random.range( 86, 108 ) * layout.lengthScale, random.range( 5.3, 7.1 ), leafShade, greenLift, blueOffset );
+		drawBlade( baseX, baseY, direction, random.range( 86, 108 ) * layout.lengthScale, random.range( 5.8, 7.8 ), leafShade, greenLift, blueOffset );
 	}
 
 	return data;
@@ -656,7 +647,7 @@ function branchRadiusAt( branch: BambooBranch, t: number ): number {
 const minimumSecondaryTubeLength = 0.28;
 const minimumSecondaryTubeRadius = 0.014;
 
-function getSprayBranchPath( branch: BambooBranch, spray: BambooSpray ): { base: Vec3; middle: Vec3; tip: Vec3; radius: number } {
+function getSprayBranchPath( branch: BambooBranch, spray: BambooSpray ): { base: Vec3; middle: Vec3; tip: Vec3; radius: number; cardAxis: Vec3 } {
 
 	const base = branchPointAt( branch, spray.attachment );
 	const before = branchPointAt( branch, Math.max( 0, spray.attachment - 0.035 ) );
@@ -666,7 +657,7 @@ function getSprayBranchPath( branch: BambooBranch, spray: BambooSpray ): { base:
 	const parentLength = Math.hypot( branch.tip[ 0 ] - branch.base[ 0 ], branch.tip[ 1 ] - branch.base[ 1 ], branch.tip[ 2 ] - branch.base[ 2 ] );
 	const reach = parentLength * 0.26 * spray.scale;
 	const forwardReach = parentLength * 0.06 * spray.scale;
-	const middle = addVec3(
+	const curvedMiddle = addVec3(
 		addVec3( base, addVec3( scaleVec3( side, spray.sideSign * reach * 0.56 ), scaleVec3( axis, forwardReach * 0.5 ) ) ),
 		[ 0, reach * 0.09, 0 ],
 	);
@@ -674,8 +665,12 @@ function getSprayBranchPath( branch: BambooBranch, spray: BambooSpray ): { base:
 		addVec3( base, addVec3( scaleVec3( side, spray.sideSign * reach ), scaleVec3( axis, forwardReach ) ) ),
 		[ 0, reach * 0.18, 0 ],
 	);
+	// Keep the existing card orientation, but put the tube's middle section on
+	// the base-to-tip chord so these small offshoots read as straighter twigs.
+	const middle = lerpVec3( base, tip, 0.5 );
+	const cardAxis = normalizeVec3( [ tip[ 0 ] - curvedMiddle[ 0 ], tip[ 1 ] - curvedMiddle[ 1 ], tip[ 2 ] - curvedMiddle[ 2 ] ] );
 	const radius = branchRadiusAt( branch, spray.attachment ) * 0.9;
-	return { base, middle, tip, radius };
+	return { base, middle, tip, radius, cardAxis };
 
 }
 
@@ -689,7 +684,7 @@ function addSprayBranchIfLarge( builder: MeshBuilder, branch: BambooBranch, spra
 	addStylizedLimb( builder, [ path.base, path.middle, path.tip ], [ path.radius, path.radius * 0.62, path.radius * 0.18 ], sides, barkPartIndex, ( t ) => 0.35 + t * 0.65, 1, false, 0.01, 2 );
 	return {
 		position: path.tip,
-		axis: normalizeVec3( [ path.tip[ 0 ] - path.middle[ 0 ], path.tip[ 1 ] - path.middle[ 1 ], path.tip[ 2 ] - path.middle[ 2 ] ] ),
+		axis: path.cardAxis,
 	};
 
 }

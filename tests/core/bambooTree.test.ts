@@ -322,7 +322,7 @@ describe( 'bamboo tree LOD0', () => {
 		expect( firstClump + secondClump ).toBeGreaterThan( 0 );
 		expect( foliageBands.some( ( count, index ) => index > 0 && count > foliageBands[ index - 1 ]! ) ).toBe( true );
 		expect( foliageBands.some( ( count, index ) => index > 0 && count < foliageBands[ index - 1 ]! ) ).toBe( true );
-		expect( terminalCrown ).toBeGreaterThan( 0 );
+		expect( terminalCrown ).toBe( 0 );
 		expect( terminalCrown ).toBeLessThan( secondClump );
 		expect( getLeafCardCount( data ) ).toBeGreaterThan( 100 );
 		expect( getLeafCardCount( data ) ).toBeLessThan( 300 );
